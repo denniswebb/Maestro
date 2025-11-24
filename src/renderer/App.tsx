@@ -257,6 +257,53 @@ export default function MaestroConsole() {
     loadSettings();
   }, []);
 
+  // Restore a persisted session by respawning its process
+  const restoreSession = async (session: Session): Promise<Session> => {
+    try {
+      // Spawn new process for this session
+      const spawnResult = await window.maestro.process.spawn({
+        sessionId: session.id,
+        toolType: session.toolType,
+        cwd: session.cwd,
+        command: session.toolType === 'terminal' ? 'bash' : session.toolType,
+        args: []
+      });
+
+      if (spawnResult.success && spawnResult.pid > 0) {
+        // Add restoration message to logs
+        const targetLogKey = session.inputMode === 'ai' ? 'aiLogs' : 'shellLogs';
+        const restorationLog: LogEntry = {
+          id: generateId(),
+          timestamp: Date.now(),
+          source: 'system',
+          text: 'Session restored after app restart'
+        };
+
+        return {
+          ...session,
+          pid: spawnResult.pid, // Update with new PID
+          state: 'idle' as SessionState,
+          [targetLogKey]: [...session[targetLogKey], restorationLog]
+        };
+      } else {
+        // Process spawn failed
+        console.error(`Failed to restore session ${session.id}`);
+        return {
+          ...session,
+          pid: -1,
+          state: 'error' as SessionState
+        };
+      }
+    } catch (error) {
+      console.error(`Error restoring session ${session.id}:`, error);
+      return {
+        ...session,
+        pid: -1,
+        state: 'error' as SessionState
+      };
+    }
+  };
+
   // Load sessions and groups from electron-store on mount (with localStorage migration)
   useEffect(() => {
     const loadSessionsAndGroups = async () => {
@@ -267,17 +314,24 @@ export default function MaestroConsole() {
 
         // Handle sessions
         if (savedSessions && savedSessions.length > 0) {
-          // electron-store has data, use it
-          setSessions(savedSessions);
+          // electron-store has data - restore processes for all sessions
+          const restoredSessions = await Promise.all(
+            savedSessions.map(s => restoreSession(s))
+          );
+          setSessions(restoredSessions);
         } else {
           // Try to migrate from localStorage
           try {
             const localStorageSessions = localStorage.getItem('maestro_sessions');
             if (localStorageSessions) {
               const parsed = JSON.parse(localStorageSessions);
-              setSessions(parsed);
+              // Restore processes for migrated sessions too
+              const restoredSessions = await Promise.all(
+                parsed.map((s: Session) => restoreSession(s))
+              );
+              setSessions(restoredSessions);
               // Save to electron-store for future
-              await window.maestro.sessions.setAll(parsed);
+              await window.maestro.sessions.setAll(restoredSessions);
               // Clean up localStorage
               localStorage.removeItem('maestro_sessions');
             } else {
@@ -339,7 +393,7 @@ export default function MaestroConsole() {
   // Set up process event listeners for real-time output
   useEffect(() => {
     // Handle process output data
-    window.maestro.process.onData((sessionId: string, data: string) => {
+    const unsubscribeData = window.maestro.process.onData((sessionId: string, data: string) => {
       setSessions(prev => prev.map(s => {
         if (s.id !== sessionId) return s;
 
@@ -359,7 +413,7 @@ export default function MaestroConsole() {
     });
 
     // Handle process exit
-    window.maestro.process.onExit((sessionId: string, code: number) => {
+    const unsubscribeExit = window.maestro.process.onExit((sessionId: string, code: number) => {
       setSessions(prev => prev.map(s => {
         if (s.id !== sessionId) return s;
 
@@ -378,6 +432,12 @@ export default function MaestroConsole() {
         };
       }));
     });
+
+    // Cleanup listeners on unmount
+    return () => {
+      unsubscribeData();
+      unsubscribeExit();
+    };
   }, []);
 
   // Refs
@@ -832,34 +892,53 @@ export default function MaestroConsole() {
     setNewInstanceModalOpen(true);
   };
 
-  const createNewSession = (agentId: string, workingDir: string, name: string) => {
+  const createNewSession = async (agentId: string, workingDir: string, name: string) => {
     const newId = generateId();
-    const newSession: Session = {
-      id: newId,
-      name,
-      toolType: agentId as ToolType,
-      state: 'idle',
-      cwd: workingDir,
-      fullPath: workingDir,
-      isGitRepo: false,
-      aiLogs: [{ id: generateId(), timestamp: Date.now(), source: 'system', text: `${name} ready.` }],
-      shellLogs: [{ id: generateId(), timestamp: Date.now(), source: 'system', text: 'Shell Session Ready.' }],
-      workLog: [],
-      scratchPadContent: '',
-      contextUsage: 0,
-      inputMode: agentId === 'cli' ? 'terminal' : 'ai',
-      pid: Math.floor(Math.random() * 9000) + 1000,
-      port: 3000 + Math.floor(Math.random() * 100),
-      tunnelActive: false,
-      changedFiles: [],
-      fileTree: [],
-      fileExplorerExpanded: [],
-      fileExplorerScrollPos: 0,
-      shellCwd: workingDir,
-      commandHistory: []
-    };
-    setSessions(prev => [...prev, newSession]);
-    setActiveSessionId(newId);
+
+    // Spawn the process first to get the real PID
+    try {
+      const spawnResult = await window.maestro.process.spawn({
+        sessionId: newId,
+        toolType: agentId,
+        cwd: workingDir,
+        command: agentId === 'terminal' ? 'bash' : agentId, // For terminal, command is ignored by ProcessManager
+        args: []
+      });
+
+      if (!spawnResult.success || spawnResult.pid <= 0) {
+        throw new Error('Failed to spawn process');
+      }
+
+      const newSession: Session = {
+        id: newId,
+        name,
+        toolType: agentId as ToolType,
+        state: 'idle',
+        cwd: workingDir,
+        fullPath: workingDir,
+        isGitRepo: false,
+        aiLogs: [{ id: generateId(), timestamp: Date.now(), source: 'system', text: `${name} ready.` }],
+        shellLogs: [{ id: generateId(), timestamp: Date.now(), source: 'system', text: 'Shell Session Ready.' }],
+        workLog: [],
+        scratchPadContent: '',
+        contextUsage: 0,
+        inputMode: agentId === 'terminal' ? 'terminal' : 'ai',
+        pid: spawnResult.pid, // Use real PID from spawned process
+        port: 3000 + Math.floor(Math.random() * 100),
+        tunnelActive: false,
+        changedFiles: [],
+        fileTree: [],
+        fileExplorerExpanded: [],
+        fileExplorerScrollPos: 0,
+        shellCwd: workingDir,
+        commandHistory: []
+      };
+      setSessions(prev => [...prev, newSession]);
+      setActiveSessionId(newId);
+    } catch (error) {
+      console.error('Failed to create session:', error);
+      // TODO: Show error to user
+    }
   };
 
   const toggleInputMode = () => {

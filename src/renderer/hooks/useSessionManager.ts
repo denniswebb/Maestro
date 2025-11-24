@@ -151,34 +151,53 @@ export function useSessionManager(): UseSessionManagerReturn {
   }, [sessions, groups]);
 
   // Session operations
-  const createNewSession = (agentId: string, workingDir: string, name: string) => {
+  const createNewSession = async (agentId: string, workingDir: string, name: string) => {
     const newId = generateId();
-    const newSession: Session = {
-      id: newId,
-      name,
-      toolType: agentId as ToolType,
-      state: 'idle',
-      cwd: workingDir,
-      fullPath: workingDir,
-      isGitRepo: false,
-      aiLogs: [{ id: generateId(), timestamp: Date.now(), source: 'system', text: `${name} ready.` }],
-      shellLogs: [{ id: generateId(), timestamp: Date.now(), source: 'system', text: 'Shell Session Ready.' }],
-      workLog: [],
-      scratchPadContent: '',
-      contextUsage: 0,
-      inputMode: agentId === 'cli' ? 'terminal' : 'ai',
-      pid: Math.floor(Math.random() * 9000) + 1000,
-      port: 3000 + Math.floor(Math.random() * 100),
-      tunnelActive: false,
-      changedFiles: [],
-      fileTree: [],
-      fileExplorerExpanded: [],
-      fileExplorerScrollPos: 0,
-      shellCwd: workingDir,
-      commandHistory: []
-    };
-    setSessions(prev => [...prev, newSession]);
-    setActiveSessionId(newId);
+
+    // Spawn the process first to get the real PID
+    try {
+      const spawnResult = await window.maestro.process.spawn({
+        sessionId: newId,
+        toolType: agentId,
+        cwd: workingDir,
+        command: agentId === 'terminal' ? 'bash' : agentId, // For terminal, command is ignored by ProcessManager
+        args: []
+      });
+
+      if (!spawnResult.success || spawnResult.pid <= 0) {
+        throw new Error('Failed to spawn process');
+      }
+
+      const newSession: Session = {
+        id: newId,
+        name,
+        toolType: agentId as ToolType,
+        state: 'idle',
+        cwd: workingDir,
+        fullPath: workingDir,
+        isGitRepo: false,
+        aiLogs: [{ id: generateId(), timestamp: Date.now(), source: 'system', text: `${name} ready.` }],
+        shellLogs: [{ id: generateId(), timestamp: Date.now(), source: 'system', text: 'Shell Session Ready.' }],
+        workLog: [],
+        scratchPadContent: '',
+        contextUsage: 0,
+        inputMode: agentId === 'terminal' ? 'terminal' : 'ai',
+        pid: spawnResult.pid, // Use real PID from spawned process
+        port: 3000 + Math.floor(Math.random() * 100),
+        tunnelActive: false,
+        changedFiles: [],
+        fileTree: [],
+        fileExplorerExpanded: [],
+        fileExplorerScrollPos: 0,
+        shellCwd: workingDir,
+        commandHistory: []
+      };
+      setSessions(prev => [...prev, newSession]);
+      setActiveSessionId(newId);
+    } catch (error) {
+      console.error('Failed to create session:', error);
+      // TODO: Show error to user
+    }
   };
 
   const deleteSession = (id: string, showConfirmation: (message: string, onConfirm: () => void) => void) => {

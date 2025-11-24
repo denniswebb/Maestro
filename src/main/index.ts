@@ -66,6 +66,17 @@ const groupsStore = new Store<GroupsData>({
   },
 });
 
+interface AgentConfigsData {
+  configs: Record<string, Record<string, any>>; // agentId -> config key-value pairs
+}
+
+const agentConfigsStore = new Store<AgentConfigsData>({
+  name: 'maestro-agent-configs',
+  defaults: {
+    configs: {},
+  },
+});
+
 let mainWindow: BrowserWindow | null = null;
 let processManager: ProcessManager | null = null;
 let webServer: WebServer | null = null;
@@ -217,14 +228,47 @@ function setupIpcHandlers() {
     args: string[];
   }) => {
     if (!processManager) throw new Error('Process manager not initialized');
+    if (!agentDetector) throw new Error('Agent detector not initialized');
+
+    // Get agent definition to access config options
+    const agent = await agentDetector.getAgent(config.toolType);
+    let finalArgs = [...config.args];
+
+    // Build additional args from agent configuration
+    if (agent && agent.configOptions) {
+      const agentConfig = agentConfigsStore.get('configs', {})[config.toolType] || {};
+
+      for (const option of agent.configOptions) {
+        if (option.argBuilder) {
+          // Get config value, fallback to default
+          const value = agentConfig[option.key] !== undefined
+            ? agentConfig[option.key]
+            : option.default;
+
+          // Build args from this config value
+          const additionalArgs = option.argBuilder(value);
+          finalArgs = [...finalArgs, ...additionalArgs];
+        }
+      }
+    }
+
     logger.info(`Spawning process: ${config.command}`, 'ProcessManager', {
       sessionId: config.sessionId,
       toolType: config.toolType,
       cwd: config.cwd,
-      command: config.command
+      command: config.command,
+      args: finalArgs
     });
-    const result = processManager.spawn(config);
-    logger.info(`Process spawned successfully`, 'ProcessManager', { sessionId: config.sessionId, pid: result.pid });
+
+    const result = processManager.spawn({
+      ...config,
+      args: finalArgs
+    });
+
+    logger.info(`Process spawned successfully`, 'ProcessManager', {
+      sessionId: config.sessionId,
+      pid: result.pid
+    });
     return result;
   });
 
@@ -312,6 +356,37 @@ function setupIpcHandlers() {
     if (!agentDetector) throw new Error('Agent detector not initialized');
     logger.debug(`Getting agent: ${agentId}`, 'AgentDetector');
     return agentDetector.getAgent(agentId);
+  });
+
+  // Agent configuration management
+  ipcMain.handle('agents:getConfig', async (_event, agentId: string) => {
+    const allConfigs = agentConfigsStore.get('configs', {});
+    return allConfigs[agentId] || {};
+  });
+
+  ipcMain.handle('agents:setConfig', async (_event, agentId: string, config: Record<string, any>) => {
+    const allConfigs = agentConfigsStore.get('configs', {});
+    allConfigs[agentId] = config;
+    agentConfigsStore.set('configs', allConfigs);
+    logger.info(`Updated config for agent: ${agentId}`, 'AgentConfig', config);
+    return true;
+  });
+
+  ipcMain.handle('agents:getConfigValue', async (_event, agentId: string, key: string) => {
+    const allConfigs = agentConfigsStore.get('configs', {});
+    const agentConfig = allConfigs[agentId] || {};
+    return agentConfig[key];
+  });
+
+  ipcMain.handle('agents:setConfigValue', async (_event, agentId: string, key: string, value: any) => {
+    const allConfigs = agentConfigsStore.get('configs', {});
+    if (!allConfigs[agentId]) {
+      allConfigs[agentId] = {};
+    }
+    allConfigs[agentId][key] = value;
+    agentConfigsStore.set('configs', allConfigs);
+    logger.debug(`Updated config ${key} for agent ${agentId}`, 'AgentConfig', { value });
+    return true;
   });
 
   // Folder selection dialog

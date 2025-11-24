@@ -1,13 +1,25 @@
 import { execFileNoThrow } from './utils/execFile';
 
+// Configuration option types for agent-specific settings
+export interface AgentConfigOption {
+  key: string; // Storage key
+  type: 'checkbox' | 'text' | 'number' | 'select';
+  label: string; // UI label
+  description: string; // Help text
+  default: any; // Default value
+  options?: string[]; // For select type
+  argBuilder?: (value: any) => string[]; // Converts config value to CLI args
+}
+
 export interface AgentConfig {
   id: string;
   name: string;
   binaryName: string;
   command: string;
-  args: string[];
+  args: string[]; // Base args always included
   available: boolean;
   path?: string;
+  configOptions?: AgentConfigOption[]; // Agent-specific configuration
 }
 
 const AGENT_DEFINITIONS: Omit<AgentConfig, 'available' | 'path'>[] = [
@@ -17,6 +29,16 @@ const AGENT_DEFINITIONS: Omit<AgentConfig, 'available' | 'path'>[] = [
     binaryName: 'claude',
     command: 'claude',
     args: [],
+    configOptions: [
+      {
+        key: 'yoloMode',
+        type: 'checkbox',
+        label: 'YOLO',
+        description: 'Skip permission prompts (runs with --dangerously-skip-permissions)',
+        default: false,
+        argBuilder: (enabled: boolean) => enabled ? ['--dangerously-skip-permissions'] : []
+      }
+    ]
   },
   {
     id: 'aider-gemini',
@@ -33,7 +55,7 @@ const AGENT_DEFINITIONS: Omit<AgentConfig, 'available' | 'path'>[] = [
     args: [],
   },
   {
-    id: 'cli',
+    id: 'terminal',
     name: 'CLI Terminal',
     binaryName: 'bash',
     command: 'bash',

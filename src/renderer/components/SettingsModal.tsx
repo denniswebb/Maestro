@@ -42,6 +42,7 @@ export function SettingsModal(props: SettingsModalProps) {
   const [fontsLoaded, setFontsLoaded] = useState(false);
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [loading, setLoading] = useState(true);
+  const [agentConfigs, setAgentConfigs] = useState<Record<string, Record<string, any>>>({});
   const [recordingId, setRecordingId] = useState<string | null>(null);
   const [shortcutsFilter, setShortcutsFilter] = useState('');
   const [testingLLM, setTestingLLM] = useState(false);
@@ -84,6 +85,14 @@ export function SettingsModal(props: SettingsModalProps) {
     try {
       const detectedAgents = await window.maestro.agents.detect();
       setAgents(detectedAgents);
+
+      // Load configurations for all agents
+      const configs: Record<string, Record<string, any>> = {};
+      for (const agent of detectedAgents) {
+        const config = await window.maestro.agents.getConfig(agent.id);
+        configs[agent.id] = config;
+      }
+      setAgentConfigs(configs);
     } catch (error) {
       console.error('Failed to load agents:', error);
     } finally {
@@ -458,6 +467,58 @@ export function SettingsModal(props: SettingsModalProps) {
                   </div>
                 )}
               </div>
+
+              {/* Agent-Specific Configuration */}
+              {!loading && agents.length > 0 && (() => {
+                const selectedAgent = agents.find(a => a.id === props.defaultAgent);
+                if (!selectedAgent || !selectedAgent.configOptions || selectedAgent.configOptions.length === 0) {
+                  return null;
+                }
+
+                return (
+                  <div>
+                    <label className="block text-xs font-bold opacity-70 uppercase mb-2">
+                      {selectedAgent.name} Configuration
+                    </label>
+                    <div className="space-y-3">
+                      {selectedAgent.configOptions.map((option: any) => (
+                        <div key={option.key}>
+                          {option.type === 'checkbox' && (
+                            <label className="flex items-center gap-3 p-3 rounded border cursor-pointer hover:bg-opacity-10"
+                                   style={{ borderColor: theme.colors.border, backgroundColor: theme.colors.bgMain }}>
+                              <input
+                                type="checkbox"
+                                checked={agentConfigs[selectedAgent.id]?.[option.key] ?? option.default}
+                                onChange={(e) => {
+                                  const newConfig = {
+                                    ...agentConfigs[selectedAgent.id],
+                                    [option.key]: e.target.checked
+                                  };
+                                  setAgentConfigs(prev => ({
+                                    ...prev,
+                                    [selectedAgent.id]: newConfig
+                                  }));
+                                  window.maestro.agents.setConfig(selectedAgent.id, newConfig);
+                                }}
+                                className="w-4 h-4"
+                                style={{ accentColor: theme.colors.accent }}
+                              />
+                              <div className="flex-1">
+                                <div className="font-medium" style={{ color: theme.colors.textMain }}>
+                                  {option.label}
+                                </div>
+                                <div className="text-xs opacity-50 mt-0.5" style={{ color: theme.colors.textDim }}>
+                                  {option.description}
+                                </div>
+                              </div>
+                            </label>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Font Family */}
               <div>

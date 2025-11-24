@@ -54,10 +54,14 @@ contextBridge.exposeInMainWorld('maestro', {
 
     // Event listeners
     onData: (callback: (sessionId: string, data: string) => void) => {
-      ipcRenderer.on('process:data', (_, sessionId, data) => callback(sessionId, data));
+      const handler = (_: any, sessionId: string, data: string) => callback(sessionId, data);
+      ipcRenderer.on('process:data', handler);
+      return () => ipcRenderer.removeListener('process:data', handler);
     },
     onExit: (callback: (sessionId: string, code: number) => void) => {
-      ipcRenderer.on('process:exit', (_, sessionId, code) => callback(sessionId, code));
+      const handler = (_: any, sessionId: string, code: number) => callback(sessionId, code);
+      ipcRenderer.on('process:exit', handler);
+      return () => ipcRenderer.removeListener('process:exit', handler);
     },
   },
 
@@ -83,6 +87,13 @@ contextBridge.exposeInMainWorld('maestro', {
   agents: {
     detect: () => ipcRenderer.invoke('agents:detect'),
     get: (agentId: string) => ipcRenderer.invoke('agents:get', agentId),
+    getConfig: (agentId: string) => ipcRenderer.invoke('agents:getConfig', agentId),
+    setConfig: (agentId: string, config: Record<string, any>) =>
+      ipcRenderer.invoke('agents:setConfig', agentId, config),
+    getConfigValue: (agentId: string, key: string) =>
+      ipcRenderer.invoke('agents:getConfigValue', agentId, key),
+    setConfigValue: (agentId: string, key: string, value: any) =>
+      ipcRenderer.invoke('agents:setConfigValue', agentId, key, value),
   },
 
   // Dialog API
@@ -139,8 +150,8 @@ export interface MaestroAPI {
     write: (sessionId: string, data: string) => Promise<boolean>;
     kill: (sessionId: string) => Promise<boolean>;
     resize: (sessionId: string, cols: number, rows: number) => Promise<boolean>;
-    onData: (callback: (sessionId: string, data: string) => void) => void;
-    onExit: (callback: (sessionId: string, code: number) => void) => void;
+    onData: (callback: (sessionId: string, data: string) => void) => () => void;
+    onExit: (callback: (sessionId: string, code: number) => void) => () => void;
   };
   git: {
     status: (cwd: string) => Promise<string>;
@@ -157,6 +168,10 @@ export interface MaestroAPI {
   agents: {
     detect: () => Promise<AgentConfig[]>;
     get: (agentId: string) => Promise<AgentConfig | null>;
+    getConfig: (agentId: string) => Promise<Record<string, any>>;
+    setConfig: (agentId: string, config: Record<string, any>) => Promise<boolean>;
+    getConfigValue: (agentId: string, key: string) => Promise<any>;
+    setConfigValue: (agentId: string, key: string, value: any) => Promise<boolean>;
   };
   dialog: {
     selectFolder: () => Promise<string | null>;
