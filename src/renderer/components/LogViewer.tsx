@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, Trash2, Download } from 'lucide-react';
+import { Search, X, Trash2, Download, ChevronRight, ChevronDown } from 'lucide-react';
 import type { Theme } from '../types';
 
 interface SystemLogEntry {
@@ -21,9 +21,22 @@ export function LogViewer({ theme, onClose }: LogViewerProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLevel, setSelectedLevel] = useState<'debug' | 'info' | 'warn' | 'error' | 'all'>('all');
+  const [expandedData, setExpandedData] = useState<Set<number>>(new Set());
   const logsEndRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const toggleDataExpanded = (index: number) => {
+    setExpandedData(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(index)) {
+        newSet.delete(index);
+      } else {
+        newSet.add(index);
+      }
+      return newSet;
+    });
+  };
 
   // Load logs on mount
   useEffect(() => {
@@ -312,12 +325,30 @@ export function LogViewer({ theme, onClose }: LogViewerProps) {
                     {log.message}
                   </div>
                   {log.data && (
-                    <pre
-                      className="text-xs mt-2 p-2 rounded overflow-x-auto font-mono"
-                      style={{ backgroundColor: theme.colors.bgMain, color: theme.colors.textDim }}
-                    >
-                      {JSON.stringify(log.data, null, 2)}
-                    </pre>
+                    <div className="mt-2">
+                      <button
+                        onClick={() => toggleDataExpanded(index)}
+                        className="flex items-center gap-1 text-xs px-2 py-1 rounded hover:bg-opacity-10 transition-colors"
+                        style={{ color: theme.colors.textDim, backgroundColor: theme.colors.bgMain }}
+                      >
+                        {expandedData.has(index) ? (
+                          <ChevronDown className="w-3 h-3" />
+                        ) : (
+                          <ChevronRight className="w-3 h-3" />
+                        )}
+                        <span className="font-mono">
+                          {expandedData.has(index) ? 'Hide details' : 'Show details'}
+                        </span>
+                      </button>
+                      {expandedData.has(index) && (
+                        <pre
+                          className="text-xs mt-1 p-2 rounded overflow-x-auto font-mono"
+                          style={{ backgroundColor: theme.colors.bgMain, color: theme.colors.textDim }}
+                        >
+                          {JSON.stringify(log.data, null, 2)}
+                        </pre>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

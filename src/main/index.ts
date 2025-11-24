@@ -86,12 +86,19 @@ function createWindow() {
     },
   });
 
+  logger.info('Browser window created', 'Window', {
+    size: '1400x900',
+    mode: process.env.NODE_ENV || 'production'
+  });
+
   // Load the app
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
+    logger.info('Loading development server', 'Window');
   } else {
     mainWindow.loadFile(path.join(__dirname, 'renderer/index.html'));
+    logger.info('Loading production build', 'Window');
     // Open DevTools in production if DEBUG env var is set
     if (process.env.DEBUG === 'true') {
       mainWindow.webContents.openDevTools();
@@ -99,30 +106,43 @@ function createWindow() {
   }
 
   mainWindow.on('closed', () => {
+    logger.info('Browser window closed', 'Window');
     mainWindow = null;
   });
 }
 
 app.whenReady().then(() => {
-  // Initialize core services
-  processManager = new ProcessManager();
-  webServer = new WebServer(8000);
-  agentDetector = new AgentDetector();
-
-  // Load logger settings
+  // Load logger settings first
   const logLevel = store.get('logLevel', 'info');
   logger.setLogLevel(logLevel);
 
+  logger.info('Maestro application starting', 'Startup', {
+    version: app.getVersion(),
+    platform: process.platform,
+    logLevel
+  });
+
+  // Initialize core services
+  logger.info('Initializing core services', 'Startup');
+  processManager = new ProcessManager();
+  webServer = new WebServer(8000);
+  agentDetector = new AgentDetector();
+  logger.info('Core services initialized', 'Startup');
+
   // Set up IPC handlers
+  logger.debug('Setting up IPC handlers', 'Startup');
   setupIpcHandlers();
 
   // Set up process event listeners
+  logger.debug('Setting up process event listeners', 'Startup');
   setupProcessListeners();
 
   // Create main window
+  logger.info('Creating main window', 'Startup');
   createWindow();
 
   // Start web server for remote access
+  logger.info('Starting web server on port 8000', 'WebServer');
   webServer.start();
 
   app.on('activate', () => {
@@ -139,24 +159,33 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  logger.info('Application shutting down', 'Shutdown');
   // Clean up all running processes
+  logger.info('Killing all running processes', 'Shutdown');
   processManager?.killAll();
+  logger.info('Stopping web server', 'Shutdown');
   webServer?.stop();
+  logger.info('Shutdown complete', 'Shutdown');
 });
 
 function setupIpcHandlers() {
   // Settings management
   ipcMain.handle('settings:get', async (_, key: string) => {
-    return store.get(key);
+    const value = store.get(key);
+    logger.debug(`Settings read: ${key}`, 'Settings', { key, value });
+    return value;
   });
 
   ipcMain.handle('settings:set', async (_, key: string, value: any) => {
     store.set(key, value);
+    logger.info(`Settings updated: ${key}`, 'Settings', { key, value });
     return true;
   });
 
   ipcMain.handle('settings:getAll', async () => {
-    return store.store;
+    const settings = store.store;
+    logger.debug('All settings retrieved', 'Settings', { count: Object.keys(settings).length });
+    return settings;
   });
 
   // Sessions persistence
@@ -188,16 +217,26 @@ function setupIpcHandlers() {
     args: string[];
   }) => {
     if (!processManager) throw new Error('Process manager not initialized');
-    return processManager.spawn(config);
+    logger.info(`Spawning process: ${config.command}`, 'ProcessManager', {
+      sessionId: config.sessionId,
+      toolType: config.toolType,
+      cwd: config.cwd,
+      command: config.command
+    });
+    const result = processManager.spawn(config);
+    logger.info(`Process spawned successfully`, 'ProcessManager', { sessionId: config.sessionId, pid: result.pid });
+    return result;
   });
 
   ipcMain.handle('process:write', async (_, sessionId: string, data: string) => {
     if (!processManager) throw new Error('Process manager not initialized');
+    logger.debug(`Writing to process: ${sessionId}`, 'ProcessManager', { sessionId, dataLength: data.length });
     return processManager.write(sessionId, data);
   });
 
   ipcMain.handle('process:kill', async (_, sessionId: string) => {
     if (!processManager) throw new Error('Process manager not initialized');
+    logger.info(`Killing process: ${sessionId}`, 'ProcessManager', { sessionId });
     return processManager.kill(sessionId);
   });
 
@@ -261,11 +300,17 @@ function setupIpcHandlers() {
   // Agent management
   ipcMain.handle('agents:detect', async () => {
     if (!agentDetector) throw new Error('Agent detector not initialized');
-    return agentDetector.detectAgents();
+    logger.info('Detecting available agents', 'AgentDetector');
+    const agents = await agentDetector.detectAgents();
+    logger.info(`Detected ${agents.length} agents`, 'AgentDetector', {
+      agents: agents.map(a => a.id)
+    });
+    return agents;
   });
 
   ipcMain.handle('agents:get', async (_event, agentId: string) => {
     if (!agentDetector) throw new Error('Agent detector not initialized');
+    logger.debug(`Getting agent: ${agentId}`, 'AgentDetector');
     return agentDetector.getAgent(agentId);
   });
 
