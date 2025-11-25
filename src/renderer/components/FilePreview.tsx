@@ -5,6 +5,8 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { FileCode, X, Copy, FileText, Eye } from 'lucide-react';
 import { visit } from 'unist-util-visit';
+import { useLayerStack } from '../hooks/useLayerStack';
+import { MODAL_PRIORITIES } from '../constants/modalPriorities';
 
 interface FilePreviewProps {
   file: { name: string; content: string; path: string } | null;
@@ -112,6 +114,9 @@ export function FilePreview({ file, onClose, theme, markdownRawMode, setMarkdown
   const codeContainerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const layerIdRef = useRef<string>();
+
+  const { registerLayer, unregisterLayer, updateLayerHandler } = useLayerStack();
 
   if (!file) return null;
 
@@ -126,6 +131,47 @@ export function FilePreview({ file, onClose, theme, markdownRawMode, setMarkdown
   useEffect(() => {
     containerRef.current?.focus();
   }, []); // Empty dependency array = only run on mount
+
+  // Register layer on mount
+  useEffect(() => {
+    layerIdRef.current = registerLayer({
+      type: 'overlay',
+      priority: MODAL_PRIORITIES.FILE_PREVIEW,
+      blocksLowerLayers: true,
+      capturesFocus: true,
+      focusTrap: 'lenient',
+      ariaLabel: 'File Preview',
+      onEscape: () => {
+        if (searchOpen) {
+          setSearchOpen(false);
+          setSearchQuery('');
+        } else {
+          onClose();
+        }
+      },
+      allowClickOutside: false
+    });
+
+    return () => {
+      if (layerIdRef.current) {
+        unregisterLayer(layerIdRef.current);
+      }
+    };
+  }, [registerLayer, unregisterLayer]);
+
+  // Update handler when dependencies change
+  useEffect(() => {
+    if (layerIdRef.current) {
+      updateLayerHandler(layerIdRef.current, () => {
+        if (searchOpen) {
+          setSearchOpen(false);
+          setSearchQuery('');
+        } else {
+          onClose();
+        }
+      });
+    }
+  }, [searchOpen, onClose, updateLayerHandler]);
 
   // Keep search input focused when search is open
   useEffect(() => {
@@ -298,16 +344,6 @@ export function FilePreview({ file, onClose, theme, markdownRawMode, setMarkdown
         // Arrow Down: Scroll down
         container.scrollTop += 40;
       }
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      if (searchOpen) {
-        setSearchOpen(false);
-        setSearchQuery('');
-      } else {
-        onClose();
-      }
-    }
   };
 
   return (
