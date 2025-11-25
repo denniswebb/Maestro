@@ -857,7 +857,7 @@ export default function MaestroConsole() {
         // Get the currently selected session
         const currentSession = sortedSessions[selectedSidebarIndex];
 
-        // ArrowLeft: Close the current group and jump to next visible session
+        // ArrowLeft: Close the current group and jump to nearest visible session
         if (e.key === 'ArrowLeft' && currentSession?.groupId) {
           const currentGroup = groups.find(g => g.id === currentSession.groupId);
           if (currentGroup && !currentGroup.collapsed) {
@@ -866,17 +866,38 @@ export default function MaestroConsole() {
               g.id === currentGroup.id ? { ...g, collapsed: true } : g
             ));
 
-            // Find the next visible session after this group collapses
-            // Look for sessions that aren't in this group
-            const nextVisible = sortedSessions.find(s => {
-              if (s.groupId === currentGroup.id) return false; // Skip sessions in the collapsed group
-              if (!s.groupId) return true; // Ungrouped sessions are visible
+            // Helper to check if a session will be visible after collapse
+            const willBeVisible = (s: Session) => {
+              if (s.groupId === currentGroup.id) return false; // In the group being collapsed
+              if (!s.groupId) return true; // Ungrouped sessions are always visible
               const g = groups.find(grp => grp.id === s.groupId);
-              return g && !g.collapsed && g.id !== currentGroup.id;
-            });
+              return g && !g.collapsed; // In an expanded group
+            };
+
+            // Find current position in sortedSessions
+            const currentIndex = sortedSessions.findIndex(s => s.id === currentSession.id);
+
+            // First, look BELOW (after) the current position
+            let nextVisible: Session | undefined;
+            for (let i = currentIndex + 1; i < sortedSessions.length; i++) {
+              if (willBeVisible(sortedSessions[i])) {
+                nextVisible = sortedSessions[i];
+                break;
+              }
+            }
+
+            // If nothing below, look ABOVE (before) the current position
+            if (!nextVisible) {
+              for (let i = currentIndex - 1; i >= 0; i--) {
+                if (willBeVisible(sortedSessions[i])) {
+                  nextVisible = sortedSessions[i];
+                  break;
+                }
+              }
+            }
 
             if (nextVisible) {
-              const newIndex = sortedSessions.findIndex(s => s.id === nextVisible.id);
+              const newIndex = sortedSessions.findIndex(s => s.id === nextVisible!.id);
               setSelectedSidebarIndex(newIndex);
               setActiveSessionId(nextVisible.id);
             }
