@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { Bot, User, ExternalLink } from 'lucide-react';
 import type { Session, Theme, HistoryEntry, HistoryEntryType } from '../types';
 import { HistoryDetailModal } from './HistoryDetailModal';
@@ -9,7 +9,11 @@ interface HistoryPanelProps {
   onJumpToClaudeSession?: (claudeSessionId: string) => void;
 }
 
-export function HistoryPanel({ session, theme, onJumpToClaudeSession }: HistoryPanelProps) {
+export interface HistoryPanelHandle {
+  focus: () => void;
+}
+
+export const HistoryPanel = forwardRef<HistoryPanelHandle, HistoryPanelProps>(function HistoryPanel({ session, theme, onJumpToClaudeSession }, ref) {
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
   const [activeFilters, setActiveFilters] = useState<Set<HistoryEntryType>>(new Set(['AUTO', 'USER']));
   const [isLoading, setIsLoading] = useState(true);
@@ -18,6 +22,17 @@ export function HistoryPanel({ session, theme, onJumpToClaudeSession }: HistoryP
 
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Record<number, HTMLDivElement | null>>({});
+
+  // Expose focus method to parent
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      listRef.current?.focus();
+      // Select first item if none selected
+      if (selectedIndex < 0 && historyEntries.length > 0) {
+        setSelectedIndex(0);
+      }
+    }
+  }), [selectedIndex, historyEntries.length]);
 
   // Load history entries on mount and when session changes
   useEffect(() => {
@@ -264,10 +279,18 @@ export function HistoryPanel({ session, theme, onJumpToClaudeSession }: HistoryP
                   {entry.summary || 'No summary available'}
                 </p>
 
-                {/* Expand hint */}
+                {/* Full response preview */}
                 {entry.fullResponse && (
-                  <p className="text-[10px] mt-1 opacity-50" style={{ color: theme.colors.textDim }}>
-                    Click or press Enter to view full response
+                  <p
+                    className="text-[10px] mt-1.5 opacity-60 leading-relaxed overflow-hidden"
+                    style={{
+                      color: theme.colors.textDim,
+                      display: '-webkit-box',
+                      WebkitLineClamp: 1,
+                      WebkitBoxOrient: 'vertical' as const
+                    }}
+                  >
+                    {entry.fullResponse.slice(0, 200)}
                   </p>
                 )}
               </div>
@@ -287,4 +310,4 @@ export function HistoryPanel({ session, theme, onJumpToClaudeSession }: HistoryP
       )}
     </div>
   );
-}
+});
