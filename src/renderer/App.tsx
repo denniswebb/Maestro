@@ -417,6 +417,9 @@ export default function MaestroConsole() {
         isFromAi = false;
       }
 
+      // Filter out empty stdout for terminal commands (AI output should pass through)
+      if (!isFromAi && !data.trim()) return;
+
       setSessions(prev => prev.map(s => {
         if (s.id !== actualSessionId) return s;
 
@@ -593,6 +596,9 @@ export default function MaestroConsole() {
     const unsubscribeStderr = window.maestro.process.onStderr((sessionId: string, data: string) => {
       // runCommand uses plain session ID (no suffix)
       const actualSessionId = sessionId;
+
+      // Filter out empty stderr (only whitespace)
+      if (!data.trim()) return;
 
       setSessions(prev => prev.map(s => {
         if (s.id !== actualSessionId) return s;

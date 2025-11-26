@@ -686,13 +686,13 @@ export const TerminalOutput = forwardRef<HTMLDivElement, TerminalOutputProps>((p
           {log.source === 'stderr' && (
             <div className="mb-2">
               <span
-                className="px-2 py-0.5 rounded text-xs font-semibold"
+                className="px-2 py-1 rounded text-xs font-bold uppercase tracking-wide"
                 style={{
-                  backgroundColor: `color-mix(in srgb, ${theme.colors.error} 20%, ${theme.colors.bgActivity})`,
-                  color: theme.colors.error
+                  backgroundColor: theme.colors.error,
+                  color: '#fff'
                 }}
               >
-                stderr
+                STDERR
               </span>
             </div>
           )}
