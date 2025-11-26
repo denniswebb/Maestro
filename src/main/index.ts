@@ -1336,11 +1336,17 @@ function setupIpcHandlers() {
   ipcMain.handle('notification:speak', async (_event, text: string, command?: string) => {
     try {
       const { spawn } = await import('child_process');
-      const ttsCommand = command || 'say'; // Default to macOS 'say' command
+      const fullCommand = command || 'say'; // Default to macOS 'say' command
+
+      // Parse command string to extract command and arguments
+      // Handles paths with spaces if quoted, and preserves arguments
+      const parts = fullCommand.match(/(?:[^\s"]+|"[^"]*")+/g) || [fullCommand];
+      const ttsCommand = parts[0].replace(/^"|"$/g, ''); // Remove surrounding quotes if present
+      const ttsArgs = parts.slice(1).map(arg => arg.replace(/^"|"$/g, '')); // Remove quotes from args
 
       // Spawn the TTS process without waiting for it to complete (non-blocking)
       // This runs in the background and won't block the main process
-      const child = spawn(ttsCommand, [], {
+      const child = spawn(ttsCommand, ttsArgs, {
         stdio: ['pipe', 'ignore', 'ignore'],
         detached: true, // Run independently
       });
@@ -1352,7 +1358,7 @@ function setupIpcHandlers() {
       // Unref to allow the parent to exit independently
       child.unref();
 
-      logger.debug('Started audio feedback', 'Notification', { command: ttsCommand, textLength: text.length });
+      logger.debug('Started audio feedback', 'Notification', { command: ttsCommand, args: ttsArgs, textLength: text.length });
       return { success: true };
     } catch (error) {
       logger.error('Error starting audio feedback', 'Notification', error);
