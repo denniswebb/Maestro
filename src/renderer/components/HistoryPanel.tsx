@@ -19,9 +19,12 @@ export const HistoryPanel = forwardRef<HistoryPanelHandle, HistoryPanelProps>(fu
   const [isLoading, setIsLoading] = useState(true);
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
   const [detailModalEntry, setDetailModalEntry] = useState<HistoryEntry | null>(null);
+  const [searchFilter, setSearchFilter] = useState('');
+  const [searchFilterOpen, setSearchFilterOpen] = useState(false);
 
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Expose focus method to parent
   useImperativeHandle(ref, () => ({
@@ -67,13 +70,27 @@ export const HistoryPanel = forwardRef<HistoryPanelHandle, HistoryPanelProps>(fu
     });
   };
 
-  // Filter entries based on active filters
-  const filteredEntries = historyEntries.filter(entry => entry && entry.type && activeFilters.has(entry.type));
+  // Filter entries based on active filters and search text
+  const filteredEntries = historyEntries.filter(entry => {
+    if (!entry || !entry.type) return false;
+    if (!activeFilters.has(entry.type)) return false;
+
+    // Apply text search filter
+    if (searchFilter) {
+      const searchLower = searchFilter.toLowerCase();
+      const summaryMatch = entry.summary?.toLowerCase().includes(searchLower);
+      const responseMatch = entry.fullResponse?.toLowerCase().includes(searchLower);
+      const promptMatch = entry.prompt?.toLowerCase().includes(searchLower);
+      if (!summaryMatch && !responseMatch && !promptMatch) return false;
+    }
+
+    return true;
+  });
 
   // Reset selected index when filters change
   useEffect(() => {
     setSelectedIndex(-1);
-  }, [activeFilters]);
+  }, [activeFilters, searchFilter]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -87,6 +104,15 @@ export const HistoryPanel = forwardRef<HistoryPanelHandle, HistoryPanelProps>(fu
 
   // Keyboard navigation handler
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // Open search filter with / key
+    if (e.key === '/' && !searchFilterOpen) {
+      e.preventDefault();
+      setSearchFilterOpen(true);
+      // Focus the search input after state update
+      setTimeout(() => searchInputRef.current?.focus(), 0);
+      return;
+    }
+
     if (filteredEntries.length === 0) return;
 
     switch (e.key) {
@@ -117,7 +143,7 @@ export const HistoryPanel = forwardRef<HistoryPanelHandle, HistoryPanelProps>(fu
         }
         break;
     }
-  }, [filteredEntries, selectedIndex, detailModalEntry]);
+  }, [filteredEntries, selectedIndex, detailModalEntry, searchFilterOpen]);
 
   // Open detail modal for an entry
   const openDetailModal = useCallback((entry: HistoryEntry, index: number) => {
@@ -187,6 +213,42 @@ export const HistoryPanel = forwardRef<HistoryPanelHandle, HistoryPanelProps>(fu
         })}
       </div>
 
+      {/* Search Filter */}
+      {searchFilterOpen && (
+        <div className="mb-3">
+          <input
+            ref={searchInputRef}
+            autoFocus
+            type="text"
+            placeholder="Filter history..."
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setSearchFilterOpen(false);
+                setSearchFilter('');
+                // Return focus to the list
+                listRef.current?.focus();
+              } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                // Move focus to list and select first item
+                listRef.current?.focus();
+                if (filteredEntries.length > 0) {
+                  setSelectedIndex(0);
+                }
+              }
+            }}
+            className="w-full px-3 py-2 rounded border bg-transparent outline-none text-sm"
+            style={{ borderColor: theme.colors.accent, color: theme.colors.textMain }}
+          />
+          {searchFilter && (
+            <div className="text-[10px] mt-1 text-right" style={{ color: theme.colors.textDim }}>
+              {filteredEntries.length} result{filteredEntries.length !== 1 ? 's' : ''}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* History List */}
       <div
         ref={listRef}
@@ -200,7 +262,9 @@ export const HistoryPanel = forwardRef<HistoryPanelHandle, HistoryPanelProps>(fu
           <div className="text-center py-8 text-xs opacity-50">
             {historyEntries.length === 0
               ? 'No history yet. Run batch tasks or use /synopsis to add entries.'
-              : 'No entries match the selected filters.'}
+              : searchFilter
+                ? `No entries match "${searchFilter}"`
+                : 'No entries match the selected filters.'}
           </div>
         ) : (
           filteredEntries.map((entry, index) => {

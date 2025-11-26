@@ -738,6 +738,27 @@ export default function MaestroConsole() {
   addToastRef.current = addToast;
   sessionsRef.current = sessions;
 
+  // Expose addToast to window for debugging/testing
+  useEffect(() => {
+    (window as any).__maestroDebug = {
+      addToast: (type: 'success' | 'info' | 'warning' | 'error', title: string, message: string) => {
+        addToastRef.current({ type, title, message });
+      },
+      testToast: () => {
+        addToastRef.current({
+          type: 'success',
+          title: 'Test Notification',
+          message: 'This is a test toast notification from the console!',
+          group: 'Debug',
+          project: 'Test Project',
+        });
+      },
+    };
+    return () => {
+      delete (window as any).__maestroDebug;
+    };
+  }, []);
+
   // Keyboard navigation state
   const [selectedSidebarIndex, setSelectedSidebarIndex] = useState(0);
   const activeSession = sessions.find(s => s.id === activeSessionId) || sessions[0] || null;
@@ -2150,7 +2171,8 @@ export default function MaestroConsole() {
 
   // Process a queued message (called from onExit when queue has items)
   const processQueuedMessage = async (sessionId: string, entry: LogEntry) => {
-    const session = sessions.find(s => s.id === sessionId);
+    // Use sessionsRef.current to get the latest session state (avoids stale closure)
+    const session = sessionsRef.current.find(s => s.id === sessionId);
     if (!session) {
       console.error('[processQueuedMessage] Session not found:', sessionId);
       return;
