@@ -18,14 +18,18 @@
 
 import React from 'react';
 import MobileApp from './App';
-import { SessionPillBar, type SessionPillBarProps } from './SessionPillBar';
+import { SessionPillBar, type SessionPillBarProps, ALL_SESSIONS_THRESHOLD } from './SessionPillBar';
+import { AllSessionsView, type AllSessionsViewProps } from './AllSessionsView';
 
 // Re-export the main app component as both default and named
 export { MobileApp };
 export default MobileApp;
 
 // Re-export session pill bar component
-export { SessionPillBar, type SessionPillBarProps };
+export { SessionPillBar, type SessionPillBarProps, ALL_SESSIONS_THRESHOLD };
+
+// Re-export All Sessions view component
+export { AllSessionsView, type AllSessionsViewProps };
 
 /**
  * Mobile-specific configuration options

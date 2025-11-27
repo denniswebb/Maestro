@@ -16,6 +16,7 @@ import { usePullToRefresh } from '../hooks/usePullToRefresh';
 import { useOfflineStatus } from '../main';
 import { triggerHaptic, HAPTIC_PATTERNS } from './index';
 import { SessionPillBar } from './SessionPillBar';
+import { AllSessionsView } from './AllSessionsView';
 import type { Session } from '../hooks/useSessions';
 
 /**
@@ -132,6 +133,7 @@ export default function MobileApp() {
   const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [showAllSessions, setShowAllSessions] = useState(false);
 
   const { state: connectionState, connect, send, error, reconnectAttempts } = useWebSocket({
     autoReconnect: true,
@@ -222,6 +224,17 @@ export default function MobileApp() {
   const handleSelectSession = useCallback((sessionId: string) => {
     setActiveSessionId(sessionId);
     triggerHaptic(HAPTIC_PATTERNS.tap);
+  }, []);
+
+  // Handle opening All Sessions view
+  const handleOpenAllSessions = useCallback(() => {
+    setShowAllSessions(true);
+    triggerHaptic(HAPTIC_PATTERNS.tap);
+  }, []);
+
+  // Handle closing All Sessions view
+  const handleCloseAllSessions = useCallback(() => {
+    setShowAllSessions(false);
   }, []);
 
   // Determine content based on connection state
@@ -368,6 +381,17 @@ export default function MobileApp() {
           sessions={sessions}
           activeSessionId={activeSessionId}
           onSelectSession={handleSelectSession}
+          onOpenAllSessions={handleOpenAllSessions}
+        />
+      )}
+
+      {/* All Sessions view - full-screen modal with larger session cards */}
+      {showAllSessions && (
+        <AllSessionsView
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSelectSession={handleSelectSession}
+          onClose={handleCloseAllSessions}
         />
       )}
 
