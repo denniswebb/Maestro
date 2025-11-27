@@ -109,3 +109,15 @@ export type {
   UseSwipeGesturesOptions,
   UseSwipeGesturesReturn,
 } from './useSwipeGestures';
+
+export {
+  useOfflineQueue,
+  default as useOfflineQueueDefault,
+} from './useOfflineQueue';
+
+export type {
+  QueuedCommand,
+  QueueStatus,
+  UseOfflineQueueOptions,
+  UseOfflineQueueReturn,
+} from './useOfflineQueue';

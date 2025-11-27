@@ -13,6 +13,7 @@ import { useWebSocket, type WebSocketState } from '../hooks/useWebSocket';
 import { useCommandHistory } from '../hooks/useCommandHistory';
 import { useNotifications } from '../hooks/useNotifications';
 import { useUnreadBadge } from '../hooks/useUnreadBadge';
+import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { Badge, type BadgeVariant } from '../components/Badge';
 import { PullToRefreshIndicator } from '../components/PullToRefresh';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
@@ -25,6 +26,7 @@ import { CommandHistoryDrawer } from './CommandHistoryDrawer';
 import { RecentCommandChips } from './RecentCommandChips';
 import { SessionStatusBanner } from './SessionStatusBanner';
 import { ResponseViewer, type ResponseItem } from './ResponseViewer';
+import { OfflineQueueBanner } from './OfflineQueueBanner';
 import type { Session, LastResponsePreview } from '../hooks/useSessions';
 
 /**
@@ -188,6 +190,9 @@ export default function MobileApp() {
   // Track previous session states for detecting busy -> idle transitions
   const previousSessionStatesRef = useRef<Map<string, string>>(new Map());
 
+  // Reference to send function for offline queue (will be set after useWebSocket)
+  const sendRef = useRef<((sessionId: string, command: string) => boolean) | null>(null);
+
   /**
    * Get the first line of a response for notification display
    * Strips markdown/code markers and truncates to reasonable length
@@ -343,6 +348,56 @@ export default function MobileApp() {
     connect();
   }, [connect]);
 
+  // Update sendRef after WebSocket is initialized
+  useEffect(() => {
+    sendRef.current = (sessionId: string, command: string) => {
+      return send({
+        type: 'send_command',
+        sessionId,
+        command,
+      });
+    };
+  }, [send]);
+
+  // Determine if we're actually connected
+  const isActuallyConnected = !isOffline && (connectionState === 'connected' || connectionState === 'authenticated');
+
+  // Offline queue hook - stores commands typed while offline and sends when reconnected
+  const {
+    queue: offlineQueue,
+    queueLength: offlineQueueLength,
+    status: offlineQueueStatus,
+    queueCommand,
+    removeCommand: removeQueuedCommand,
+    clearQueue: clearOfflineQueue,
+    processQueue: processOfflineQueue,
+  } = useOfflineQueue({
+    isOnline: !isOffline,
+    isConnected: isActuallyConnected,
+    sendCommand: (sessionId, command) => {
+      if (sendRef.current) {
+        return sendRef.current(sessionId, command);
+      }
+      return false;
+    },
+    onCommandSent: (cmd) => {
+      console.log('[Mobile] Queued command sent:', cmd.command.substring(0, 50));
+      triggerHaptic(HAPTIC_PATTERNS.success);
+    },
+    onCommandFailed: (cmd, error) => {
+      console.error('[Mobile] Queued command failed:', cmd.command.substring(0, 50), error);
+    },
+    onProcessingStart: () => {
+      console.log('[Mobile] Processing offline queue...');
+    },
+    onProcessingComplete: (successCount, failCount) => {
+      console.log('[Mobile] Offline queue processed. Success:', successCount, 'Failed:', failCount);
+      if (successCount > 0) {
+        triggerHaptic(HAPTIC_PATTERNS.success);
+      }
+    },
+  });
+
   // Handle refresh - request updated session list
   const handleRefresh = useCallback(async () => {
     console.log('[Mobile] Pull-to-refresh triggered');
@@ -403,8 +458,9 @@ export default function MobileApp() {
   const handleCommandSubmit = useCallback((command: string) => {
     if (!activeSessionId) return;
 
-    // Get the current input mode for history tracking
-    const currentMode = (activeSession?.inputMode as InputMode) || 'ai';
+    // Find the active session to get input mode
+    const session = sessions.find(s => s.id === activeSessionId);
+    const currentMode = (session?.inputMode as InputMode) || 'ai';
 
     // Provide haptic feedback on send
     triggerHaptic(HAPTIC_PATTERNS.send);
@@ -412,18 +468,29 @@ export default function MobileApp() {
     // Add to command history
     addToHistory(command, activeSessionId, currentMode);
 
-    // Send the command to the active session
-    send({
-      type: 'send_command',
-      sessionId: activeSessionId,
-      command,
-    });
+    // If offline or not connected, queue the command for later
+    if (isOffline || !isActuallyConnected) {
+      const queued = queueCommand(activeSessionId, command, currentMode);
+      if (queued) {
+        console.log('[Mobile] Command queued for later:', command.substring(0, 50));
+        // Provide different haptic feedback for queued commands
+        triggerHaptic(HAPTIC_PATTERNS.tap);
+      } else {
+        console.warn('[Mobile] Failed to queue command - queue may be full');
+      }
+    } else {
+      // Send the command to the active session immediately
+      send({
+        type: 'send_command',
+        sessionId: activeSessionId,
+        command,
+      });
+      console.log('[Mobile] Command sent:', command, 'to session:', activeSessionId);
+    }
 
     // Clear the input
     setCommandInput('');
-
-    console.log('[Mobile] Command sent:', command, 'to session:', activeSessionId);
-  }, [activeSessionId, activeSession?.inputMode, send, addToHistory]);
+  }, [activeSessionId, sessions, send, addToHistory, isOffline, isActuallyConnected, queueCommand]);
 
   // Handle command input change
   const handleCommandChange = useCallback((value: string) => {
@@ -733,6 +800,19 @@ export default function MobileApp() {
         <SessionStatusBanner
           session={activeSession}
           onExpandResponse={handleExpandResponse}
+        />
+      )}
+
+      {/* Offline queue banner - shown when there are queued commands */}
+      {offlineQueueLength > 0 && (
+        <OfflineQueueBanner
+          queue={offlineQueue}
+          status={offlineQueueStatus}
+          onClearQueue={clearOfflineQueue}
+          onProcessQueue={processOfflineQueue}
+          onRemoveCommand={removeQueuedCommand}
+          isOffline={isOffline}
+          isConnected={isActuallyConnected}
         />
       )}
 
