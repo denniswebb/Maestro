@@ -1,8 +1,9 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { WebSocket } from 'ws';
+import crypto from 'crypto';
 
 // Types for web client messages
 interface WebClientMessage {
@@ -15,6 +16,13 @@ interface WebClient {
   socket: WebSocket;
   id: string;
   connectedAt: number;
+  authenticated: boolean;
+}
+
+// Authentication configuration
+export interface WebAuthConfig {
+  enabled: boolean;
+  token: string | null;
 }
 
 /**
@@ -45,6 +53,7 @@ export class WebServer {
   private isRunning: boolean = false;
   private webClients: Map<string, WebClient> = new Map();
   private clientIdCounter: number = 0;
+  private authConfig: WebAuthConfig = { enabled: false, token: null };
 
   constructor(port: number = 8000) {
     this.port = port;
@@ -57,6 +66,77 @@ export class WebServer {
     this.setupMiddleware();
     this.setupRoutes();
   }
+
+  /**
+   * Set the authentication configuration
+   */
+  setAuthConfig(config: WebAuthConfig) {
+    this.authConfig = config;
+    console.log(`Web server auth ${config.enabled ? 'enabled' : 'disabled'}`);
+  }
+
+  /**
+   * Get the current authentication configuration
+   */
+  getAuthConfig(): WebAuthConfig {
+    return { ...this.authConfig };
+  }
+
+  /**
+   * Generate a new random authentication token
+   */
+  static generateToken(): string {
+    // Generate a 6-character alphanumeric PIN (easy to type on mobile)
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Exclude confusing chars like 0/O, 1/I/L
+    let token = '';
+    const bytes = crypto.randomBytes(6);
+    for (let i = 0; i < 6; i++) {
+      token += chars[bytes[i] % chars.length];
+    }
+    return token;
+  }
+
+  /**
+   * Validate an authentication token
+   */
+  validateToken(token: string): boolean {
+    if (!this.authConfig.enabled || !this.authConfig.token) {
+      return true; // Auth disabled, all tokens valid
+    }
+    return token.toUpperCase() === this.authConfig.token.toUpperCase();
+  }
+
+  /**
+   * Authentication hook for protected REST API routes
+   * Used as a preHandler for routes that require authentication
+   *
+   * Usage: this.server.get('/protected', { preHandler: this.authenticateRequest.bind(this) }, handler)
+   */
+  authenticateRequest = async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!this.authConfig.enabled || !this.authConfig.token) {
+      return; // Auth disabled, allow all
+    }
+
+    // Check for token in Authorization header (Bearer token) or X-Auth-Token header
+    const authHeader = request.headers.authorization;
+    const xAuthToken = request.headers['x-auth-token'] as string | undefined;
+
+    let token: string | null = null;
+
+    if (authHeader?.startsWith('Bearer ')) {
+      token = authHeader.slice(7);
+    } else if (xAuthToken) {
+      token = xAuthToken;
+    }
+
+    if (!token || !this.validateToken(token)) {
+      reply.code(401).send({
+        error: 'Unauthorized',
+        message: 'Valid authentication token required. Provide token via Authorization header (Bearer <token>) or X-Auth-Token header.'
+      });
+      return reply;
+    }
+  };
 
   private async setupMiddleware() {
     // Enable CORS for web access
@@ -199,29 +279,84 @@ export class WebServer {
 
     // WebSocket endpoint for web interface clients
     // This provides real-time updates for session state, theme changes, and log streaming
-    this.server.get('/ws/web', { websocket: true }, (connection) => {
+    // Authentication: If auth is enabled, client must send { type: 'auth', token: '<token>' } first
+    this.server.get('/ws/web', { websocket: true }, (connection, request) => {
       const clientId = `web-client-${++this.clientIdCounter}`;
+
+      // Check if auth is required
+      const authRequired = this.authConfig.enabled && this.authConfig.token;
+
+      // Check for token in query string (allows direct connection with ?token=XXX)
+      const url = new URL(request.url || '', `http://${request.headers.host || 'localhost'}`);
+      const queryToken = url.searchParams.get('token');
+      const initiallyAuthenticated = queryToken ? this.validateToken(queryToken) : !authRequired;
+
       const client: WebClient = {
         socket: connection.socket,
         id: clientId,
         connectedAt: Date.now(),
+        authenticated: initiallyAuthenticated,
       };
 
       this.webClients.set(clientId, client);
-      console.log(`Web client connected: ${clientId} (total: ${this.webClients.size})`);
+      console.log(`Web client connected: ${clientId} (authenticated: ${client.authenticated}, total: ${this.webClients.size})`);
 
-      // Send connection confirmation with client ID
-      connection.socket.send(JSON.stringify({
-        type: 'connected',
-        clientId,
-        message: 'Connected to Maestro Web Interface',
-        timestamp: Date.now(),
-      }));
+      if (client.authenticated) {
+        // Send connection confirmation with client ID
+        connection.socket.send(JSON.stringify({
+          type: 'connected',
+          clientId,
+          message: 'Connected to Maestro Web Interface',
+          authenticated: true,
+          timestamp: Date.now(),
+        }));
+      } else {
+        // Send auth required message
+        connection.socket.send(JSON.stringify({
+          type: 'auth_required',
+          clientId,
+          message: 'Authentication required. Send { type: "auth", token: "<token>" } to authenticate.',
+          timestamp: Date.now(),
+        }));
+      }
 
       // Handle incoming messages from web clients
       connection.socket.on('message', (message) => {
         try {
           const data = JSON.parse(message.toString()) as WebClientMessage;
+
+          // Handle authentication message
+          if (data.type === 'auth') {
+            const token = data.token as string;
+            if (this.validateToken(token || '')) {
+              client.authenticated = true;
+              connection.socket.send(JSON.stringify({
+                type: 'auth_success',
+                clientId,
+                message: 'Authentication successful',
+                timestamp: Date.now(),
+              }));
+              console.log(`Web client authenticated: ${clientId}`);
+            } else {
+              connection.socket.send(JSON.stringify({
+                type: 'auth_failed',
+                message: 'Invalid authentication token',
+                timestamp: Date.now(),
+              }));
+              console.log(`Web client auth failed: ${clientId}`);
+            }
+            return;
+          }
+
+          // Reject messages from unauthenticated clients (except auth messages)
+          if (!client.authenticated) {
+            connection.socket.send(JSON.stringify({
+              type: 'error',
+              message: 'Not authenticated. Send { type: "auth", token: "<token>" } first.',
+            }));
+            return;
+          }
+
           this.handleWebClientMessage(clientId, data);
         } catch {
           // Send error for invalid JSON
@@ -243,6 +378,33 @@ export class WebServer {
         console.error(`Web client error (${clientId}):`, error);
         this.webClients.delete(clientId);
       });
+    });
+
+    // Authentication status endpoint - allows checking if auth is enabled
+    this.server.get('/web/api/auth/status', async () => {
+      return {
+        enabled: this.authConfig.enabled,
+        timestamp: Date.now(),
+      };
+    });
+
+    // Authentication verification endpoint - checks if a token is valid
+    this.server.post('/web/api/auth/verify', async (request) => {
+      const body = request.body as { token?: string } | undefined;
+      const token = body?.token;
+
+      if (!token) {
+        return {
+          valid: false,
+          message: 'No token provided',
+        };
+      }
+
+      const valid = this.validateToken(token);
+      return {
+        valid,
+        message: valid ? 'Token is valid' : 'Invalid token',
+      };
     });
   }
 

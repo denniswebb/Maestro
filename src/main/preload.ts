@@ -133,6 +133,12 @@ contextBridge.exposeInMainWorld('maestro', {
   // Web Server API
   webserver: {
     getUrl: () => ipcRenderer.invoke('webserver:getUrl'),
+    // Authentication management
+    getAuthConfig: () => ipcRenderer.invoke('webserver:getAuthConfig'),
+    setAuthEnabled: (enabled: boolean) => ipcRenderer.invoke('webserver:setAuthEnabled', enabled),
+    generateNewToken: () => ipcRenderer.invoke('webserver:generateNewToken'),
+    setAuthToken: (token: string | null) => ipcRenderer.invoke('webserver:setAuthToken', token),
+    getConnectedClients: () => ipcRenderer.invoke('webserver:getConnectedClients'),
   },
 
   // Tunnel API - per-session local web server
@@ -318,6 +324,11 @@ export interface MaestroAPI {
   };
   webserver: {
     getUrl: () => Promise<string>;
+    getAuthConfig: () => Promise<{ enabled: boolean; token: string | null }>;
+    setAuthEnabled: (enabled: boolean) => Promise<{ enabled: boolean; token: string | null }>;
+    generateNewToken: () => Promise<string>;
+    setAuthToken: (token: string | null) => Promise<boolean>;
+    getConnectedClients: () => Promise<number>;
   };
   tunnel: {
     start: (sessionId: string) => Promise<{ port: number; uuid: string; url: string }>;

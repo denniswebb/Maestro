@@ -25,6 +25,9 @@ interface MaestroSettings {
   customFonts: string[];
   logLevel: 'debug' | 'info' | 'warn' | 'error';
   defaultShell: string;
+  // Web interface authentication
+  webAuthEnabled: boolean;
+  webAuthToken: string | null;
 }
 
 const store = new Store<MaestroSettings>({
@@ -43,6 +46,8 @@ const store = new Store<MaestroSettings>({
     customFonts: [],
     logLevel: 'info',
     defaultShell: 'zsh',
+    webAuthEnabled: false,
+    webAuthToken: null,
   },
 });
 
@@ -278,6 +283,15 @@ app.whenReady().then(() => {
   processManager = new ProcessManager();
   webServer = new WebServer(8000);
   agentDetector = new AgentDetector();
+
+  // Initialize web server auth from stored settings
+  const webAuthEnabled = store.get('webAuthEnabled', false);
+  const webAuthToken = store.get('webAuthToken', null);
+  webServer.setAuthConfig({
+    enabled: webAuthEnabled,
+    token: webAuthToken,
+  });
+  logger.info(`Web server auth initialized: enabled=${webAuthEnabled}`, 'WebServer');
 
   // Initialize session web server manager with callbacks
   sessionWebServerManager = new SessionWebServerManager(
@@ -680,6 +694,60 @@ function setupIpcHandlers() {
   // Web server management
   ipcMain.handle('webserver:getUrl', async () => {
     return webServer?.getUrl();
+  });
+
+  // Web server authentication management
+  ipcMain.handle('webserver:getAuthConfig', async () => {
+    return webServer?.getAuthConfig() || { enabled: false, token: null };
+  });
+
+  ipcMain.handle('webserver:setAuthEnabled', async (_, enabled: boolean) => {
+    if (!webServer) throw new Error('Web server not initialized');
+
+    const currentConfig = webServer.getAuthConfig();
+    let token = currentConfig.token;
+
+    // Generate a new token if enabling auth and no token exists
+    if (enabled && !token) {
+      const { WebServer } = await import('./web-server');
+      token = WebServer.generateToken();
+      store.set('webAuthToken', token);
+    }
+
+    webServer.setAuthConfig({ enabled, token });
+    store.set('webAuthEnabled', enabled);
+
+    logger.info(`Web server auth ${enabled ? 'enabled' : 'disabled'}`, 'WebServer');
+    return { enabled, token };
+  });
+
+  ipcMain.handle('webserver:generateNewToken', async () => {
+    if (!webServer) throw new Error('Web server not initialized');
+
+    const { WebServer } = await import('./web-server');
+    const newToken = WebServer.generateToken();
+    const currentConfig = webServer.getAuthConfig();
+
+    webServer.setAuthConfig({ ...currentConfig, token: newToken });
+    store.set('webAuthToken', newToken);
+
+    logger.info('Generated new web auth token', 'WebServer');
+    return newToken;
+  });
+
+  ipcMain.handle('webserver:setAuthToken', async (_, token: string | null) => {
+    if (!webServer) throw new Error('Web server not initialized');
+
+    const currentConfig = webServer.getAuthConfig();
+    webServer.setAuthConfig({ ...currentConfig, token });
+    store.set('webAuthToken', token);
+
+    logger.info('Updated web auth token', 'WebServer');
+    return true;
+  });
+
+  ipcMain.handle('webserver:getConnectedClients', async () => {
+    return webServer?.getWebClientCount() || 0;
   });
 
   // Helper to strip non-serializable functions from agent configs
