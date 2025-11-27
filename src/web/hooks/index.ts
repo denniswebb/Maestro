@@ -43,3 +43,13 @@ export type {
   UseSessionsOptions,
   UseSessionsReturn,
 } from './useSessions';
+
+export {
+  usePullToRefresh,
+  default as usePullToRefreshDefault,
+} from './usePullToRefresh';
+
+export type {
+  UsePullToRefreshOptions,
+  UsePullToRefreshReturn,
+} from './usePullToRefresh';

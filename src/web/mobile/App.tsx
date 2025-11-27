@@ -7,11 +7,14 @@
  * Phase 1 implementation will expand this component.
  */
 
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import { useThemeColors } from '../components/ThemeProvider';
 import { useWebSocket, type WebSocketState } from '../hooks/useWebSocket';
 import { Badge, type BadgeVariant } from '../components/Badge';
+import { PullToRefreshIndicator } from '../components/PullToRefresh';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 import { useOfflineStatus } from '../main';
+import { triggerHaptic, HAPTIC_PATTERNS } from './index';
 
 /**
  * Map WebSocket state to display properties
@@ -124,8 +127,9 @@ function MobileHeader({ connectionState, isOffline, onRetry }: MobileHeaderProps
 export default function MobileApp() {
   const colors = useThemeColors();
   const isOffline = useOfflineStatus();
+  const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
 
-  const { state: connectionState, connect, error, reconnectAttempts } = useWebSocket({
+  const { state: connectionState, connect, send, error, reconnectAttempts } = useWebSocket({
     autoReconnect: true,
     maxReconnectAttempts: 10,
     reconnectDelay: 2000,
@@ -143,6 +147,40 @@ export default function MobileApp() {
   useEffect(() => {
     connect();
   }, [connect]);
+
+  // Handle refresh - request updated session list
+  const handleRefresh = useCallback(async () => {
+    console.log('[Mobile] Pull-to-refresh triggered');
+
+    // Provide haptic feedback
+    triggerHaptic(HAPTIC_PATTERNS.tap);
+
+    // Send request to get updated sessions
+    const isConnected = connectionState === 'connected' || connectionState === 'authenticated';
+    if (isConnected) {
+      send({ type: 'get_sessions' });
+    }
+
+    // Simulate a minimum refresh time for better UX
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    setLastRefreshTime(new Date());
+
+    // Provide success haptic feedback
+    triggerHaptic(HAPTIC_PATTERNS.success);
+  }, [connectionState, send]);
+
+  // Pull-to-refresh hook
+  const {
+    pullDistance,
+    progress,
+    isRefreshing,
+    isThresholdReached,
+    containerProps,
+  } = usePullToRefresh({
+    onRefresh: handleRefresh,
+    enabled: !isOffline && (connectionState === 'connected' || connectionState === 'authenticated'),
+  });
 
   // Retry connection handler
   const handleRetry = useCallback(() => {
@@ -282,23 +320,61 @@ export default function MobileApp() {
         onRetry={handleRetry}
       />
 
-      {/* Main content area */}
+      {/* Main content area with pull-to-refresh */}
       <main
+        {...containerProps}
         style={{
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'center',
+          justifyContent: 'flex-start',
           padding: '20px',
+          paddingTop: `${20 + pullDistance}px`,
           textAlign: 'center',
           overflow: 'auto',
+          overscrollBehavior: 'contain',
+          position: 'relative',
+          touchAction: pullDistance > 0 ? 'none' : 'pan-y',
+          transition: isRefreshing ? 'padding-top 0.3s ease' : 'none',
         }}
       >
-        {renderContent()}
-        <p style={{ fontSize: '12px', color: colors.textDim }}>
-          Make sure Maestro desktop app is running
-        </p>
+        {/* Pull-to-refresh indicator */}
+        <PullToRefreshIndicator
+          pullDistance={pullDistance}
+          progress={progress}
+          isRefreshing={isRefreshing}
+          isThresholdReached={isThresholdReached}
+          style={{
+            position: 'fixed',
+            top: 'max(56px, calc(56px + env(safe-area-inset-top)))',
+            left: 0,
+            right: 0,
+            zIndex: 10,
+          }}
+        />
+
+        {/* Content wrapper to center items when not scrolling */}
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '100%',
+          }}
+        >
+          {renderContent()}
+          <p style={{ fontSize: '12px', color: colors.textDim }}>
+            Make sure Maestro desktop app is running
+          </p>
+          {lastRefreshTime && (connectionState === 'connected' || connectionState === 'authenticated') && (
+            <p style={{ fontSize: '11px', color: colors.textDim, marginTop: '8px' }}>
+              Last updated: {lastRefreshTime.toLocaleTimeString()}
+            </p>
+          )}
+        </div>
       </main>
 
       {/* Bottom input bar placeholder */}

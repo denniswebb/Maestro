@@ -17,3 +17,6 @@ export type { ButtonProps, ButtonVariant, ButtonSize, IconButtonProps } from './
 
 export { Input, TextArea, InputGroup } from './Input';
 export type { InputProps, TextAreaProps, InputGroupProps, InputVariant, InputSize } from './Input';
+
+export { PullToRefreshIndicator } from './PullToRefresh';
+export type { PullToRefreshIndicatorProps } from './PullToRefresh';
