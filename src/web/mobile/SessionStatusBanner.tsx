@@ -12,6 +12,7 @@
  * - Cost tracker showing session spend
  * - Context window usage bar
  * - Collapsible last response preview (first 3 lines)
+ * - Share button to copy last response to clipboard
  * - Compact design optimized for mobile viewports
  */
 
@@ -19,6 +20,7 @@ import React, { useState, useCallback } from 'react';
 import { useThemeColors } from '../components/ThemeProvider';
 import { StatusDot, type SessionStatus } from '../components/Badge';
 import type { Session, UsageStats, LastResponsePreview } from '../hooks/useSessions';
+import { triggerHaptic, HAPTIC_PATTERNS } from './index';
 
 /**
  * Props for SessionStatusBanner component
@@ -300,6 +302,8 @@ interface LastResponsePreviewSectionProps {
   isExpanded: boolean;
   onToggle: () => void;
   onExpand?: (lastResponse: LastResponsePreview) => void;
+  /** Callback when share/copy button is pressed */
+  onShare?: (text: string) => void;
 }
 
 /**
@@ -307,14 +311,17 @@ interface LastResponsePreviewSectionProps {
  *
  * Displays a collapsible preview of the last AI response.
  * Shows first 3 lines with option to expand to full response viewer.
+ * Includes share button to copy response text to clipboard.
  */
 function LastResponsePreviewSection({
   lastResponse,
   isExpanded,
   onToggle,
   onExpand,
+  onShare,
 }: LastResponsePreviewSectionProps) {
   const colors = useThemeColors();
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
 
   // Don't render if no last response
   if (!lastResponse || !lastResponse.text) {
@@ -322,6 +329,53 @@ function LastResponsePreviewSection({
   }
 
   const hasMoreContent = lastResponse.fullLength > lastResponse.text.length;
+
+  /**
+   * Handle share/copy button click
+   * Copies the response text to clipboard and provides visual feedback
+   */
+  const handleShare = async (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent toggling the collapsible section
+
+    const textToCopy = lastResponse.text;
+
+    try {
+      // Try using the Clipboard API
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(textToCopy);
+      } else {
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = textToCopy;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        textArea.style.top = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+
+      // Success feedback
+      setCopyState('copied');
+      triggerHaptic(HAPTIC_PATTERNS.success);
+
+      // Notify parent if callback provided
+      onShare?.(textToCopy);
+
+      // Reset state after 2 seconds
+      setTimeout(() => setCopyState('idle'), 2000);
+    } catch (err) {
+      // Error feedback
+      setCopyState('error');
+      triggerHaptic(HAPTIC_PATTERNS.error);
+      console.error('Failed to copy to clipboard:', err);
+
+      // Reset state after 2 seconds
+      setTimeout(() => setCopyState('idle'), 2000);
+    }
+  };
 
   return (
     <div
@@ -331,48 +385,121 @@ function LastResponsePreviewSection({
       }}
     >
       {/* Collapsible header */}
-      <button
-        onClick={onToggle}
+      <div
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           width: '100%',
           padding: '8px 16px',
-          backgroundColor: 'transparent',
-          border: 'none',
-          cursor: 'pointer',
-          color: colors.textDim,
-          fontSize: '11px',
-          fontWeight: 500,
-          textAlign: 'left',
         }}
-        aria-expanded={isExpanded}
-        aria-label={isExpanded ? 'Collapse last response' : 'Expand last response'}
       >
-        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          {/* Chevron icon */}
-          <span
+        {/* Toggle button - takes most of the space */}
+        <button
+          onClick={onToggle}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            flex: 1,
+            backgroundColor: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            color: colors.textDim,
+            fontSize: '11px',
+            fontWeight: 500,
+            textAlign: 'left',
+            padding: 0,
+          }}
+          aria-expanded={isExpanded}
+          aria-label={isExpanded ? 'Collapse last response' : 'Expand last response'}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {/* Chevron icon */}
+            <span
+              style={{
+                display: 'inline-block',
+                transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                transition: 'transform 0.2s ease',
+                fontSize: '10px',
+              }}
+            >
+              ▶
+            </span>
+            <span>Last Response</span>
+            <span style={{ opacity: 0.7 }}>
+              ({formatRelativeTime(lastResponse.timestamp)})
+            </span>
+          </span>
+        </button>
+
+        {/* Right side: char count and share button */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {hasMoreContent && !isExpanded && (
+            <span style={{ opacity: 0.7, fontSize: '10px', color: colors.textDim }}>
+              {lastResponse.fullLength} chars
+            </span>
+          )}
+
+          {/* Share/Copy button */}
+          <button
+            onClick={handleShare}
             style={{
-              display: 'inline-block',
-              transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-              transition: 'transform 0.2s ease',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '4px 8px',
+              backgroundColor:
+                copyState === 'copied'
+                  ? `${colors.success}20`
+                  : copyState === 'error'
+                    ? `${colors.error}20`
+                    : `${colors.textDim}15`,
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              color:
+                copyState === 'copied'
+                  ? colors.success
+                  : copyState === 'error'
+                    ? colors.error
+                    : colors.textDim,
               fontSize: '10px',
+              fontWeight: 500,
+              gap: '4px',
+              transition: 'background-color 0.2s ease, color 0.2s ease',
+              minWidth: '54px', // Prevent layout shift between states
             }}
+            aria-label={
+              copyState === 'copied'
+                ? 'Copied to clipboard'
+                : copyState === 'error'
+                  ? 'Failed to copy'
+                  : 'Copy response to clipboard'
+            }
+            title="Copy response to clipboard"
           >
-            ▶
-          </span>
-          <span>Last Response</span>
-          <span style={{ opacity: 0.7 }}>
-            ({formatRelativeTime(lastResponse.timestamp)})
-          </span>
-        </span>
-        {hasMoreContent && !isExpanded && (
-          <span style={{ opacity: 0.7, fontSize: '10px' }}>
-            {lastResponse.fullLength} chars
-          </span>
-        )}
-      </button>
+            {copyState === 'copied' ? (
+              <>
+                <span aria-hidden="true">✓</span>
+                <span>Copied</span>
+              </>
+            ) : copyState === 'error' ? (
+              <>
+                <span aria-hidden="true">✗</span>
+                <span>Failed</span>
+              </>
+            ) : (
+              <>
+                {/* Share/Copy icon */}
+                <span aria-hidden="true" style={{ fontSize: '11px' }}>
+                  📋
+                </span>
+                <span>Copy</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
 
       {/* Expandable content */}
       {isExpanded && (

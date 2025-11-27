@@ -111,9 +111,9 @@ export function supportsHaptics(): boolean {
  * Trigger haptic feedback (if supported and enabled)
  * @param pattern - Vibration pattern in milliseconds
  */
-export function triggerHaptic(pattern: number | number[] = 10): void {
+export function triggerHaptic(pattern: number | readonly number[] = 10): void {
   if (supportsHaptics()) {
-    navigator.vibrate(pattern);
+    navigator.vibrate(pattern as VibratePattern);
   }
 }
 
