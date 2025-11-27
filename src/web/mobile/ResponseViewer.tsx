@@ -10,6 +10,7 @@
  * - Monospace font for code readability
  * - Swipe down to dismiss (task 1.35)
  * - Swipe left/right to navigate between responses (task 1.36)
+ * - Pinch-to-zoom for code readability (task 1.37)
  * - Share/copy functionality (task 1.31)
  * - Scroll to read long responses
  *
@@ -241,6 +242,15 @@ export function ResponseViewer({
   const [swipeDirection, setSwipeDirection] = useState<'horizontal' | 'vertical' | null>(null);
   // Track which code block was recently copied (by index) for visual feedback
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  // Pinch-to-zoom state
+  const [zoomScale, setZoomScale] = useState(1);
+  const [isPinching, setIsPinching] = useState(false);
+  const [initialPinchDistance, setInitialPinchDistance] = useState<number | null>(null);
+  const [initialZoomScale, setInitialZoomScale] = useState(1);
+  // Transform origin for zoom (center of pinch gesture)
+  const [transformOrigin, setTransformOrigin] = useState({ x: 50, y: 50 });
+  // Ref for the zoomable content area
+  const zoomableRef = useRef<HTMLDivElement>(null);
 
   // Determine if navigation is enabled
   const canNavigate = allResponses && allResponses.length > 1 && onNavigate;
@@ -288,27 +298,81 @@ export function ResponseViewer({
   const NAVIGATE_THRESHOLD = 80;
   // Minimum movement to determine swipe direction
   const DIRECTION_THRESHOLD = 10;
+  // Zoom constraints
+  const MIN_ZOOM = 1;
+  const MAX_ZOOM = 3;
+
+  // Helper function to calculate distance between two touch points
+  const getTouchDistance = useCallback((touches: React.TouchList): number => {
+    if (touches.length < 2) return 0;
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }, []);
+
+  // Helper function to get center point of two touches relative to content area
+  const getTouchCenter = useCallback((touches: React.TouchList): { x: number; y: number } | null => {
+    if (touches.length < 2 || !zoomableRef.current) return null;
+    const rect = zoomableRef.current.getBoundingClientRect();
+    const centerX = (touches[0].clientX + touches[1].clientX) / 2;
+    const centerY = (touches[0].clientY + touches[1].clientY) / 2;
+    // Convert to percentage relative to the content area
+    const x = ((centerX - rect.left) / rect.width) * 100;
+    const y = ((centerY - rect.top) / rect.height) * 100;
+    return { x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) };
+  }, []);
 
   // Handle touch start for swipe gestures
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    // Check for pinch gesture (two fingers)
+    if (e.touches.length === 2) {
+      const distance = getTouchDistance(e.touches);
+      const center = getTouchCenter(e.touches);
+      setInitialPinchDistance(distance);
+      setInitialZoomScale(zoomScale);
+      setIsPinching(true);
+      if (center) {
+        setTransformOrigin(center);
+      }
+      // Cancel any swipe gestures
+      setIsDraggingX(false);
+      setIsDraggingY(false);
+      setSwipeDirection(null);
+      return;
+    }
+
+    // Single finger touch - swipe gestures
     const touch = e.touches[0];
     setTouchStartX(touch.clientX);
     setTouchStartY(touch.clientY);
     setSwipeDirection(null);
 
-    // Only enable vertical dismiss if at top of content
-    if (contentRef.current && contentRef.current.scrollTop === 0) {
+    // Only enable vertical dismiss if at top of content and not zoomed in
+    if (contentRef.current && contentRef.current.scrollTop === 0 && zoomScale === 1) {
       setIsDraggingY(true);
     }
 
-    // Always enable horizontal navigation if available
-    if (canNavigate) {
+    // Only enable horizontal navigation if not zoomed in
+    if (canNavigate && zoomScale === 1) {
       setIsDraggingX(true);
     }
-  }, [canNavigate]);
+  }, [canNavigate, getTouchDistance, getTouchCenter, zoomScale]);
 
   // Handle touch move for swipe gestures
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    // Handle pinch-to-zoom
+    if (isPinching && e.touches.length === 2 && initialPinchDistance !== null) {
+      const currentDistance = getTouchDistance(e.touches);
+      const scale = (currentDistance / initialPinchDistance) * initialZoomScale;
+      const clampedScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, scale));
+      setZoomScale(clampedScale);
+      e.preventDefault();
+      return;
+    }
+
+    // If pinching started but only one finger remains, ignore
+    if (isPinching) return;
+
     if (touchStartX === null || touchStartY === null) return;
 
     const touch = e.touches[0];
@@ -349,10 +413,25 @@ export function ResponseViewer({
       setTouchDeltaY(deltaY);
       e.preventDefault();
     }
-  }, [touchStartX, touchStartY, swipeDirection, isDraggingX, isDraggingY, canNavigate, canGoLeft, canGoRight]);
+  }, [touchStartX, touchStartY, swipeDirection, isDraggingX, isDraggingY, canNavigate, canGoLeft, canGoRight, isPinching, initialPinchDistance, initialZoomScale, getTouchDistance]);
 
   // Handle touch end for swipe gestures
   const handleTouchEnd = useCallback(() => {
+    // Handle pinch end
+    if (isPinching) {
+      setIsPinching(false);
+      setInitialPinchDistance(null);
+      // If zoomed out below 1, snap back to 1
+      if (zoomScale < 1) {
+        setZoomScale(1);
+      }
+      // Haptic feedback when zoom changes significantly
+      if (zoomScale !== initialZoomScale) {
+        triggerHaptic(HAPTIC_PATTERNS.tap);
+      }
+      return;
+    }
+
     // Handle vertical swipe (dismiss)
     if (swipeDirection === 'vertical' && touchDeltaY > DISMISS_THRESHOLD) {
       triggerHaptic(HAPTIC_PATTERNS.tap);
@@ -380,7 +459,7 @@ export function ResponseViewer({
     setIsDraggingX(false);
     setIsDraggingY(false);
     setSwipeDirection(null);
-  }, [swipeDirection, touchDeltaY, touchDeltaX, onClose, canNavigate, onNavigate, currentIndex, canGoLeft, canGoRight]);
+  }, [swipeDirection, touchDeltaY, touchDeltaX, onClose, canNavigate, onNavigate, currentIndex, canGoLeft, canGoRight, isPinching, zoomScale, initialZoomScale]);
 
   // Handle keyboard navigation (Escape to close, Arrow keys to navigate)
   useEffect(() => {
@@ -409,6 +488,54 @@ export function ResponseViewer({
       document.body.style.overflow = '';
     };
   }, [isOpen, onClose, canGoLeft, canGoRight, onNavigate, currentIndex]);
+
+  // Reset zoom when navigating to a different response
+  useEffect(() => {
+    setZoomScale(1);
+    setTransformOrigin({ x: 50, y: 50 });
+  }, [currentIndex]);
+
+  // Reset zoom when closing
+  useEffect(() => {
+    if (!isOpen) {
+      setZoomScale(1);
+      setTransformOrigin({ x: 50, y: 50 });
+    }
+  }, [isOpen]);
+
+  // Double tap to reset zoom
+  const lastTapRef = useRef<number>(0);
+  const handleDoubleTap = useCallback((e: React.TouchEvent) => {
+    // Only handle single finger taps
+    if (e.touches.length !== 1) return;
+
+    const now = Date.now();
+    const timeSinceLastTap = now - lastTapRef.current;
+
+    if (timeSinceLastTap < 300) {
+      // Double tap detected
+      if (zoomScale > 1) {
+        // Reset to normal
+        setZoomScale(1);
+        setTransformOrigin({ x: 50, y: 50 });
+        triggerHaptic(HAPTIC_PATTERNS.tap);
+      } else {
+        // Zoom in to 2x at tap location
+        const touch = e.touches[0];
+        if (zoomableRef.current) {
+          const rect = zoomableRef.current.getBoundingClientRect();
+          const x = ((touch.clientX - rect.left) / rect.width) * 100;
+          const y = ((touch.clientY - rect.top) / rect.height) * 100;
+          setTransformOrigin({ x, y });
+        }
+        setZoomScale(2);
+        triggerHaptic(HAPTIC_PATTERNS.tap);
+      }
+      lastTapRef.current = 0;
+    } else {
+      lastTapRef.current = now;
+    }
+  }, [zoomScale]);
 
   // Don't render if not open
   if (!isOpen || (!response && !activeResponse)) {
@@ -588,8 +715,72 @@ export function ResponseViewer({
           </div>
         ) : (
           <>
+            {/* Zoom indicator when zoomed in */}
+            {zoomScale > 1 && (
+              <div
+                style={{
+                  position: 'sticky',
+                  top: 0,
+                  right: 0,
+                  zIndex: 10,
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  marginBottom: '8px',
+                }}
+              >
+                <button
+                  onClick={() => {
+                    setZoomScale(1);
+                    setTransformOrigin({ x: 50, y: 50 });
+                    triggerHaptic(HAPTIC_PATTERNS.tap);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '6px 10px',
+                    borderRadius: '16px',
+                    backgroundColor: `${colors.accent}20`,
+                    border: `1px solid ${colors.accent}40`,
+                    color: colors.accent,
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                  }}
+                  aria-label="Reset zoom"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    <line x1="8" y1="11" x2="14" y2="11" />
+                  </svg>
+                  {Math.round(zoomScale * 100)}%
+                </button>
+              </div>
+            )}
             {/* Response content with syntax-highlighted code blocks */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div
+              ref={zoomableRef}
+              onTouchStart={handleDoubleTap}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+                transform: `scale(${zoomScale})`,
+                transformOrigin: `${transformOrigin.x}% ${transformOrigin.y}%`,
+                transition: isPinching ? 'none' : 'transform 0.2s ease-out',
+                touchAction: zoomScale > 1 ? 'pan-x pan-y' : 'auto',
+              }}
+            >
               {parsedSegments.map((segment, index) => {
                 if (segment.type === 'code') {
                   const isCopied = copiedIndex === index;
@@ -805,11 +996,14 @@ export function ResponseViewer({
           style={{
             fontSize: '11px',
             color: colors.textDim,
+            textAlign: 'center',
           }}
         >
-          {canNavigate
-            ? 'Swipe left/right to navigate • Swipe down to dismiss'
-            : 'Swipe down to dismiss'}
+          {zoomScale > 1
+            ? 'Double-tap or tap reset to zoom out'
+            : canNavigate
+              ? 'Pinch to zoom • Swipe left/right to navigate • Swipe down to dismiss'
+              : 'Pinch to zoom • Swipe down to dismiss'}
         </span>
       </footer>
     </div>
