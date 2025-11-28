@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, RotateCcw, Play } from 'lucide-react';
+import { X, RotateCcw, Play, Variable, ChevronDown, ChevronRight } from 'lucide-react';
 import type { Theme } from '../types';
 import { useLayerStack } from '../contexts/LayerStackContext';
 import { MODAL_PRIORITIES } from '../constants/modalPriorities';
+import { TEMPLATE_VARIABLES } from '../utils/templateVariables';
 
 // Default batch processing prompt
 export const DEFAULT_BATCH_PROMPT = `CRITICAL: You must complete EXACTLY ONE task and then exit. Do not attempt multiple tasks.
@@ -55,6 +56,7 @@ export function BatchRunnerModal(props: BatchRunnerModalProps) {
   const { theme, onClose, onGo, initialPrompt, showConfirmation } = props;
 
   const [prompt, setPrompt] = useState(initialPrompt || DEFAULT_BATCH_PROMPT);
+  const [variablesExpanded, setVariablesExpanded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { registerLayer, unregisterLayer, updateLayerHandler } = useLayerStack();
@@ -158,8 +160,53 @@ export function BatchRunnerModal(props: BatchRunnerModalProps) {
                 Reset
               </button>
             </div>
-            <div className="text-[10px] mb-1" style={{ color: theme.colors.textDim }}>
+            <div className="text-[10px] mb-2" style={{ color: theme.colors.textDim }}>
               Use <code className="px-1 py-0.5 rounded" style={{ backgroundColor: theme.colors.bgActivity }}>$$SCRATCHPAD$$</code> as placeholder for the scratchpad file path
+            </div>
+
+            {/* Template Variables Documentation */}
+            <div
+              className="rounded-lg border overflow-hidden mb-2"
+              style={{ backgroundColor: theme.colors.bgMain, borderColor: theme.colors.border }}
+            >
+              <button
+                onClick={() => setVariablesExpanded(!variablesExpanded)}
+                className="w-full px-3 py-2 flex items-center justify-between hover:bg-white/5 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Variable className="w-3.5 h-3.5" style={{ color: theme.colors.accent }} />
+                  <span className="text-xs font-bold uppercase" style={{ color: theme.colors.textDim }}>
+                    Template Variables
+                  </span>
+                </div>
+                {variablesExpanded ? (
+                  <ChevronDown className="w-3.5 h-3.5" style={{ color: theme.colors.textDim }} />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5" style={{ color: theme.colors.textDim }} />
+                )}
+              </button>
+              {variablesExpanded && (
+                <div className="px-3 pb-3 pt-1 border-t" style={{ borderColor: theme.colors.border }}>
+                  <p className="text-[10px] mb-2" style={{ color: theme.colors.textDim }}>
+                    Use these variables in your prompt. They will be replaced with actual values at runtime.
+                  </p>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 max-h-48 overflow-y-auto scrollbar-thin">
+                    {TEMPLATE_VARIABLES.map(({ variable, description }) => (
+                      <div key={variable} className="flex items-center gap-2 py-0.5">
+                        <code
+                          className="text-[10px] font-mono px-1 py-0.5 rounded shrink-0"
+                          style={{ backgroundColor: theme.colors.bgActivity, color: theme.colors.accent }}
+                        >
+                          {variable}
+                        </code>
+                        <span className="text-[10px] truncate" style={{ color: theme.colors.textDim }}>
+                          {description}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <textarea
               ref={textareaRef}
