@@ -282,7 +282,7 @@ export function CommandInputBar({
   const getPlaceholder = () => {
     if (isOffline) return 'Offline...';
     if (!isConnected) return 'Connecting...';
-    if (isSessionBusy) return 'Waiting for response...';
+    if (isSessionBusy) return 'Waiting...';
     return placeholder || 'Enter command...';
   };
 

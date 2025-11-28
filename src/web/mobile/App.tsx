@@ -1112,7 +1112,7 @@ export default function MobileApp() {
             logs={currentLogs}
             inputMode={activeSession.inputMode as 'ai' | 'terminal'}
             autoScroll={true}
-            maxHeight="calc(100vh - 340px)"
+            maxHeight="calc(100dvh - 240px)"
           />
         )}
       </div>
