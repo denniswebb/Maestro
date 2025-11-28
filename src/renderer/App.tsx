@@ -43,6 +43,21 @@ import { fuzzyMatch } from './utils/search';
 import { shouldOpenExternally, loadFileTree, getAllFolderPaths, flattenTree } from './utils/fileExplorer';
 import { substituteTemplateVariables } from './utils/templateVariables';
 
+// Strip leading emojis from a string for alphabetical sorting
+// Matches common emoji patterns at the start of the string
+const stripLeadingEmojis = (str: string): string => {
+  // Match emojis at the start: emoji characters, variation selectors, ZWJ sequences, etc.
+  const emojiRegex = /^(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F?|\p{Emoji_Modifier_Base}\p{Emoji_Modifier}?)+\s*/gu;
+  return str.replace(emojiRegex, '').trim();
+};
+
+// Compare two names, ignoring leading emojis for alphabetization
+const compareNamesIgnoringEmojis = (a: string, b: string): number => {
+  const aStripped = stripLeadingEmojis(a);
+  const bStripped = stripLeadingEmojis(b);
+  return aStripped.localeCompare(bStripped);
+};
+
 export default function MaestroConsole() {
   // --- LAYER STACK (for blocking shortcuts when modals are open) ---
   const { hasOpenLayers, hasOpenModal } = useLayerStack();
@@ -1321,22 +1336,23 @@ export default function MaestroConsole() {
   }, []);
 
   // Create sorted sessions array that matches visual display order (includes ALL sessions)
+  // Note: sorting ignores leading emojis for proper alphabetization
   const sortedSessions = useMemo(() => {
     const sorted: Session[] = [];
 
-    // First, add sessions from sorted groups
-    const sortedGroups = [...groups].sort((a, b) => a.name.localeCompare(b.name));
+    // First, add sessions from sorted groups (ignoring leading emojis)
+    const sortedGroups = [...groups].sort((a, b) => compareNamesIgnoringEmojis(a.name, b.name));
     sortedGroups.forEach(group => {
       const groupSessions = sessions
         .filter(s => s.groupId === group.id)
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .sort((a, b) => compareNamesIgnoringEmojis(a.name, b.name));
       sorted.push(...groupSessions);
     });
 
-    // Then, add ungrouped sessions (sorted alphabetically)
+    // Then, add ungrouped sessions (sorted alphabetically, ignoring leading emojis)
     const ungroupedSessions = sessions
       .filter(s => !s.groupId)
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => compareNamesIgnoringEmojis(a.name, b.name));
     sorted.push(...ungroupedSessions);
 
     return sorted;

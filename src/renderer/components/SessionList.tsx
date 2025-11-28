@@ -23,6 +23,26 @@ const hasCustomName = (session: Session): boolean => {
   return !DEFAULT_AGENT_NAMES.includes(session.name);
 };
 
+// Strip leading emojis from a string for alphabetical sorting
+// Matches common emoji patterns at the start of the string
+const stripLeadingEmojis = (str: string): string => {
+  // Match emojis at the start: emoji characters, variation selectors, ZWJ sequences, etc.
+  // This regex matches most common emoji patterns including:
+  // - Basic emojis (😀, 🎉, etc.)
+  // - Emojis with skin tone modifiers
+  // - Flag emojis
+  // - ZWJ sequences (👨‍👩‍👧, etc.)
+  const emojiRegex = /^(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F?|\p{Emoji_Modifier_Base}\p{Emoji_Modifier}?)+\s*/gu;
+  return str.replace(emojiRegex, '').trim();
+};
+
+// Compare two session names, ignoring leading emojis for alphabetization
+const compareSessionNames = (a: string, b: string): number => {
+  const aStripped = stripLeadingEmojis(a);
+  const bStripped = stripLeadingEmojis(b);
+  return aStripped.localeCompare(bStripped);
+};
+
 interface SessionListProps {
   // State
   theme: Theme;
@@ -513,7 +533,7 @@ export function SessionList(props: SessionListProps) {
 
               {!bookmarksCollapsed && (
                 <div className="flex flex-col border-l ml-4" style={{ borderColor: theme.colors.accent }}>
-                  {[...filteredSessions.filter(s => s.bookmarked)].sort((a, b) => a.name.localeCompare(b.name)).map(session => {
+                  {[...filteredSessions.filter(s => s.bookmarked)].sort((a, b) => compareSessionNames(a.name, b.name)).map(session => {
                     const globalIdx = sortedSessions.findIndex(s => s.id === session.id);
                     const isKeyboardSelected = activeFocus === 'sidebar' && globalIdx === selectedSidebarIndex;
                     const group = groups.find(g => g.id === session.groupId);
@@ -624,8 +644,8 @@ export function SessionList(props: SessionListProps) {
           )}
 
           {/* GROUPS */}
-          {[...groups].sort((a, b) => a.name.localeCompare(b.name)).map(group => {
-            const groupSessions = [...filteredSessions.filter(s => s.groupId === group.id)].sort((a, b) => a.name.localeCompare(b.name));
+          {[...groups].sort((a, b) => compareSessionNames(a.name, b.name)).map(group => {
+            const groupSessions = [...filteredSessions.filter(s => s.groupId === group.id)].sort((a, b) => compareSessionNames(a.name, b.name));
             return (
               <div key={group.id} className="mb-1">
                 <div
@@ -844,7 +864,7 @@ export function SessionList(props: SessionListProps) {
 
             {!ungroupedCollapsed && (
               <div className="flex flex-col border-l ml-4" style={{ borderColor: theme.colors.border }}>
-                {[...filteredSessions.filter(s => !s.groupId)].sort((a, b) => a.name.localeCompare(b.name)).map((session) => {
+                {[...filteredSessions.filter(s => !s.groupId)].sort((a, b) => compareSessionNames(a.name, b.name)).map((session) => {
                   const globalIdx = sortedSessions.findIndex(s => s.id === session.id);
                   const isKeyboardSelected = activeFocus === 'sidebar' && globalIdx === selectedSidebarIndex;
                   return (
