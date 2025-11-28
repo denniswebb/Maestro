@@ -2,26 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Wand2, Plus, Settings, ChevronRight, ChevronDown, Activity, X, Keyboard,
   Radio, Copy, ExternalLink, PanelLeftClose, PanelLeftOpen, Folder, Info, FileText, GitBranch, Bot, Clock,
-  ScrollText, Cpu, Menu, Bookmark, Tag
+  ScrollText, Cpu, Menu, Bookmark
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { Session, Group, Theme, Shortcut } from '../types';
 import { getStatusColor, getContextColor, formatActiveTime } from '../utils/theme';
 import { gitService } from '../services/git';
-
-// Default agent names - sessions with these names are considered "unnamed"
-const DEFAULT_AGENT_NAMES = [
-  'Claude Code',
-  'Aider (Gemini)',
-  'Qwen Coder',
-  'CLI Terminal',
-  'Terminal',
-];
-
-// Check if a session has a custom (user-defined) name
-const hasCustomName = (session: Session): boolean => {
-  return !DEFAULT_AGENT_NAMES.includes(session.name);
-};
 
 // Strip leading emojis from a string for alphabetical sorting
 // Matches common emoji patterns at the start of the string
@@ -567,8 +553,8 @@ export function SessionList(props: SessionListProps) {
                               className="flex items-center gap-1.5"
                               onDoubleClick={() => startRenamingSession(session.id)}
                             >
-                              {hasCustomName(session) && (
-                                <Tag className="w-3 h-3 shrink-0" style={{ color: theme.colors.accent }} />
+                              {session.bookmarked && (
+                                <Bookmark className="w-3 h-3 shrink-0" style={{ color: theme.colors.accent }} fill={theme.colors.accent} />
                               )}
                               <span
                                 className="text-sm font-medium truncate"
@@ -831,8 +817,8 @@ export function SessionList(props: SessionListProps) {
                                 className="flex items-center gap-1.5"
                                 onDoubleClick={() => startRenamingSession(session.id)}
                               >
-                                {hasCustomName(session) && (
-                                  <Tag className="w-3 h-3 shrink-0" style={{ color: theme.colors.accent }} />
+                                {session.bookmarked && (
+                                  <Bookmark className="w-3 h-3 shrink-0" style={{ color: theme.colors.accent }} fill={theme.colors.accent} />
                                 )}
                                 <span
                                   className="text-sm font-medium truncate"
@@ -847,21 +833,6 @@ export function SessionList(props: SessionListProps) {
                             </div>
                           </div>
                           <div className="flex items-center gap-2 ml-2">
-                            {/* Bookmark toggle */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleBookmark(session.id);
-                              }}
-                              className="p-0.5 rounded hover:bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                              title={session.bookmarked ? "Remove bookmark" : "Add bookmark"}
-                            >
-                              <Bookmark
-                                className="w-3 h-3"
-                                style={{ color: session.bookmarked ? theme.colors.accent : theme.colors.textDim }}
-                                fill={session.bookmarked ? theme.colors.accent : 'none'}
-                              />
-                            </button>
                             {/* Git Dirty Indicator (only in wide mode) */}
                             {leftSidebarOpen && session.isGitRepo && gitFileCounts.has(session.id) && gitFileCounts.get(session.id)! > 0 && (
                               <div className="flex items-center gap-0.5 text-[10px]" style={{ color: theme.colors.warning }}>
@@ -1085,8 +1056,8 @@ export function SessionList(props: SessionListProps) {
                         className="flex items-center gap-1.5"
                         onDoubleClick={() => startRenamingSession(session.id)}
                       >
-                        {hasCustomName(session) && (
-                          <Tag className="w-3 h-3 shrink-0" style={{ color: theme.colors.accent }} />
+                        {session.bookmarked && (
+                          <Bookmark className="w-3 h-3 shrink-0" style={{ color: theme.colors.accent }} fill={theme.colors.accent} />
                         )}
                         <span
                           className="text-sm font-medium truncate"
@@ -1101,21 +1072,6 @@ export function SessionList(props: SessionListProps) {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 ml-2">
-                    {/* Bookmark toggle */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleBookmark(session.id);
-                      }}
-                      className="p-0.5 rounded hover:bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                      title={session.bookmarked ? "Remove bookmark" : "Add bookmark"}
-                    >
-                      <Bookmark
-                        className="w-3 h-3"
-                        style={{ color: session.bookmarked ? theme.colors.accent : theme.colors.textDim }}
-                        fill={session.bookmarked ? theme.colors.accent : 'none'}
-                      />
-                    </button>
                     {/* Git Dirty Indicator (only in wide mode) */}
                     {leftSidebarOpen && session.isGitRepo && gitFileCounts.has(session.id) && gitFileCounts.get(session.id)! > 0 && (
                       <div className="flex items-center gap-0.5 text-[10px]" style={{ color: theme.colors.warning }}>
