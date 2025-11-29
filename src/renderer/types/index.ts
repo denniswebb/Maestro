@@ -174,6 +174,7 @@ export interface Session {
   scratchPadPreviewScrollPos?: number;
   scratchPadMode?: 'edit' | 'preview';
   // Claude Code session ID for conversation continuity
+  // DEPRECATED: Use aiTabs[activeIndex].claudeSessionId instead
   claudeSessionId?: string;
   // Pending jump path for /jump command (relative path within file tree)
   pendingJumpPath?: string;
@@ -189,6 +190,7 @@ export interface Session {
   // Used to show the correct busy indicator message when user switches modes
   busySource?: 'ai' | 'terminal';
   // Message queue for AI mode - messages sent while busy are queued here
+  // DEPRECATED: Use aiTabs[activeIndex].messageQueue instead
   messageQueue: LogEntry[];
   // Active time tracking - cumulative milliseconds of active use
   activeTimeMs: number;
@@ -197,6 +199,7 @@ export interface Session {
   // Bookmark flag - bookmarked sessions appear in a dedicated section at the top
   bookmarked?: boolean;
   // Recent Claude sessions breadcrumbs for quick access (persisted per Maestro session)
+  // DEPRECATED: Tab bar replaces this functionality - will be removed in future version
   recentClaudeSessions?: RecentClaudeSession[];
   // Pending AI command that will trigger a synopsis on completion (e.g., '/commit')
   pendingAICommandForSynopsis?: string;
@@ -204,6 +207,14 @@ export interface Session {
   batchRunnerPrompt?: string;
   // Timestamp when the batch runner prompt was last modified
   batchRunnerPromptModifiedAt?: number;
+
+  // Tab management for AI mode (multi-tab Claude Code sessions)
+  // Each tab represents a separate Claude Code conversation
+  aiTabs: AITab[];
+  // Currently active tab ID
+  activeTabId: string;
+  // Stack of recently closed tabs for undo (max 25, runtime-only, not persisted)
+  closedTabHistory: ClosedTab[];
 }
 
 export interface Group {
