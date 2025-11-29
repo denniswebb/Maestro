@@ -5,6 +5,7 @@ import Convert from 'ansi-to-html';
 import DOMPurify from 'dompurify';
 import { useLayerStack } from '../contexts/LayerStackContext';
 import { MODAL_PRIORITIES } from '../constants/modalPriorities';
+import { getActiveTab } from '../utils/tabHelpers';
 
 // ============================================================================
 // Pure helper functions (moved outside component to prevent recreation)
@@ -998,7 +999,12 @@ export const TerminalOutput = forwardRef<HTMLDivElement, TerminalOutputProps>((p
     });
   }, [theme]);
 
-  const activeLogs: LogEntry[] = session.inputMode === 'ai' ? session.aiLogs : session.shellLogs;
+  // In AI mode, use the active tab's logs if tabs exist, otherwise fall back to session.aiLogs
+  // This supports the new multi-tab feature while maintaining backwards compatibility
+  const activeTab = session.inputMode === 'ai' ? getActiveTab(session) : undefined;
+  const activeLogs: LogEntry[] = session.inputMode === 'ai'
+    ? (activeTab?.logs ?? session.aiLogs)
+    : session.shellLogs;
 
   // In AI mode, collapse consecutive non-user entries into single response blocks
   // This provides a cleaner view where each user message gets one response
