@@ -966,7 +966,7 @@ export function AgentSessionsBrowser({
                 <div className="flex items-center gap-2">
                   <DollarSign className="w-4 h-4" style={{ color: theme.colors.success }} />
                   <span className="text-xs font-medium font-mono" style={{ color: theme.colors.success }}>
-                    ${stats.totalCost.toFixed(2)}
+                    ${stats.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
               )}
