@@ -379,7 +379,7 @@ export default function MaestroConsole() {
       let aiSpawnResult = { pid: 0, success: true }; // Default for batch mode
 
       if (!isClaudeBatchMode) {
-        // Only spawn for non-batch-mode agents (Aider, etc.)
+        // Only spawn for non-batch-mode agents (Codex, Gemini, Qwen, etc.)
         // Include active tab ID in session ID to match batch mode format
         const activeTabId = correctedSession.activeTabId || correctedSession.aiTabs?.[0]?.id || 'default';
         // Use agent.path (full path) if available for better cross-environment compatibility
@@ -2588,7 +2588,9 @@ export default function MaestroConsole() {
       }
 
       // Sidebar navigation with arrow keys (works when sidebar has focus)
-      if (ctx.activeFocus === 'sidebar' && (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === ' ')) {
+      // Skip if Alt+Cmd+Arrow is pressed - that's the sidebar/panel toggle shortcut
+      const isToggleLayoutShortcut = e.altKey && (e.metaKey || e.ctrlKey) && (e.key === 'ArrowLeft' || e.key === 'ArrowRight');
+      if (ctx.activeFocus === 'sidebar' && !isToggleLayoutShortcut && (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === ' ')) {
         e.preventDefault();
         if (ctx.sortedSessions.length === 0) return;
 
@@ -4347,14 +4349,16 @@ export default function MaestroConsole() {
           spawnArgs.push('--permission-mode', 'plan');
         }
 
-        const targetSessionId = `${sessionId}-ai`;
+        // Include tab ID in targetSessionId for proper output routing
+        const targetSessionId = `${sessionId}-ai-${activeTab?.id || 'default'}`;
         const commandToUse = agent.path || agent.command;
 
         console.log('[Remote] Spawning Claude directly:', {
           maestroSessionId: sessionId,
           targetSessionId,
-          claudeSessionId: session.claudeSessionId || 'NEW SESSION',
-          isResume: !!session.claudeSessionId,
+          activeTabId: activeTab?.id,
+          tabClaudeSessionId: tabClaudeSessionId || 'NEW SESSION',
+          isResume: !!tabClaudeSessionId,
           command: commandToUse,
           args: spawnArgs,
           prompt: promptToSend.substring(0, 100)

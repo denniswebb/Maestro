@@ -322,6 +322,35 @@ function ScratchpadInner({
   const isAgentBusy = sessionState === 'busy' || sessionState === 'connecting';
   const isStopping = batchRunState?.isStopping || false;
   const [mode, setMode] = useState<'edit' | 'preview'>(initialMode);
+
+  // Local content state for responsive typing - syncs to parent on blur
+  const [localContent, setLocalContent] = useState(content);
+  const prevSessionIdRef = useRef(sessionId);
+
+  // Sync local content from prop when session changes (switching sessions)
+  useEffect(() => {
+    if (sessionId !== prevSessionIdRef.current) {
+      setLocalContent(content);
+      prevSessionIdRef.current = sessionId;
+    }
+  }, [sessionId, content]);
+
+  // Also sync if content changes externally (e.g., batch run modifying tasks)
+  // But only when we're not actively editing (avoid fighting with user input)
+  const isEditingRef = useRef(false);
+  useEffect(() => {
+    if (!isEditingRef.current && content !== localContent) {
+      setLocalContent(content);
+    }
+  }, [content]);
+
+  // Sync local content to parent on blur
+  const syncContentToParent = useCallback(() => {
+    isEditingRef.current = false;
+    if (localContent !== content) {
+      onChange(localContent);
+    }
+  }, [localContent, content, onChange]);
   // Track mode before auto-run to restore when it ends
   const modeBeforeAutoRunRef = useRef<'edit' | 'preview' | null>(null);
   const [helpModalOpen, setHelpModalOpen] = useState(false);
@@ -404,7 +433,7 @@ function ScratchpadInner({
         }
       });
     }
-  }, [content, mode, searchOpen, searchQuery]);
+  }, [localContent, mode, searchOpen, searchQuery]);
 
   // Notify parent when mode changes
   const toggleMode = () => {
@@ -487,7 +516,7 @@ function ScratchpadInner({
     if (searchQuery.trim()) {
       const escapedQuery = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const regex = new RegExp(escapedQuery, 'gi');
-      const matches = content.match(regex);
+      const matches = localContent.match(regex);
       const count = matches ? matches.length : 0;
       setTotalMatches(count);
       if (count > 0 && currentMatchIndex >= count) {
@@ -497,7 +526,7 @@ function ScratchpadInner({
       setTotalMatches(0);
       setCurrentMatchIndex(0);
     }
-  }, [searchQuery, content]);
+  }, [searchQuery, localContent]);
 
   // Navigate to next search match
   const goToNextMatch = useCallback(() => {
@@ -545,7 +574,7 @@ function ScratchpadInner({
       let match;
       let matchPosition = -1;
 
-      while ((match = regex.exec(content)) !== null) {
+      while ((match = regex.exec(localContent)) !== null) {
         if (matchCount === currentMatchIndex) {
           matchPosition = match.index;
           break;
@@ -556,7 +585,7 @@ function ScratchpadInner({
       if (matchPosition >= 0 && textareaRef.current) {
         // Calculate approximate scroll position based on character position
         const textarea = textareaRef.current;
-        const textBeforeMatch = content.substring(0, matchPosition);
+        const textBeforeMatch = localContent.substring(0, matchPosition);
         const lineCount = (textBeforeMatch.match(/\n/g) || []).length;
         const lineHeight = parseInt(getComputedStyle(textarea).lineHeight) || 20;
         const scrollTarget = Math.max(0, lineCount * lineHeight - textarea.clientHeight / 2);
@@ -566,7 +595,7 @@ function ScratchpadInner({
         textarea.setSelectionRange(matchPosition, matchPosition + searchQuery.length);
       }
     }
-  }, [currentMatchIndex, searchOpen, searchQuery, totalMatches, mode, content, theme.colors.accent]);
+  }, [currentMatchIndex, searchOpen, searchQuery, totalMatches, mode, localContent, theme.colors.accent]);
 
   // Handle image paste
   const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
@@ -605,8 +634,8 @@ function ScratchpadInner({
             const textarea = textareaRef.current;
             if (textarea) {
               const cursorPos = textarea.selectionStart;
-              const textBefore = content.substring(0, cursorPos);
-              const textAfter = content.substring(cursorPos);
+              const textBefore = localContent.substring(0, cursorPos);
+              const textAfter = localContent.substring(cursorPos);
               const imageMarkdown = `![${result.filename}](maestro-attachment://${result.filename})`;
 
               // Add newlines if not at start of line
@@ -620,6 +649,8 @@ function ScratchpadInner({
               }
 
               const newContent = textBefore + prefix + imageMarkdown + suffix + textAfter;
+              // Update local state and sync to parent immediately for explicit user action
+              setLocalContent(newContent);
               onChange(newContent);
 
               // Move cursor after the inserted markdown
@@ -635,7 +666,7 @@ function ScratchpadInner({
         break; // Only handle first image
       }
     }
-  }, [content, isLocked, onChange, sessionId]);
+  }, [localContent, isLocked, onChange, sessionId]);
 
   // Handle file input for manual image upload
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -656,16 +687,18 @@ function ScratchpadInner({
         setAttachmentsList(prev => [...prev, result.filename!]);
         setAttachmentPreviews(prev => new Map(prev).set(result.filename!, base64Data));
 
-        // Insert at end of content
+        // Insert at end of content - update local and sync to parent immediately
         const imageMarkdown = `\n![${result.filename}](maestro-attachment://${result.filename})\n`;
-        onChange(content + imageMarkdown);
+        const newContent = localContent + imageMarkdown;
+        setLocalContent(newContent);
+        onChange(newContent);
       }
     };
     reader.readAsDataURL(file);
 
     // Reset input so same file can be selected again
     e.target.value = '';
-  }, [content, onChange, sessionId]);
+  }, [localContent, onChange, sessionId]);
 
   // Handle removing an attachment
   const handleRemoveAttachment = useCallback(async (filename: string) => {
@@ -679,13 +712,15 @@ function ScratchpadInner({
       return newMap;
     });
 
-    // Remove the markdown reference from content
+    // Remove the markdown reference from content - update local and sync to parent immediately
     const regex = new RegExp(`!\\[${filename}\\]\\(maestro-attachment://${filename}\\)\\n?`, 'g');
-    onChange(content.replace(regex, ''));
+    const newContent = localContent.replace(regex, '');
+    setLocalContent(newContent);
+    onChange(newContent);
 
     // Clear from cache
     imageCache.delete(`${sessionId}:${filename}`);
-  }, [content, onChange, sessionId]);
+  }, [localContent, onChange, sessionId]);
 
   // Lightbox helpers - handles both attachment filenames and external URLs
   const openLightboxByFilename = useCallback((filenameOrUrl: string) => {
@@ -760,9 +795,11 @@ function ScratchpadInner({
       return newMap;
     });
 
-    // Remove the markdown reference from content
+    // Remove the markdown reference from content - update local and sync to parent immediately
     const regex = new RegExp(`!\\[${lightboxFilename}\\]\\(maestro-attachment://${lightboxFilename}\\)\\n?`, 'g');
-    onChange(content.replace(regex, ''));
+    const newContent = localContent.replace(regex, '');
+    setLocalContent(newContent);
+    onChange(newContent);
 
     // Clear from cache
     imageCache.delete(`${sessionId}:${lightboxFilename}`);
@@ -780,7 +817,7 @@ function ScratchpadInner({
       const newList = attachmentsList.filter(f => f !== lightboxFilename);
       setLightboxFilename(newList[currentIndex] || null);
     }
-  }, [lightboxFilename, lightboxCurrentIndex, attachmentsList, sessionId, content, onChange, closeLightbox]);
+  }, [lightboxFilename, lightboxCurrentIndex, attachmentsList, sessionId, localContent, onChange, closeLightbox]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Command-E to toggle between edit and preview
@@ -806,8 +843,8 @@ function ScratchpadInner({
       e.stopPropagation();
       const textarea = e.currentTarget;
       const cursorPos = textarea.selectionStart;
-      const textBeforeCursor = content.substring(0, cursorPos);
-      const textAfterCursor = content.substring(cursorPos);
+      const textBeforeCursor = localContent.substring(0, cursorPos);
+      const textAfterCursor = localContent.substring(cursorPos);
 
       // Check if we're at the start of a line or have text before
       const lastNewline = textBeforeCursor.lastIndexOf('\n');
@@ -827,7 +864,7 @@ function ScratchpadInner({
         newCursorPos = cursorPos + 7; // "\n- [ ] " is 7 chars
       }
 
-      onChange(newContent);
+      setLocalContent(newContent);
       setTimeout(() => {
         if (textareaRef.current) {
           textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
@@ -839,8 +876,8 @@ function ScratchpadInner({
     if (e.key === 'Enter' && !e.shiftKey) {
       const textarea = e.currentTarget;
       const cursorPos = textarea.selectionStart;
-      const textBeforeCursor = content.substring(0, cursorPos);
-      const textAfterCursor = content.substring(cursorPos);
+      const textBeforeCursor = localContent.substring(0, cursorPos);
+      const textAfterCursor = localContent.substring(cursorPos);
       const currentLineStart = textBeforeCursor.lastIndexOf('\n') + 1;
       const currentLine = textBeforeCursor.substring(currentLineStart);
 
@@ -854,7 +891,7 @@ function ScratchpadInner({
         const indent = taskListMatch[1];
         e.preventDefault();
         const newContent = textBeforeCursor + '\n' + indent + '- [ ] ' + textAfterCursor;
-        onChange(newContent);
+        setLocalContent(newContent);
         setTimeout(() => {
           if (textareaRef.current) {
             const newPos = cursorPos + indent.length + 7; // "\n" + indent + "- [ ] "
@@ -867,7 +904,7 @@ function ScratchpadInner({
         const marker = unorderedListMatch[2];
         e.preventDefault();
         const newContent = textBeforeCursor + '\n' + indent + marker + ' ' + textAfterCursor;
-        onChange(newContent);
+        setLocalContent(newContent);
         setTimeout(() => {
           if (textareaRef.current) {
             const newPos = cursorPos + indent.length + 3; // "\n" + indent + marker + " "
@@ -880,7 +917,7 @@ function ScratchpadInner({
         const num = parseInt(orderedListMatch[2]);
         e.preventDefault();
         const newContent = textBeforeCursor + '\n' + indent + (num + 1) + '. ' + textAfterCursor;
-        onChange(newContent);
+        setLocalContent(newContent);
         setTimeout(() => {
           if (textareaRef.current) {
             const newPos = cursorPos + indent.length + (num + 1).toString().length + 3; // "\n" + indent + num + ". "
@@ -1226,12 +1263,16 @@ function ScratchpadInner({
         {mode === 'edit' ? (
           <textarea
             ref={textareaRef}
-            value={content}
-            onChange={(e) => !isLocked && onChange(e.target.value)}
+            value={localContent}
+            onChange={(e) => {
+              if (!isLocked) {
+                isEditingRef.current = true;
+                setLocalContent(e.target.value);
+              }
+            }}
+            onFocus={() => { isEditingRef.current = true; }}
+            onBlur={syncContentToParent}
             onKeyDown={!isLocked ? handleKeyDown : undefined}
-            onKeyUp={handleCursorOrScrollChange}
-            onClick={handleCursorOrScrollChange}
-            onScroll={handleCursorOrScrollChange}
             onPaste={handlePaste}
             placeholder="Write your notes in markdown... (paste images from clipboard)"
             readOnly={isLocked}
@@ -1271,7 +1312,7 @@ function ScratchpadInner({
             {searchOpen && searchQuery.trim() ? (
               // When searching, show raw text with highlights for easy search navigation
               <SearchHighlightedContent
-                content={content || '*No content yet.*'}
+                content={localContent || '*No content yet.*'}
                 searchQuery={searchQuery}
                 currentMatchIndex={currentMatchIndex}
                 theme={theme}
@@ -1281,7 +1322,7 @@ function ScratchpadInner({
                 remarkPlugins={REMARK_PLUGINS}
                 components={markdownComponents}
               >
-                {content || '*No content yet. Switch to Edit mode to start writing.*'}
+                {localContent || '*No content yet. Switch to Edit mode to start writing.*'}
               </ReactMarkdown>
             )}
           </div>
