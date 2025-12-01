@@ -21,6 +21,7 @@ import { GitLogViewer } from './components/GitLogViewer';
 import { BatchRunnerModal } from './components/BatchRunnerModal';
 import { ExecutionQueueBrowser } from './components/ExecutionQueueBrowser';
 import { StandingOvationOverlay } from './components/StandingOvationOverlay';
+import { PlaygroundPanel } from './components/PlaygroundPanel';
 import { CONDUCTOR_BADGES } from './constants/conductorBadges';
 
 // Import custom hooks
@@ -179,6 +180,7 @@ export default function MaestroConsole() {
   } | null>(null);
   const [logViewerOpen, setLogViewerOpen] = useState(false);
   const [processMonitorOpen, setProcessMonitorOpen] = useState(false);
+  const [playgroundOpen, setPlaygroundOpen] = useState(false);
   const [createGroupModalOpen, setCreateGroupModalOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupEmoji, setNewGroupEmoji] = useState('📂');
@@ -275,6 +277,16 @@ export default function MaestroConsole() {
   useEffect(() => {
     setOsNotifications(osNotificationsEnabled);
   }, [osNotificationsEnabled, setOsNotifications]);
+
+  // Expose playground() function for developer console
+  useEffect(() => {
+    (window as unknown as { playground: () => void }).playground = () => {
+      setPlaygroundOpen(true);
+    };
+    return () => {
+      delete (window as unknown as { playground?: () => void }).playground;
+    };
+  }, []);
 
   // Close file preview when switching sessions
   useEffect(() => {
@@ -5409,6 +5421,15 @@ export default function MaestroConsole() {
           sessions={sessions}
           groups={groups}
           onClose={() => setProcessMonitorOpen(false)}
+        />
+      )}
+
+      {/* --- DEVELOPER PLAYGROUND --- */}
+      {playgroundOpen && (
+        <PlaygroundPanel
+          theme={theme}
+          themeMode={theme.mode}
+          onClose={() => setPlaygroundOpen(false)}
         />
       )}
 

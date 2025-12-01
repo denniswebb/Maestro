@@ -256,7 +256,7 @@ export function AboutModal({ theme, sessions, autoRunStats, onClose }: AboutModa
           </div>
 
           {/* Project Link */}
-          <div className="pt-2 border-t" style={{ borderColor: theme.colors.border }}>
+          <div className="pt-2">
             <button
               onClick={() => window.maestro.shell.openExternal('https://github.com/pedramamini/Maestro')}
               className="w-full flex items-center justify-between p-3 rounded border hover:bg-white/5 transition-colors"

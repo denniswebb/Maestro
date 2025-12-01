@@ -22,33 +22,72 @@ interface BadgeTooltipProps {
   badge: ConductorBadge;
   theme: Theme;
   isUnlocked: boolean;
+  position: 'left' | 'center' | 'right';
+  onClose: () => void;
 }
 
-function BadgeTooltip({ badge, theme, isUnlocked }: BadgeTooltipProps) {
+function BadgeTooltip({ badge, theme, isUnlocked, position, onClose }: BadgeTooltipProps) {
+  // Calculate horizontal positioning based on badge position
+  const getPositionStyles = () => {
+    switch (position) {
+      case 'left':
+        return { left: 0, transform: 'translateX(0)' };
+      case 'right':
+        return { right: 0, transform: 'translateX(0)' };
+      default:
+        return { left: '50%', transform: 'translateX(-50%)' };
+    }
+  };
+
+  const getArrowStyles = () => {
+    switch (position) {
+      case 'left':
+        return { left: '16px', transform: 'translateX(0)' };
+      case 'right':
+        return { right: '16px', left: 'auto', transform: 'translateX(0)' };
+      default:
+        return { left: '50%', transform: 'translateX(-50%)' };
+    }
+  };
+
   return (
     <div
-      className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-3 rounded-lg shadow-xl z-50 w-64"
+      className="absolute bottom-full mb-2 p-3 rounded-lg shadow-xl z-[100] w-64"
       style={{
         backgroundColor: theme.colors.bgSidebar,
         border: `1px solid ${theme.colors.border}`,
+        boxShadow: `0 4px 20px rgba(0,0,0,0.3)`,
+        ...getPositionStyles(),
       }}
+      onClick={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center gap-2 mb-2">
-        <span className="font-bold" style={{ color: theme.colors.accent }}>
+      {/* Level number - prominent */}
+      <div className="text-center mb-1">
+        <span className="text-lg font-bold" style={{ color: theme.colors.accent }}>
           Level {badge.level}
         </span>
-        <span className="font-medium" style={{ color: theme.colors.textMain }}>
+      </div>
+
+      {/* Badge title */}
+      <div className="text-center mb-2">
+        <span className="font-bold text-sm" style={{ color: theme.colors.textMain }}>
           {badge.name}
         </span>
       </div>
-      <p className="text-xs mb-2" style={{ color: theme.colors.textDim }}>
+
+      {/* Description */}
+      <p className="text-xs mb-2 text-center" style={{ color: theme.colors.textDim }}>
         {badge.description}
       </p>
+
+      {/* Flavor text if unlocked */}
       {isUnlocked && (
-        <p className="text-xs italic mb-2" style={{ color: theme.colors.textMain }}>
+        <p className="text-xs italic mb-2 text-center" style={{ color: theme.colors.textMain }}>
           "{badge.flavorText}"
         </p>
       )}
+
+      {/* Required time and status */}
       <div className="flex items-center justify-between text-xs pt-2 border-t" style={{ borderColor: theme.colors.border }}>
         <span style={{ color: theme.colors.textDim }}>
           Required: {formatCumulativeTime(badge.requiredTimeMs)}
@@ -59,24 +98,28 @@ function BadgeTooltip({ badge, theme, isUnlocked }: BadgeTooltipProps) {
           <span style={{ color: theme.colors.textDim }}>Locked</span>
         )}
       </div>
+
+      {/* Example conductor link */}
       <button
         onClick={(e) => {
           e.stopPropagation();
           window.maestro.shell.openExternal(badge.exampleConductor.wikipediaUrl);
         }}
-        className="flex items-center gap-1 text-xs mt-2 hover:underline"
+        className="flex items-center justify-center gap-1 text-xs mt-2 hover:underline w-full"
         style={{ color: theme.colors.accent }}
       >
         <ExternalLink className="w-3 h-3" />
         {badge.exampleConductor.name}
       </button>
-      {/* Arrow */}
+
+      {/* Arrow pointing down */}
       <div
-        className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0"
+        className="absolute top-full w-0 h-0"
         style={{
           borderLeft: '6px solid transparent',
           borderRight: '6px solid transparent',
           borderTop: `6px solid ${theme.colors.border}`,
+          ...getArrowStyles(),
         }}
       />
     </div>
@@ -88,8 +131,15 @@ function BadgeTooltip({ badge, theme, isUnlocked }: BadgeTooltipProps) {
  * Shows current badge, progress to next level, and stats
  */
 export function AchievementCard({ theme, autoRunStats }: AchievementCardProps) {
-  const [hoveredBadge, setHoveredBadge] = useState<number | null>(null);
+  const [selectedBadge, setSelectedBadge] = useState<number | null>(null);
   const [historyExpanded, setHistoryExpanded] = useState(false);
+
+  // Determine tooltip position based on badge level
+  const getTooltipPosition = (level: number): 'left' | 'center' | 'right' => {
+    if (level <= 2) return 'left';
+    if (level >= 10) return 'right';
+    return 'center';
+  };
 
   const currentBadge = getBadgeForTime(autoRunStats.cumulativeTimeMs);
   const nextBadge = getNextBadge(currentBadge);
@@ -250,16 +300,16 @@ export function AchievementCard({ theme, autoRunStats }: AchievementCardProps) {
           {CONDUCTOR_BADGES.map((badge) => {
             const isUnlocked = badge.level <= currentLevel;
             const isCurrent = badge.level === currentLevel;
+            const isSelected = selectedBadge === badge.level;
 
             return (
               <div
                 key={badge.id}
                 className="relative flex-1"
-                onMouseEnter={() => setHoveredBadge(badge.level)}
-                onMouseLeave={() => setHoveredBadge(null)}
+                onClick={() => setSelectedBadge(isSelected ? null : badge.level)}
               >
                 <div
-                  className={`h-2 rounded-full cursor-pointer transition-all ${
+                  className={`h-3 rounded-full cursor-pointer transition-all hover:scale-110 ${
                     isCurrent ? 'ring-2 ring-offset-1' : ''
                   }`}
                   style={{
@@ -269,19 +319,31 @@ export function AchievementCard({ theme, autoRunStats }: AchievementCardProps) {
                         : badge.level <= 7
                           ? '#FFD700'
                           : '#FF6B35'
-                      : theme.colors.bgMain,
+                      : theme.colors.border,
                     ringColor: isCurrent ? '#FFD700' : 'transparent',
-                    opacity: isUnlocked ? 1 : 0.3,
+                    opacity: isUnlocked ? 1 : 0.5,
+                    border: isUnlocked ? 'none' : `1px dashed ${theme.colors.textDim}`,
                   }}
-                  title={`${badge.name} - ${formatCumulativeTime(badge.requiredTimeMs)}`}
+                  title={`${badge.name} - Click to view details`}
                 />
-                {hoveredBadge === badge.level && (
-                  <BadgeTooltip badge={badge} theme={theme} isUnlocked={isUnlocked} />
+                {isSelected && (
+                  <BadgeTooltip
+                    badge={badge}
+                    theme={theme}
+                    isUnlocked={isUnlocked}
+                    position={getTooltipPosition(badge.level)}
+                    onClose={() => setSelectedBadge(null)}
+                  />
                 )}
               </div>
             );
           })}
         </div>
+        {selectedBadge === null && (
+          <div className="text-xs text-center mt-2" style={{ color: theme.colors.textDim }}>
+            Click a badge to view details
+          </div>
+        )}
       </div>
 
       {/* Badge Unlock History - only visible at level 2+ */}
