@@ -857,17 +857,27 @@ export default function MaestroConsole() {
             tabIds: s.aiTabs?.map(t => t.id),
             tabStates: s.aiTabs?.map(t => ({ id: t.id.substring(0, 8), state: t.state }))
           });
+
+          // Check if the specified tab exists - if not, fall back to clearing all busy tabs
+          // This prevents orphaned busy state when tab IDs don't match (e.g., tab closed/renamed)
+          const tabExists = tabIdFromSession && s.aiTabs?.some(tab => tab.id === tabIdFromSession);
+          const shouldFallbackToClearAll = tabIdFromSession && !tabExists;
+
+          if (shouldFallbackToClearAll) {
+            console.warn('[onExit] Tab ID not found, falling back to clearing all busy tabs:', tabIdFromSession);
+          }
+
           const updatedAiTabs = s.aiTabs?.length > 0
             ? s.aiTabs.map(tab => {
-                if (tabIdFromSession) {
-                  // New format: only update the specific tab
+                if (tabIdFromSession && tabExists) {
+                  // New format: only update the specific tab (when it exists)
                   const shouldUpdate = tab.id === tabIdFromSession;
                   if (shouldUpdate) {
                     console.log('[onExit] Setting tab to idle:', tab.id.substring(0, 8));
                   }
                   return shouldUpdate ? { ...tab, state: 'idle' as const, thinkingStartTime: undefined } : tab;
                 } else {
-                  // Legacy format: update all busy tabs
+                  // Legacy format OR fallback: update all busy tabs
                   return tab.state === 'busy' ? { ...tab, state: 'idle' as const, thinkingStartTime: undefined } : tab;
                 }
               })
@@ -879,11 +889,14 @@ export default function MaestroConsole() {
           console.log('[onExit] Any tab still busy?', anyTabStillBusy, 'tabs:', updatedAiTabs.map(t => ({ id: t.id.substring(0, 8), state: t.state })));
 
           // Task complete - also clear pending AI command flag
+          // IMPORTANT: If we had to fall back to clearing all tabs, always set session to idle
+          // This prevents orphaned busy state at the session level
+          const forceIdle = shouldFallbackToClearAll;
           return {
             ...s,
-            state: anyTabStillBusy ? 'busy' as SessionState : 'idle' as SessionState,
-            busySource: anyTabStillBusy ? s.busySource : undefined,
-            thinkingStartTime: anyTabStillBusy ? s.thinkingStartTime : undefined,
+            state: (anyTabStillBusy && !forceIdle) ? 'busy' as SessionState : 'idle' as SessionState,
+            busySource: (anyTabStillBusy && !forceIdle) ? s.busySource : undefined,
+            thinkingStartTime: (anyTabStillBusy && !forceIdle) ? s.thinkingStartTime : undefined,
             pendingAICommandForSynopsis: undefined,
             aiTabs: updatedAiTabs
           };
@@ -5446,6 +5459,7 @@ export default function MaestroConsole() {
               }));
             }
           }}
+          setPlaygroundOpen={setPlaygroundOpen}
         />
       )}
       {lightboxImage && (

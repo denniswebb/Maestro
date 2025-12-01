@@ -54,6 +54,7 @@ interface QuickActionsModalProps {
   onToggleReadOnlyMode?: () => void;
   tabShortcuts?: Record<string, Shortcut>;
   isAiMode?: boolean;
+  setPlaygroundOpen?: (open: boolean) => void;
 }
 
 export function QuickActionsModal(props: QuickActionsModalProps) {
@@ -67,7 +68,7 @@ export function QuickActionsModal(props: QuickActionsModalProps) {
     deleteSession, addNewSession, setSettingsModalOpen, setSettingsTab,
     setShortcutsHelpOpen, setAboutModalOpen, setLogViewerOpen, setProcessMonitorOpen,
     setAgentSessionsOpen, setActiveClaudeSessionId, setGitDiffPreview, setGitLogOpen, startFreshSession,
-    onRenameTab, onToggleReadOnlyMode, tabShortcuts, isAiMode
+    onRenameTab, onToggleReadOnlyMode, tabShortcuts, isAiMode, setPlaygroundOpen
   } = props;
 
   const [search, setSearch] = useState('');
@@ -240,6 +241,60 @@ export function QuickActionsModal(props: QuickActionsModalProps) {
     { id: 'goToFiles', label: 'Go to Files Tab', action: () => { setRightPanelOpen(true); setActiveRightTab('files'); setQuickActionOpen(false); } },
     { id: 'goToHistory', label: 'Go to History Tab', action: () => { setRightPanelOpen(true); setActiveRightTab('history'); setQuickActionOpen(false); } },
     { id: 'goToScratchpad', label: 'Go to Scratchpad Tab', action: () => { setRightPanelOpen(true); setActiveRightTab('scratchpad'); setQuickActionOpen(false); } },
+    // Debug commands - only visible when user types "debug"
+    { id: 'debugResetBusy', label: 'Debug: Reset Busy State', subtext: 'Clear stuck thinking/busy state for all sessions', action: () => {
+      // Reset all sessions and tabs to idle state
+      setSessions(prev => prev.map(s => ({
+        ...s,
+        state: 'idle' as const,
+        busySource: undefined,
+        thinkingStartTime: undefined,
+        currentCycleTokens: undefined,
+        currentCycleBytes: undefined,
+        aiTabs: s.aiTabs?.map(tab => ({
+          ...tab,
+          state: 'idle' as const,
+          thinkingStartTime: undefined
+        }))
+      })));
+      console.log('[Debug] Reset busy state for all sessions');
+      setQuickActionOpen(false);
+    } },
+    ...(activeSession ? [{ id: 'debugResetSession', label: 'Debug: Reset Current Session', subtext: `Clear busy state for ${activeSession.name}`, action: () => {
+      setSessions(prev => prev.map(s => {
+        if (s.id !== activeSessionId) return s;
+        return {
+          ...s,
+          state: 'idle' as const,
+          busySource: undefined,
+          thinkingStartTime: undefined,
+          currentCycleTokens: undefined,
+          currentCycleBytes: undefined,
+          aiTabs: s.aiTabs?.map(tab => ({
+            ...tab,
+            state: 'idle' as const,
+            thinkingStartTime: undefined
+          }))
+        };
+      }));
+      console.log('[Debug] Reset busy state for session:', activeSessionId);
+      setQuickActionOpen(false);
+    } }] : []),
+    { id: 'debugLogSessions', label: 'Debug: Log Session State', subtext: 'Print session state to console', action: () => {
+      console.log('[Debug] All sessions:', sessions.map(s => ({
+        id: s.id,
+        name: s.name,
+        state: s.state,
+        busySource: s.busySource,
+        thinkingStartTime: s.thinkingStartTime,
+        tabs: s.aiTabs?.map(t => ({ id: t.id.substring(0, 8), name: t.name, state: t.state, thinkingStartTime: t.thinkingStartTime }))
+      })));
+      setQuickActionOpen(false);
+    } },
+    ...(setPlaygroundOpen ? [{ id: 'debugPlayground', label: 'Debug: Playground', subtext: 'Open the developer playground', action: () => {
+      setPlaygroundOpen(true);
+      setQuickActionOpen(false);
+    } }] : []),
   ];
 
   const groupActions: QuickAction[] = [
@@ -254,8 +309,20 @@ export function QuickActionsModal(props: QuickActionsModalProps) {
   ];
 
   const actions = mode === 'main' ? mainActions : groupActions;
+
+  // Filter actions - hide "Debug:" prefixed commands unless user explicitly types "debug"
+  const searchLower = search.toLowerCase();
+  const showDebugCommands = searchLower.includes('debug');
+
   const filtered = actions
-    .filter(a => a.label.toLowerCase().includes(search.toLowerCase()))
+    .filter(a => {
+      const isDebugCommand = a.label.toLowerCase().startsWith('debug:');
+      // Hide debug commands unless user is searching for them
+      if (isDebugCommand && !showDebugCommands) {
+        return false;
+      }
+      return a.label.toLowerCase().includes(searchLower);
+    })
     .sort((a, b) => a.label.localeCompare(b.label));
 
   useEffect(() => {
