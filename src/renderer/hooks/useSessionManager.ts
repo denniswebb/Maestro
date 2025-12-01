@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import type { Session, Group, ToolType, LogEntry, AITab } from '../types';
-import { generateId } from '../utils/ids';
+import type { Session, Group } from '../types';
 import { gitService } from '../services/git';
 
 // Maximum number of log entries to persist per AI tab
@@ -18,40 +17,14 @@ const compareNamesIgnoringEmojis = (a: string, b: string): number => {
 };
 
 /**
- * Migrate a session from old format (without aiTabs) to new format.
- * Creates a single tab from the legacy claudeSessionId, aiLogs, etc.
- * This is a basic migration; starred/named status can be looked up later in restoreSession.
+ * Prepare a session for loading by resetting runtime-only fields.
  */
-const migrateSessionToTabFormat = (session: Session): Session => {
-  // If session already has aiTabs, just ensure closedTabHistory is initialized
-  if (session.aiTabs && session.aiTabs.length > 0) {
-    return {
-      ...session,
-      // closedTabHistory is runtime-only and should not be persisted
-      // Always reset to empty array on load
-      closedTabHistory: []
-    };
-  }
-
-  // Create initial tab from legacy data
-  const initialTab: AITab = {
-    id: generateId(),
-    claudeSessionId: session.claudeSessionId || null,
-    name: null, // Name will be looked up in restoreSession if needed
-    starred: false, // Starred will be looked up in restoreSession if needed
-    logs: session.aiLogs || [],
-    inputValue: '',
-    stagedImages: [],
-    usageStats: session.usageStats,
-    createdAt: Date.now(),
-    state: 'idle'
-  };
-
+const prepareSessionForLoad = (session: Session): Session => {
   return {
     ...session,
-    aiTabs: [initialTab],
-    activeTabId: initialTab.id,
-    closedTabHistory: [] // Runtime-only, always empty on load
+    // closedTabHistory is runtime-only and should not be persisted
+    // Always reset to empty array on load
+    closedTabHistory: []
   };
 };
 
@@ -141,13 +114,11 @@ export function useSessionManager(): UseSessionManagerReturn {
 
         // Handle sessions
         if (savedSessions && savedSessions.length > 0) {
-          // Check Git repository status and migrate to aiTabs format for all loaded sessions
+          // Check Git repository status and prepare sessions for load
           const sessionsWithGitStatus = await Promise.all(
             savedSessions.map(async (session) => {
               const isGitRepo = await gitService.isRepo(session.cwd);
-              // Migrate to aiTabs format and ensure closedTabHistory is reset
-              const migratedSession = migrateSessionToTabFormat({ ...session, isGitRepo });
-              return migratedSession;
+              return prepareSessionForLoad({ ...session, isGitRepo });
             })
           );
           setSessions(sessionsWithGitStatus);

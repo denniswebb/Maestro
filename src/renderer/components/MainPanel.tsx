@@ -229,8 +229,8 @@ export function MainPanel(props: MainPanelProps) {
     };
 
     fetchGitInfo();
-    // Refresh git info every 10 seconds
-    const interval = setInterval(fetchGitInfo, 10000);
+    // Refresh git info every 30 seconds (reduced from 10s for performance)
+    const interval = setInterval(fetchGitInfo, 30000);
     return () => clearInterval(interval);
   }, [activeSession?.id, activeSession?.isGitRepo, activeSession?.cwd, activeSession?.shellCwd, activeSession?.inputMode]);
 

@@ -10,6 +10,28 @@ import { detectShells } from './utils/shellDetector';
 import { getThemeById } from './themes';
 import Store from 'electron-store';
 
+// Constants for Claude session parsing
+const CLAUDE_SESSION_PARSE_LIMITS = {
+  /** Max lines to scan from start of file to find first user message */
+  FIRST_MESSAGE_SCAN_LINES: 20,
+  /** Max lines to scan from end of file to find last timestamp */
+  LAST_TIMESTAMP_SCAN_LINES: 10,
+  /** Max lines to scan for oldest timestamp in stats calculation */
+  OLDEST_TIMESTAMP_SCAN_LINES: 5,
+  /** Batch size for processing session files (allows UI updates) */
+  STATS_BATCH_SIZE: 20,
+  /** Max characters for first message preview */
+  FIRST_MESSAGE_PREVIEW_LENGTH: 200,
+};
+
+// Claude API pricing (per million tokens)
+const CLAUDE_PRICING = {
+  INPUT_PER_MILLION: 3,
+  OUTPUT_PER_MILLION: 15,
+  CACHE_READ_PER_MILLION: 0.30,
+  CACHE_CREATION_PER_MILLION: 3.75,
+};
+
 // Type definitions
 interface MaestroSettings {
   activeThemeId: string;
@@ -1503,7 +1525,7 @@ function setupIpcHandlers() {
             const messageCount = userMessageCount + assistantMessageCount;
 
             // Extract first user message content - parse only first few lines
-            for (let i = 0; i < Math.min(lines.length, 20); i++) {
+            for (let i = 0; i < Math.min(lines.length, CLAUDE_SESSION_PARSE_LIMITS.FIRST_MESSAGE_SCAN_LINES); i++) {
               try {
                 const entry = JSON.parse(lines[i]);
                 if (entry.type === 'user' && entry.message?.content) {
@@ -1540,18 +1562,16 @@ function setupIpcHandlers() {
             const cacheCreationMatches = content.matchAll(/"cache_creation_input_tokens"\s*:\s*(\d+)/g);
             for (const m of cacheCreationMatches) totalCacheCreationTokens += parseInt(m[1], 10);
 
-            // Calculate cost estimate using Claude Sonnet 4 pricing:
-            // Input: $3 per million tokens, Output: $15 per million tokens
-            // Cache read: $0.30 per million, Cache creation: $3.75 per million
-            const inputCost = (totalInputTokens / 1_000_000) * 3;
-            const outputCost = (totalOutputTokens / 1_000_000) * 15;
-            const cacheReadCost = (totalCacheReadTokens / 1_000_000) * 0.30;
-            const cacheCreationCost = (totalCacheCreationTokens / 1_000_000) * 3.75;
+            // Calculate cost estimate using Claude Sonnet 4 pricing
+            const inputCost = (totalInputTokens / 1_000_000) * CLAUDE_PRICING.INPUT_PER_MILLION;
+            const outputCost = (totalOutputTokens / 1_000_000) * CLAUDE_PRICING.OUTPUT_PER_MILLION;
+            const cacheReadCost = (totalCacheReadTokens / 1_000_000) * CLAUDE_PRICING.CACHE_READ_PER_MILLION;
+            const cacheCreationCost = (totalCacheCreationTokens / 1_000_000) * CLAUDE_PRICING.CACHE_CREATION_PER_MILLION;
             const costUsd = inputCost + outputCost + cacheReadCost + cacheCreationCost;
 
             // Extract last timestamp from the session to calculate duration
             let lastTimestamp = timestamp;
-            for (let i = lines.length - 1; i >= Math.max(0, lines.length - 10); i--) {
+            for (let i = lines.length - 1; i >= Math.max(0, lines.length - CLAUDE_SESSION_PARSE_LIMITS.LAST_TIMESTAMP_SCAN_LINES); i--) {
               try {
                 const entry = JSON.parse(lines[i]);
                 if (entry.timestamp) {
@@ -1573,7 +1593,7 @@ function setupIpcHandlers() {
               projectPath,
               timestamp,
               modifiedAt: stats.mtime.toISOString(),
-              firstMessage: firstUserMessage.slice(0, 200), // Truncate for display
+              firstMessage: firstUserMessage.slice(0, CLAUDE_SESSION_PARSE_LIMITS.FIRST_MESSAGE_PREVIEW_LENGTH), // Truncate for display
               messageCount,
               sizeBytes: stats.size,
               costUsd,
@@ -1708,7 +1728,7 @@ function setupIpcHandlers() {
             const messageCount = userMessageCount + assistantMessageCount;
 
             // Extract first user message content - parse only first few lines
-            for (let i = 0; i < Math.min(lines.length, 20); i++) {
+            for (let i = 0; i < Math.min(lines.length, CLAUDE_SESSION_PARSE_LIMITS.FIRST_MESSAGE_SCAN_LINES); i++) {
               try {
                 const entry = JSON.parse(lines[i]);
                 if (entry.type === 'user' && entry.message?.content) {
@@ -1742,15 +1762,15 @@ function setupIpcHandlers() {
             for (const m of cacheCreationMatches) totalCacheCreationTokens += parseInt(m[1], 10);
 
             // Calculate cost estimate
-            const inputCost = (totalInputTokens / 1_000_000) * 3;
-            const outputCost = (totalOutputTokens / 1_000_000) * 15;
-            const cacheReadCost = (totalCacheReadTokens / 1_000_000) * 0.30;
-            const cacheCreationCost = (totalCacheCreationTokens / 1_000_000) * 3.75;
+            const inputCost = (totalInputTokens / 1_000_000) * CLAUDE_PRICING.INPUT_PER_MILLION;
+            const outputCost = (totalOutputTokens / 1_000_000) * CLAUDE_PRICING.OUTPUT_PER_MILLION;
+            const cacheReadCost = (totalCacheReadTokens / 1_000_000) * CLAUDE_PRICING.CACHE_READ_PER_MILLION;
+            const cacheCreationCost = (totalCacheCreationTokens / 1_000_000) * CLAUDE_PRICING.CACHE_CREATION_PER_MILLION;
             const costUsd = inputCost + outputCost + cacheReadCost + cacheCreationCost;
 
             // Extract last timestamp for duration
             let lastTimestamp = timestamp;
-            for (let i = lines.length - 1; i >= Math.max(0, lines.length - 10); i--) {
+            for (let i = lines.length - 1; i >= Math.max(0, lines.length - CLAUDE_SESSION_PARSE_LIMITS.LAST_TIMESTAMP_SCAN_LINES); i--) {
               try {
                 const entry = JSON.parse(lines[i]);
                 if (entry.timestamp) {
@@ -1776,7 +1796,7 @@ function setupIpcHandlers() {
               projectPath,
               timestamp,
               modifiedAt: new Date(fileInfo.modifiedAt).toISOString(),
-              firstMessage: firstUserMessage.slice(0, 200),
+              firstMessage: firstUserMessage.slice(0, CLAUDE_SESSION_PARSE_LIMITS.FIRST_MESSAGE_PREVIEW_LENGTH),
               messageCount,
               sizeBytes: fileInfo.sizeBytes,
               costUsd,
@@ -1858,10 +1878,10 @@ function setupIpcHandlers() {
       let processedCount = 0;
 
       // Process files in batches to allow UI updates
-      const BATCH_SIZE = 20;
+      const batchSize = CLAUDE_SESSION_PARSE_LIMITS.STATS_BATCH_SIZE;
 
-      for (let i = 0; i < sessionFiles.length; i += BATCH_SIZE) {
-        const batch = sessionFiles.slice(i, i + BATCH_SIZE);
+      for (let i = 0; i < sessionFiles.length; i += batchSize) {
+        const batch = sessionFiles.slice(i, i + batchSize);
 
         await Promise.all(
           batch.map(async (filename) => {
@@ -1896,15 +1916,15 @@ function setupIpcHandlers() {
               for (const m of cacheCreationMatches) cacheCreationTokens += parseInt(m[1], 10);
 
               // Calculate cost
-              const inputCost = (inputTokens / 1_000_000) * 3;
-              const outputCost = (outputTokens / 1_000_000) * 15;
-              const cacheReadCost = (cacheReadTokens / 1_000_000) * 0.30;
-              const cacheCreationCost = (cacheCreationTokens / 1_000_000) * 3.75;
+              const inputCost = (inputTokens / 1_000_000) * CLAUDE_PRICING.INPUT_PER_MILLION;
+              const outputCost = (outputTokens / 1_000_000) * CLAUDE_PRICING.OUTPUT_PER_MILLION;
+              const cacheReadCost = (cacheReadTokens / 1_000_000) * CLAUDE_PRICING.CACHE_READ_PER_MILLION;
+              const cacheCreationCost = (cacheCreationTokens / 1_000_000) * CLAUDE_PRICING.CACHE_CREATION_PER_MILLION;
               totalCostUsd += inputCost + outputCost + cacheReadCost + cacheCreationCost;
 
               // Find oldest timestamp
               const lines = content.split('\n').filter(l => l.trim());
-              for (let j = 0; j < Math.min(lines.length, 5); j++) {
+              for (let j = 0; j < Math.min(lines.length, CLAUDE_SESSION_PARSE_LIMITS.OLDEST_TIMESTAMP_SCAN_LINES); j++) {
                 try {
                   const entry = JSON.parse(lines[j]);
                   if (entry.timestamp) {
@@ -1923,7 +1943,7 @@ function setupIpcHandlers() {
           })
         );
 
-        processedCount = Math.min(i + BATCH_SIZE, sessionFiles.length);
+        processedCount = Math.min(i + batchSize, sessionFiles.length);
 
         // Send progressive update
         sendUpdate({
@@ -3009,8 +3029,9 @@ function setupProcessListeners() {
           return;
         }
 
-        const baseSessionId = sessionId.replace(/-ai$|-batch-\d+$|-synopsis-\d+$/, '');
-        const isAiOutput = sessionId.endsWith('-ai') || sessionId.includes('-batch-') || sessionId.includes('-synopsis-');
+        // Extract base session ID from formats: {id}-ai-{tabId}, {id}-batch-{timestamp}, {id}-synopsis-{timestamp}
+        const baseSessionId = sessionId.replace(/-ai-[^-]+$|-batch-\d+$|-synopsis-\d+$/, '');
+        const isAiOutput = sessionId.includes('-ai-') || sessionId.includes('-batch-') || sessionId.includes('-synopsis-');
         const msgId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         console.log(`[WebBroadcast] Broadcasting session_output: msgId=${msgId}, session=${baseSessionId}, source=${isAiOutput ? 'ai' : 'terminal'}, dataLen=${data.length}`);
         webServer.broadcastToSessionClients(baseSessionId, {
@@ -3029,7 +3050,8 @@ function setupProcessListeners() {
 
       // Broadcast exit to web clients
       if (webServer) {
-        const baseSessionId = sessionId.replace(/-ai$|-terminal$|-batch-\d+$|-synopsis-\d+$/, '');
+        // Extract base session ID from formats: {id}-ai-{tabId}, {id}-terminal, {id}-batch-{timestamp}, {id}-synopsis-{timestamp}
+        const baseSessionId = sessionId.replace(/-ai-[^-]+$|-terminal$|-batch-\d+$|-synopsis-\d+$/, '');
         webServer.broadcastToSessionClients(baseSessionId, {
           type: 'session_exit',
           sessionId: baseSessionId,

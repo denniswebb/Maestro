@@ -329,7 +329,7 @@ const LogItemComponent = memo(({
            style={{ fontFamily, color: theme.colors.textDim, opacity: 0.6 }}>
         {new Date(log.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
       </div>
-      <div className={`flex-1 p-4 rounded-xl border ${isUserMessage ? 'rounded-tr-none' : 'rounded-tl-none'} relative`}
+      <div className={`flex-1 p-4 ${isUserMessage && log.readOnly ? 'pt-8' : ''} rounded-xl border ${isUserMessage ? 'rounded-tr-none' : 'rounded-tl-none'} relative`}
            style={{
              backgroundColor: isUserMessage
                ? isAIMode
@@ -1044,11 +1044,10 @@ export const TerminalOutput = forwardRef<HTMLDivElement, TerminalOutputProps>((p
     });
   }, [theme]);
 
-  // In AI mode, use the active tab's logs if tabs exist, otherwise fall back to session.aiLogs
-  // This supports the new multi-tab feature while maintaining backwards compatibility
+  // In AI mode, use the active tab's logs
   const activeTab = session.inputMode === 'ai' ? getActiveTab(session) : undefined;
   const activeLogs: LogEntry[] = session.inputMode === 'ai'
-    ? (activeTab?.logs ?? session.aiLogs)
+    ? (activeTab?.logs ?? [])
     : session.shellLogs;
 
   // In AI mode, collapse consecutive non-user entries into single response blocks

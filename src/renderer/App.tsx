@@ -298,59 +298,18 @@ export default function MaestroConsole() {
   // Restore a persisted session by respawning its process
   const restoreSession = async (session: Session): Promise<Session> => {
     try {
-      // ===== Migration: Convert old session format to new aiTabs format =====
-      // If session lacks aiTabs array, migrate from legacy fields
+      // Sessions must have aiTabs - if missing, this is a data corruption issue
       if (!session.aiTabs || session.aiTabs.length === 0) {
-        // Look up starred status and session name from existing stores
-        let isStarred = false;
-        let sessionName: string | null = null;
-
-        if (session.claudeSessionId && session.cwd) {
-          try {
-            // Look up session metadata from Claude session origins (name and starred)
-            const origins = await window.maestro.claude.getSessionOrigins(session.cwd);
-            const originData = origins[session.claudeSessionId];
-            if (originData && typeof originData === 'object') {
-              if (originData.sessionName) {
-                sessionName = originData.sessionName;
-              }
-              if (originData.starred !== undefined) {
-                isStarred = originData.starred;
-              }
-            }
-          } catch (error) {
-            console.warn('[restoreSession] Failed to lookup starred/named status during migration:', error);
-          }
-        }
-
-        // Create initial tab from legacy data
-        const initialTab: AITab = {
-          id: generateId(),
-          claudeSessionId: session.claudeSessionId || null,
-          name: sessionName,
-          starred: isStarred,
-          logs: session.aiLogs || [],
-          inputValue: '',
-          stagedImages: [],
-          usageStats: session.usageStats,
-          createdAt: Date.now(),
-          state: 'idle'
-        };
-
-        session = {
+        console.error('[restoreSession] Session has no aiTabs - data corruption, skipping:', session.id);
+        return {
           ...session,
-          aiTabs: [initialTab],
-          activeTabId: initialTab.id,
-          closedTabHistory: []
+          aiPid: -1,
+          terminalPid: -1,
+          state: 'error' as SessionState,
+          isLive: false,
+          liveUrl: undefined
         };
-
-        console.log('[restoreSession] Migrated session to aiTabs format:', session.id, {
-          claudeSessionId: initialTab.claudeSessionId,
-          name: sessionName,
-          starred: isStarred
-        });
       }
-      // ===== End Migration =====
 
       // Detect and fix inputMode/toolType mismatch
       // The AI agent should never use 'terminal' as toolType
@@ -362,16 +321,19 @@ export default function MaestroConsole() {
         console.warn(`[restoreSession] Session has toolType='terminal', using default agent for AI process`);
         aiAgentType = defaultAgent as ToolType;
 
-        const targetLogKey = 'aiLogs';
-        correctedSession[targetLogKey] = [
-          ...correctedSession[targetLogKey],
-          {
-            id: generateId(),
-            timestamp: Date.now(),
-            source: 'system',
-            text: '⚠️ Using default AI agent (Claude Code) for this session.'
-          }
-        ];
+        // Add warning to the active tab's logs
+        const warningLog: LogEntry = {
+          id: generateId(),
+          timestamp: Date.now(),
+          source: 'system',
+          text: '⚠️ Using default AI agent (Claude Code) for this session.'
+        };
+        const activeTabIndex = correctedSession.aiTabs.findIndex(tab => tab.id === correctedSession.activeTabId);
+        if (activeTabIndex >= 0) {
+          correctedSession.aiTabs = correctedSession.aiTabs.map((tab, i) =>
+            i === activeTabIndex ? { ...tab, logs: [...tab.logs, warningLog] } : tab
+          );
+        }
       }
 
       // Get agent definitions for both processes
@@ -407,10 +369,12 @@ export default function MaestroConsole() {
       let aiSpawnResult = { pid: 0, success: true }; // Default for batch mode
 
       if (!isClaudeBatchMode) {
-        // Only spawn for non-batch-mode agents
+        // Only spawn for non-batch-mode agents (Aider, etc.)
+        // Include active tab ID in session ID to match batch mode format
+        const activeTabId = correctedSession.activeTabId || correctedSession.aiTabs?.[0]?.id || 'default';
         // Use agent.path (full path) if available for better cross-environment compatibility
         aiSpawnResult = await window.maestro.process.spawn({
-          sessionId: `${correctedSession.id}-ai`,
+          sessionId: `${correctedSession.id}-ai-${activeTabId}`,
           toolType: aiAgentType,
           cwd: correctedSession.cwd,
           command: agent.path || agent.command,
@@ -444,7 +408,7 @@ export default function MaestroConsole() {
           isGitRepo,  // Update Git status
           isLive: false,  // Always start offline on app restart
           liveUrl: undefined,  // Clear any stale URL
-          aiLogs: correctedSession.aiLogs,  // Preserve existing AI Terminal logs
+          aiLogs: [],  // Deprecated - logs are now in aiTabs
           shellLogs: correctedSession.shellLogs,  // Preserve existing Command Terminal logs
           executionQueue: correctedSession.executionQueue || [],  // Ensure backwards compatibility
           activeTimeMs: correctedSession.activeTimeMs || 0  // Ensure backwards compatibility
@@ -583,7 +547,7 @@ export default function MaestroConsole() {
   // Set up process event listeners for real-time output
   useEffect(() => {
     // Handle process output data
-    // sessionId will be in format: "{id}-ai-{tabId}", "{id}-ai" (legacy), "{id}-terminal", "{id}-batch-{timestamp}", etc.
+    // sessionId will be in format: "{id}-ai-{tabId}", "{id}-terminal", "{id}-batch-{timestamp}", etc.
     const unsubscribeData = window.maestro.process.onData((sessionId: string, data: string) => {
       console.log('[onData] Received data for session:', sessionId, 'DataLen:', data.length, 'Preview:', data.substring(0, 200));
 
@@ -592,14 +556,11 @@ export default function MaestroConsole() {
       let isFromAi: boolean;
       let tabIdFromSession: string | undefined;
 
-      // Check for new format with tab ID: sessionId-ai-tabId
+      // Format: sessionId-ai-tabId
       const aiTabMatch = sessionId.match(/^(.+)-ai-(.+)$/);
       if (aiTabMatch) {
         actualSessionId = aiTabMatch[1];
         tabIdFromSession = aiTabMatch[2];
-        isFromAi = true;
-      } else if (sessionId.endsWith('-ai')) {
-        actualSessionId = sessionId.slice(0, -3); // Remove "-ai" suffix (legacy format)
         isFromAi = true;
       } else if (sessionId.endsWith('-terminal')) {
         // Ignore PTY terminal output - we use runCommand for terminal commands,
@@ -659,10 +620,9 @@ export default function MaestroConsole() {
           targetTab = getWriteModeTab(s) || getActiveTab(s);
         }
         if (!targetTab) {
-          // Fallback: no tabs exist, use deprecated aiLogs (shouldn't happen normally)
-          console.warn('[onData] No target tab found, falling back to aiLogs');
-          const newLog: LogEntry = { id: generateId(), timestamp: Date.now(), source: 'stdout', text: data };
-          return { ...s, aiLogs: [...s.aiLogs, newLog] };
+          // No tabs exist - this is a bug, sessions must have aiTabs
+          console.error('[onData] No target tab found - session has no aiTabs, this should not happen');
+          return s;
         }
 
         const existingLogs = targetTab.logs;
@@ -723,19 +683,16 @@ export default function MaestroConsole() {
     // Handle process exit
     const unsubscribeExit = window.maestro.process.onExit((sessionId: string, code: number) => {
       // Parse sessionId to determine which process exited
-      // Format: {id}-ai-{tabId}, {id}-ai (legacy), {id}-terminal, {id}-batch-{timestamp}
+      // Format: {id}-ai-{tabId}, {id}-terminal, {id}-batch-{timestamp}
       let actualSessionId: string;
       let isFromAi: boolean;
       let tabIdFromSession: string | undefined;
 
-      // Check for new format with tab ID: sessionId-ai-tabId
+      // Format: sessionId-ai-tabId
       const aiTabMatch = sessionId.match(/^(.+)-ai-(.+)$/);
       if (aiTabMatch) {
         actualSessionId = aiTabMatch[1];
         tabIdFromSession = aiTabMatch[2];
-        isFromAi = true;
-      } else if (sessionId.endsWith('-ai')) {
-        actualSessionId = sessionId.slice(0, -3);
         isFromAi = true;
       } else if (sessionId.endsWith('-terminal')) {
         actualSessionId = sessionId.slice(0, -9);
@@ -785,7 +742,7 @@ export default function MaestroConsole() {
             const completedTab = tabIdFromSession
               ? currentSession.aiTabs?.find(tab => tab.id === tabIdFromSession)
               : getActiveTab(currentSession);
-            const logs = completedTab?.logs || currentSession.aiLogs;
+            const logs = completedTab?.logs || [];
             const lastUserLog = logs.filter(log => log.source === 'user').pop();
             const lastAiLog = logs.filter(log => log.source === 'stdout' || log.source === 'ai').pop();
             const duration = currentSession.thinkingStartTime ? Date.now() - currentSession.thinkingStartTime : 0;
@@ -1089,20 +1046,15 @@ export default function MaestroConsole() {
       }
 
       // Parse sessionId to get actual session ID and tab ID
-      // Format: ${sessionId}-ai-${tabId} or legacy ${sessionId}-ai
+      // Format: ${sessionId}-ai-${tabId}
       let actualSessionId: string;
       let tabId: string | undefined;
 
-      // Check for new format with tab ID: sessionId-ai-tabId
       const aiTabMatch = sessionId.match(/^(.+)-ai-(.+)$/);
       if (aiTabMatch) {
         actualSessionId = aiTabMatch[1];
         tabId = aiTabMatch[2];
-        console.log('[onSessionId] Parsed tab format - actualSessionId:', actualSessionId, 'tabId:', tabId);
-      } else if (sessionId.endsWith('-ai')) {
-        // Legacy format without tab ID
-        actualSessionId = sessionId.slice(0, -3);
-        console.log('[onSessionId] Parsed legacy format - actualSessionId:', actualSessionId);
+        console.log('[onSessionId] Parsed - actualSessionId:', actualSessionId, 'tabId:', tabId);
       } else {
         actualSessionId = sessionId;
         console.log('[onSessionId] No format match - using as-is:', actualSessionId);
@@ -1155,8 +1107,9 @@ export default function MaestroConsole() {
           }
 
           if (!targetTab) {
-            // Fallback: no tabs exist, use deprecated session-level field
-            console.warn('[onSessionId] No target tab found, storing at session level (deprecated)');
+            // No tabs exist - this is a bug, sessions must have aiTabs
+            // Still store at session-level for web API compatibility
+            console.error('[onSessionId] No target tab found - session has no aiTabs, storing at session level only');
             return { ...s, claudeSessionId };
           }
 
@@ -1777,9 +1730,9 @@ export default function MaestroConsole() {
         : getActiveTab(s);
 
       if (!targetTab) {
-        // Fallback: no tabs exist, use deprecated aiLogs
-        console.warn('[addLogToTab] No target tab found, using aiLogs (deprecated)');
-        return { ...s, aiLogs: [...s.aiLogs, entry] };
+        // No tabs exist - this is a bug, sessions must have aiTabs
+        console.error('[addLogToTab] No target tab found - session has no aiTabs, this should not happen');
+        return s;
       }
 
       // Update target tab's logs
@@ -3131,9 +3084,10 @@ export default function MaestroConsole() {
   }, [shortcutsHelpOpen]);
 
   // Auto-scroll logs
+  const activeTabLogs = activeSession ? getActiveTab(activeSession)?.logs : undefined;
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'instant' });
-  }, [activeSession?.aiLogs, activeSession?.shellLogs, activeSession?.inputMode]);
+  }, [activeTabLogs, activeSession?.shellLogs, activeSession?.inputMode]);
 
   // --- ACTIONS ---
   const cycleSession = (dir: 'next' | 'prev') => {
@@ -3324,7 +3278,7 @@ export default function MaestroConsole() {
         cwd: workingDir,
         fullPath: workingDir,
         isGitRepo,
-        aiLogs: [{ id: generateId(), timestamp: Date.now(), source: 'system', text: `${name} ready.` }],
+        aiLogs: [], // Deprecated - logs are now in aiTabs
         shellLogs: [{ id: generateId(), timestamp: Date.now(), source: 'system', text: 'Shell Session Ready.' }],
         workLog: [],
         scratchPadContent: '',
@@ -3613,18 +3567,27 @@ export default function MaestroConsole() {
       if (existingCommand) {
         // Command exists but not available in this mode - show error and don't send to AI
         const modeLabel = isTerminalMode ? 'AI' : 'terminal';
-        const targetLogKey = activeSession.inputMode === 'ai' ? 'aiLogs' : 'shellLogs';
+        const errorLog: LogEntry = {
+          id: generateId(),
+          timestamp: Date.now(),
+          source: 'system',
+          text: `${commandText} is only available in ${modeLabel} mode.`
+        };
         setSessions(prev => prev.map(s => {
           if (s.id !== activeSessionId) return s;
-          return {
-            ...s,
-            [targetLogKey]: [...s[targetLogKey], {
-              id: generateId(),
-              timestamp: Date.now(),
-              source: 'system',
-              text: `${commandText} is only available in ${modeLabel} mode.`
-            }]
-          };
+          if (activeSession.inputMode === 'ai') {
+            // Add to active tab's logs
+            const activeTab = getActiveTab(s);
+            if (!activeTab) return s;
+            return {
+              ...s,
+              aiTabs: s.aiTabs.map(tab =>
+                tab.id === activeTab.id ? { ...tab, logs: [...tab.logs, errorLog] } : tab
+              )
+            };
+          } else {
+            return { ...s, shellLogs: [...s.shellLogs, errorLog] };
+          }
         }));
         setInputValue('');
         setSlashCommandOpen(false);
@@ -3728,7 +3691,6 @@ export default function MaestroConsole() {
     }
 
     const currentMode = activeSession.inputMode;
-    const targetLogKey = currentMode === 'ai' ? 'aiLogs' : 'shellLogs';
 
     // Queue messages when AI is busy (only in AI mode)
     // For read-only mode tabs: only queue if THIS TAB is busy (allows parallel execution)
@@ -3874,22 +3836,12 @@ export default function MaestroConsole() {
         };
       }
 
-      // For AI mode, add to ACTIVE TAB's logs (not session.aiLogs)
+      // For AI mode, add to ACTIVE TAB's logs
       const activeTab = getActiveTab(s);
       if (!activeTab) {
-        // Fallback: no tabs exist, use deprecated aiLogs
-        console.warn('[processInput] No active tab found, using aiLogs (deprecated)');
-        return {
-          ...s,
-          aiLogs: [...s.aiLogs, newEntry],
-          state: 'busy',
-          busySource: currentMode,
-          thinkingStartTime: Date.now(),
-          currentCycleTokens: 0,
-          contextUsage: Math.min(s.contextUsage + 5, 100),
-          shellCwd: newShellCwd,
-          [historyKey]: newHistory
-        };
+        // No tabs exist - this is a bug, sessions must have aiTabs
+        console.error('[processInput] No active tab found - session has no aiTabs, this should not happen');
+        return s;
       }
 
       // Update the active tab's logs and state to 'busy' for write-mode tracking
@@ -4014,23 +3966,25 @@ export default function MaestroConsole() {
           });
         } catch (error) {
           console.error('Failed to spawn Claude batch process:', error);
+          const errorLog: LogEntry = {
+            id: generateId(),
+            timestamp: Date.now(),
+            source: 'system',
+            text: `Error: Failed to spawn Claude process - ${error.message}`
+          };
           setSessions(prev => prev.map(s => {
             if (s.id !== activeSessionId) return s;
-            // Reset active tab's state to 'idle' for write-mode tracking
+            // Reset active tab's state to 'idle' and add error log
             const updatedAiTabs = s.aiTabs?.length > 0
               ? s.aiTabs.map(tab =>
-                  tab.id === s.activeTabId ? { ...tab, state: 'idle' as const } : tab
+                  tab.id === s.activeTabId
+                    ? { ...tab, state: 'idle' as const, logs: [...tab.logs, errorLog] }
+                    : tab
                 )
               : s.aiTabs;
             return {
               ...s,
               state: 'idle',
-              [targetLogKey]: [...s[targetLogKey], {
-                id: generateId(),
-                timestamp: Date.now(),
-                source: 'system',
-                text: `Error: Failed to spawn Claude process - ${error.message}`
-              }],
               aiTabs: updatedAiTabs
             };
           }));
@@ -4070,23 +4024,25 @@ export default function MaestroConsole() {
       // AI mode: Write to stdin
       window.maestro.process.write(targetSessionId, capturedInputValue).catch(error => {
         console.error('Failed to write to process:', error);
+        const errorLog: LogEntry = {
+          id: generateId(),
+          timestamp: Date.now(),
+          source: 'system',
+          text: `Error: Failed to write to process - ${error.message}`
+        };
         setSessions(prev => prev.map(s => {
           if (s.id !== activeSessionId) return s;
-          // Reset active tab's state to 'idle' for write-mode tracking (if tabs exist)
+          // Reset active tab's state to 'idle' and add error log
           const updatedAiTabs = s.aiTabs?.length > 0
             ? s.aiTabs.map(tab =>
-                tab.id === s.activeTabId ? { ...tab, state: 'idle' as const } : tab
+                tab.id === s.activeTabId
+                  ? { ...tab, state: 'idle' as const, logs: [...tab.logs, errorLog] }
+                  : tab
               )
             : s.aiTabs;
           return {
             ...s,
             state: 'idle',
-            [targetLogKey]: [...s[targetLogKey], {
-              id: generateId(),
-              timestamp: Date.now(),
-              source: 'system',
-              text: `Error: Failed to write to process - ${error.message}`
-            }],
             aiTabs: updatedAiTabs
           };
         }));
@@ -4341,21 +4297,10 @@ export default function MaestroConsole() {
               )
             : s.aiTabs;
 
-          // Fallback: if no active tab, use deprecated aiLogs
           if (!activeTab) {
-            return {
-              ...s,
-              state: 'busy' as SessionState,
-              busySource: 'ai',
-              thinkingStartTime: Date.now(),
-              currentCycleTokens: 0,
-              currentCycleBytes: 0,
-              aiLogs: [...s.aiLogs, userLogEntry],
-              ...(commandMetadata && {
-                aiCommandHistory: Array.from(new Set([...(s.aiCommandHistory || []), command.trim()])).slice(-50)
-              }),
-              aiTabs: updatedAiTabs
-            };
+            // No tabs exist - this is a bug, sessions must have aiTabs
+            console.error('[runAICommand] No active tab found - session has no aiTabs, this should not happen');
+            return s;
           }
 
           return {
@@ -4404,15 +4349,10 @@ export default function MaestroConsole() {
               )
             : s.aiTabs;
 
-          // Fallback: if no active tab, use deprecated aiLogs
           if (!activeTab) {
-            return {
-              ...s,
-              state: 'idle' as SessionState,
-              busySource: undefined,
-              aiLogs: [...s.aiLogs, errorLogEntry],
-              aiTabs: updatedAiTabs
-            };
+            // No tabs exist - this is a bug, sessions must have aiTabs
+            console.error('[runAICommand error] No active tab found - session has no aiTabs, this should not happen');
+            return s;
           }
 
           return {
@@ -4567,14 +4507,10 @@ export default function MaestroConsole() {
             )
           : s.aiTabs;
 
-        // Fallback: if no active tab, use deprecated aiLogs
         if (!activeTab) {
-          return {
-            ...s,
-            state: 'idle',
-            aiLogs: [...s.aiLogs, errorLogEntry],
-            aiTabs: updatedAiTabs
-          };
+          // No tabs exist - this is a bug, sessions must have aiTabs
+          console.error('[processQueuedItem error] No active tab found - session has no aiTabs, this should not happen');
+          return s;
         }
 
         return {
@@ -4593,8 +4529,10 @@ export default function MaestroConsole() {
     if (!activeSession) return;
 
     const currentMode = activeSession.inputMode;
-    const targetSessionId = currentMode === 'ai' ? `${activeSession.id}-ai` : `${activeSession.id}-terminal`;
-    const targetLogKey = currentMode === 'ai' ? 'aiLogs' : 'shellLogs';
+    const activeTab = getActiveTab(activeSession);
+    const targetSessionId = currentMode === 'ai'
+      ? `${activeSession.id}-ai-${activeTab?.id || 'default'}`
+      : `${activeSession.id}-terminal`;
 
     try {
       // Send interrupt signal (Ctrl+C)
@@ -4621,33 +4559,49 @@ export default function MaestroConsole() {
         try {
           await window.maestro.process.kill(targetSessionId);
 
+          const killLog: LogEntry = {
+            id: generateId(),
+            timestamp: Date.now(),
+            source: 'system',
+            text: 'Process forcefully terminated'
+          };
           setSessions(prev => prev.map(s => {
             if (s.id !== activeSession.id) return s;
-            return {
-              ...s,
-              [targetLogKey]: [...s[targetLogKey], {
-                id: generateId(),
-                timestamp: Date.now(),
-                source: 'system',
-                text: 'Process forcefully terminated'
-              }],
-              state: 'idle'
-            };
+            if (currentMode === 'ai') {
+              const tab = getActiveTab(s);
+              if (!tab) return { ...s, state: 'idle' };
+              return {
+                ...s,
+                state: 'idle',
+                aiTabs: s.aiTabs.map(t =>
+                  t.id === tab.id ? { ...t, logs: [...t.logs, killLog] } : t
+                )
+              };
+            }
+            return { ...s, shellLogs: [...s.shellLogs, killLog], state: 'idle' };
           }));
         } catch (killError) {
           console.error('Failed to kill process:', killError);
+          const errorLog: LogEntry = {
+            id: generateId(),
+            timestamp: Date.now(),
+            source: 'system',
+            text: `Error: Failed to terminate process - ${killError.message}`
+          };
           setSessions(prev => prev.map(s => {
             if (s.id !== activeSession.id) return s;
-            return {
-              ...s,
-              [targetLogKey]: [...s[targetLogKey], {
-                id: generateId(),
-                timestamp: Date.now(),
-                source: 'system',
-                text: `Error: Failed to terminate process - ${killError.message}`
-              }],
-              state: 'idle'
-            };
+            if (currentMode === 'ai') {
+              const tab = getActiveTab(s);
+              if (!tab) return { ...s, state: 'idle' };
+              return {
+                ...s,
+                state: 'idle',
+                aiTabs: s.aiTabs.map(t =>
+                  t.id === tab.id ? { ...t, logs: [...t.logs, errorLog] } : t
+                )
+              };
+            }
+            return { ...s, shellLogs: [...s.shellLogs, errorLog], state: 'idle' };
           }));
         }
       }
