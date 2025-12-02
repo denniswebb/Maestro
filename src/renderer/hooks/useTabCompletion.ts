@@ -4,18 +4,21 @@ import type { FileNode } from './useFileExplorer';
 
 export interface TabCompletionSuggestion {
   value: string;
-  type: 'history' | 'file' | 'folder';
+  type: 'history' | 'file' | 'folder' | 'branch' | 'tag';
   displayText: string;
 }
 
+export type TabCompletionFilter = 'all' | 'history' | 'branch' | 'tag' | 'file';
+
 export interface UseTabCompletionReturn {
-  getSuggestions: (input: string) => TabCompletionSuggestion[];
+  getSuggestions: (input: string, filter?: TabCompletionFilter) => TabCompletionSuggestion[];
 }
 
 /**
  * Hook for providing tab completion suggestions from:
  * 1. Shell command history
  * 2. Current directory file tree
+ * 3. Git branches and tags (for git commands in git repos)
  *
  * Performance optimizations:
  * - fileNames is memoized to avoid re-traversing tree on every render
@@ -54,7 +57,7 @@ export function useTabCompletion(session: Session | null): UseTabCompletionRetur
   }, [session?.shellCommandHistory]);
 
   // Memoize getSuggestions to maintain stable function reference
-  const getSuggestions = useCallback((input: string): TabCompletionSuggestion[] => {
+  const getSuggestions = useCallback((input: string, filter: TabCompletionFilter = 'all'): TabCompletionSuggestion[] => {
     if (!session || !input.trim()) return [];
 
     const suggestions: TabCompletionSuggestion[] = [];
@@ -69,67 +72,121 @@ export function useTabCompletion(session: Session | null): UseTabCompletionRetur
     const lastPartLower = lastPart.toLowerCase();
 
     // 1. Check shell command history for matches
-    for (const cmd of shellHistory) {
-      if (cmd.toLowerCase().startsWith(inputLower) && !seenValues.has(cmd)) {
-        seenValues.add(cmd);
-        suggestions.push({
-          value: cmd,
-          type: 'history',
-          displayText: cmd
-        });
-      }
-    }
-
-    // 2. Check file tree for matches on the last word
-    // Handle path-like completions (e.g., "cd src/comp" should match files in src/)
-    const pathParts = lastPart.split('/');
-    const searchInPath = pathParts.length > 1 ? pathParts.slice(0, -1).join('/') : '';
-    const searchTerm = pathParts[pathParts.length - 1].toLowerCase();
-
-    for (const file of fileNames) {
-      // If user is typing a path, only show files in that path
-      if (searchInPath) {
-        if (!file.path.toLowerCase().startsWith(searchInPath.toLowerCase() + '/')) {
-          continue;
+    if (filter === 'all' || filter === 'history') {
+      for (const cmd of shellHistory) {
+        const cmdLower = cmd.toLowerCase();
+        // When specifically filtering to history, show all history items that contain any part of input
+        // When showing 'all', only show history that starts with the full input
+        const matches = filter === 'history'
+          ? (!inputLower || cmdLower.includes(inputLower))
+          : cmdLower.startsWith(inputLower);
+        if (matches && !seenValues.has(cmd)) {
+          seenValues.add(cmd);
+          suggestions.push({
+            value: cmd,
+            type: 'history',
+            displayText: cmd
+          });
         }
-        // Check if the remaining part matches
-        const remaining = file.path.slice(searchInPath.length + 1);
-        const remainingParts = remaining.split('/');
-        // Only show immediate children
-        if (remainingParts.length !== 1) continue;
-        if (!remaining.toLowerCase().startsWith(searchTerm)) continue;
-      } else {
-        // Top-level search
-        if (!file.name.toLowerCase().startsWith(searchTerm)) continue;
-        // For top-level, only show top-level items (no / in path)
-        if (file.path.includes('/')) continue;
-      }
-
-      const completedPath = searchInPath ? `${searchInPath}/${file.name}` : file.name;
-      const fullValue = prefix ? `${prefix} ${completedPath}` : completedPath;
-
-      if (!seenValues.has(fullValue)) {
-        seenValues.add(fullValue);
-        suggestions.push({
-          value: fullValue + (file.type === 'folder' ? '/' : ''),
-          type: file.type,
-          displayText: completedPath + (file.type === 'folder' ? '/' : '')
-        });
       }
     }
 
-    // Sort: history first, then folders, then files
+    // 2. Check git branches and tags (always show in git repos, not just for "git" commands)
+    if (session.isGitRepo) {
+      const gitBranches = session.gitBranches || [];
+      const gitTags = session.gitTags || [];
+
+      // Add matching branches
+      if (filter === 'all' || filter === 'branch') {
+        for (const branch of gitBranches) {
+          const fullValue = `${prefix} ${branch}`.trim();
+          // Show all branches if no filter, or filter by last part
+          if ((!lastPartLower || branch.toLowerCase().startsWith(lastPartLower)) && !seenValues.has(fullValue)) {
+            seenValues.add(fullValue);
+            suggestions.push({
+              value: fullValue,
+              type: 'branch',
+              displayText: branch
+            });
+          }
+        }
+      }
+
+      // Add matching tags
+      if (filter === 'all' || filter === 'tag') {
+        for (const tag of gitTags) {
+          const fullValue = `${prefix} ${tag}`.trim();
+          // Show all tags if no filter, or filter by last part
+          if ((!lastPartLower || tag.toLowerCase().startsWith(lastPartLower)) && !seenValues.has(fullValue)) {
+            seenValues.add(fullValue);
+            suggestions.push({
+              value: fullValue,
+              type: 'tag',
+              displayText: tag
+            });
+          }
+        }
+      }
+    }
+
+    // 3. Check file tree for matches on the last word
+    // Handle path-like completions (e.g., "cd src/comp" should match files in src/)
+    // Also handle ./ prefix (e.g., "./src" -> "src")
+    if (filter === 'all' || filter === 'file') {
+      const normalizedLastPart = lastPart.replace(/^\.\//, ''); // Strip leading ./
+      const pathParts = normalizedLastPart.split('/');
+      let searchInPath = pathParts.length > 1 ? pathParts.slice(0, -1).join('/') : '';
+      // Handle edge case where user types "./" alone - treat as root
+      if (lastPart === './' || lastPart === '.') {
+        searchInPath = '';
+      }
+      const searchTerm = pathParts[pathParts.length - 1].toLowerCase();
+
+      for (const file of fileNames) {
+        // If user is typing a path, only show files in that path
+        if (searchInPath) {
+          if (!file.path.toLowerCase().startsWith(searchInPath.toLowerCase() + '/')) {
+            continue;
+          }
+          // Check if the remaining part matches
+          const remaining = file.path.slice(searchInPath.length + 1);
+          const remainingParts = remaining.split('/');
+          // Only show immediate children
+          if (remainingParts.length !== 1) continue;
+          if (!remaining.toLowerCase().startsWith(searchTerm)) continue;
+        } else {
+          // Top-level search
+          if (!file.name.toLowerCase().startsWith(searchTerm)) continue;
+          // For top-level, only show top-level items (no / in path)
+          if (file.path.includes('/')) continue;
+        }
+
+        const completedPath = searchInPath ? `${searchInPath}/${file.name}` : file.name;
+        const fullValue = prefix ? `${prefix} ${completedPath}` : completedPath;
+
+        if (!seenValues.has(fullValue)) {
+          seenValues.add(fullValue);
+          suggestions.push({
+            value: fullValue + (file.type === 'folder' ? '/' : ''),
+            type: file.type,
+            displayText: completedPath + (file.type === 'folder' ? '/' : '')
+          });
+        }
+      }
+    }
+
+    // Sort: history first, then branches, then tags, then folders, then files
     // Within each category, sort alphabetically
     suggestions.sort((a, b) => {
-      const typeOrder = { history: 0, folder: 1, file: 2 };
+      const typeOrder: Record<string, number> = { history: 0, branch: 1, tag: 2, folder: 3, file: 4 };
       if (typeOrder[a.type] !== typeOrder[b.type]) {
         return typeOrder[a.type] - typeOrder[b.type];
       }
       return a.displayText.localeCompare(b.displayText);
     });
 
-    // Limit to reasonable number
-    return suggestions.slice(0, 10);
+    // Limit to reasonable number (more when showing all types)
+    return suggestions.slice(0, 15);
   }, [session, fileNames, shellHistory]);
 
   return { getSuggestions };

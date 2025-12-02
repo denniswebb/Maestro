@@ -39,20 +39,25 @@ const prepareSessionForPersistence = (session: Session): Session => {
     return session;
   }
 
-  // Truncate logs in each tab to the last MAX_PERSISTED_LOGS_PER_TAB entries
-  const truncatedTabs = session.aiTabs.map(tab => {
-    if (tab.logs.length > MAX_PERSISTED_LOGS_PER_TAB) {
-      return {
-        ...tab,
-        logs: tab.logs.slice(-MAX_PERSISTED_LOGS_PER_TAB)
-      };
-    }
-    return tab;
-  });
+  // Truncate logs in each tab and reset runtime-only tab state
+  const truncatedTabs = session.aiTabs.map(tab => ({
+    ...tab,
+    logs: tab.logs.length > MAX_PERSISTED_LOGS_PER_TAB
+      ? tab.logs.slice(-MAX_PERSISTED_LOGS_PER_TAB)
+      : tab.logs,
+    // Reset runtime-only tab state - processes don't survive app restart
+    state: 'idle' as const,
+    thinkingStartTime: undefined,
+  }));
 
   return {
     ...session,
     aiTabs: truncatedTabs,
+    // Reset runtime-only session state - processes don't survive app restart
+    state: 'idle',
+    busySource: undefined,
+    thinkingStartTime: undefined,
+    currentCycleTokens: undefined,
     // Explicitly exclude closedTabHistory - it's runtime-only
     closedTabHistory: []
   };
@@ -194,16 +199,9 @@ export function useSessionManager(): UseSessionManagerReturn {
       return;
     }
 
-    // Get terminal agent definition
-    const terminalAgent = await window.maestro.agents.get('terminal');
-    if (!terminalAgent) {
-      console.error('Terminal agent not found');
-      return;
-    }
-
-    // Spawn BOTH processes - this is the dual-process architecture
+    // Spawn AI process (terminal uses runCommand which spawns fresh shells per command)
     try {
-      // 1. Spawn AI agent process (skip for Claude batch mode)
+      // Spawn AI agent process (skip for Claude batch mode)
       const isClaudeBatchMode = agentId === 'claude-code';
       let aiSpawnResult = { pid: 0, success: true }; // Default for batch mode
 
@@ -221,18 +219,7 @@ export function useSessionManager(): UseSessionManagerReturn {
         }
       }
 
-      // 2. Spawn terminal process
-      const terminalSpawnResult = await window.maestro.process.spawn({
-        sessionId: `${newId}-terminal`,
-        toolType: 'terminal',
-        cwd: workingDir,
-        command: terminalAgent.command,
-        args: terminalAgent.args || []
-      });
-
-      if (!terminalSpawnResult.success || terminalSpawnResult.pid <= 0) {
-        throw new Error('Failed to spawn terminal process');
-      }
+      // Terminal processes are spawned lazily via runCommand() - no persistent PTY needed
 
       // Check if the working directory is a Git repository
       const isGitRepo = await gitService.isRepo(workingDir);
@@ -251,9 +238,9 @@ export function useSessionManager(): UseSessionManagerReturn {
         scratchPadContent: '',
         contextUsage: 0,
         inputMode: agentId === 'terminal' ? 'terminal' : 'ai',
-        // Store both PIDs - each session now has two processes
+        // AI process PID (terminal uses runCommand which spawns fresh shells)
         aiPid: aiSpawnResult.pid,
-        terminalPid: terminalSpawnResult.pid,
+        terminalPid: 0,
         port: 3000 + Math.floor(Math.random() * 100),
         isLive: false,
         changedFiles: [],

@@ -2,13 +2,202 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Wand2, Plus, Settings, ChevronRight, ChevronDown, Activity, X, Keyboard,
   Radio, Copy, ExternalLink, PanelLeftClose, PanelLeftOpen, Folder, Info, FileText, GitBranch, Bot, Clock,
-  ScrollText, Cpu, Menu, Bookmark, Trophy
+  ScrollText, Cpu, Menu, Bookmark, Trophy, Trash2, Edit3, FolderInput
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { Session, Group, Theme, Shortcut, AutoRunStats } from '../types';
 import { CONDUCTOR_BADGES, getBadgeForTime } from '../constants/conductorBadges';
 import { getStatusColor, getContextColor, formatActiveTime } from '../utils/theme';
 import { gitService } from '../services/git';
+import { formatShortcutKeys } from '../utils/shortcutFormatter';
+
+// ============================================================================
+// SessionContextMenu - Right-click context menu for session items
+// ============================================================================
+
+interface SessionContextMenuProps {
+  x: number;
+  y: number;
+  theme: Theme;
+  session: Session;
+  groups: Group[];
+  onRename: () => void;
+  onToggleBookmark: () => void;
+  onMoveToGroup: (groupId: string) => void;
+  onDelete: () => void;
+  onDismiss: () => void;
+}
+
+function SessionContextMenu({
+  x,
+  y,
+  theme,
+  session,
+  groups,
+  onRename,
+  onToggleBookmark,
+  onMoveToGroup,
+  onDelete,
+  onDismiss
+}: SessionContextMenuProps) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [showMoveSubmenu, setShowMoveSubmenu] = useState(false);
+
+  // Close on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onDismiss();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [onDismiss]);
+
+  // Close on Escape
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onDismiss();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onDismiss]);
+
+  // Adjust menu position to stay within viewport
+  const adjustedPosition = {
+    left: Math.min(x, window.innerWidth - 200),
+    top: Math.min(y, window.innerHeight - 250)
+  };
+
+  return (
+    <div
+      ref={menuRef}
+      className="fixed z-50 py-1 rounded-md shadow-xl border"
+      style={{
+        left: adjustedPosition.left,
+        top: adjustedPosition.top,
+        backgroundColor: theme.colors.bgSidebar,
+        borderColor: theme.colors.border,
+        minWidth: '160px'
+      }}
+    >
+      {/* Rename */}
+      <button
+        onClick={() => {
+          onRename();
+          onDismiss();
+        }}
+        className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/5 transition-colors flex items-center gap-2"
+        style={{ color: theme.colors.textMain }}
+      >
+        <Edit3 className="w-3.5 h-3.5" />
+        Rename
+      </button>
+
+      {/* Toggle Bookmark */}
+      <button
+        onClick={() => {
+          onToggleBookmark();
+          onDismiss();
+        }}
+        className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/5 transition-colors flex items-center gap-2"
+        style={{ color: theme.colors.textMain }}
+      >
+        <Bookmark className="w-3.5 h-3.5" fill={session.bookmarked ? 'currentColor' : 'none'} />
+        {session.bookmarked ? 'Remove Bookmark' : 'Add Bookmark'}
+      </button>
+
+      {/* Divider */}
+      <div className="my-1 border-t" style={{ borderColor: theme.colors.border }} />
+
+      {/* Move to Group - with submenu */}
+      <div
+        className="relative"
+        onMouseEnter={() => setShowMoveSubmenu(true)}
+        onMouseLeave={() => setShowMoveSubmenu(false)}
+      >
+        <button
+          className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/5 transition-colors flex items-center justify-between"
+          style={{ color: theme.colors.textMain }}
+        >
+          <span className="flex items-center gap-2">
+            <FolderInput className="w-3.5 h-3.5" />
+            Move to Group
+          </span>
+          <ChevronRight className="w-3 h-3" />
+        </button>
+
+        {/* Submenu */}
+        {showMoveSubmenu && (
+          <div
+            className="absolute left-full top-0 ml-1 py-1 rounded-md shadow-xl border"
+            style={{
+              backgroundColor: theme.colors.bgSidebar,
+              borderColor: theme.colors.border,
+              minWidth: '140px'
+            }}
+          >
+            {/* No Group option */}
+            <button
+              onClick={() => {
+                onMoveToGroup('');
+                onDismiss();
+              }}
+              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-white/5 transition-colors flex items-center gap-2 ${!session.groupId ? 'opacity-50' : ''}`}
+              style={{ color: theme.colors.textMain }}
+              disabled={!session.groupId}
+            >
+              <Folder className="w-3.5 h-3.5" />
+              Ungrouped
+              {!session.groupId && <span className="text-[10px] opacity-50">(current)</span>}
+            </button>
+
+            {/* Divider if there are groups */}
+            {groups.length > 0 && (
+              <div className="my-1 border-t" style={{ borderColor: theme.colors.border }} />
+            )}
+
+            {/* Group options */}
+            {groups.map(group => (
+              <button
+                key={group.id}
+                onClick={() => {
+                  onMoveToGroup(group.id);
+                  onDismiss();
+                }}
+                className={`w-full text-left px-3 py-1.5 text-xs hover:bg-white/5 transition-colors flex items-center gap-2 ${session.groupId === group.id ? 'opacity-50' : ''}`}
+                style={{ color: theme.colors.textMain }}
+                disabled={session.groupId === group.id}
+              >
+                <span>{group.emoji}</span>
+                <span className="truncate">{group.name}</span>
+                {session.groupId === group.id && <span className="text-[10px] opacity-50">(current)</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Divider */}
+      <div className="my-1 border-t" style={{ borderColor: theme.colors.border }} />
+
+      {/* Delete */}
+      <button
+        onClick={() => {
+          onDelete();
+          onDismiss();
+        }}
+        className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/5 transition-colors flex items-center gap-2"
+        style={{ color: theme.colors.error }}
+      >
+        <Trash2 className="w-3.5 h-3.5" />
+        Remove Agent
+      </button>
+    </div>
+  );
+}
 
 // Strip leading emojis from a string for alphabetical sorting
 // Matches common emoji patterns at the start of the string
@@ -81,6 +270,11 @@ interface SessionListProps {
   createNewGroup: () => void;
   addNewSession: () => void;
 
+  // Rename modal handlers (for context menu rename)
+  setRenameInstanceModalOpen: (open: boolean) => void;
+  setRenameInstanceValue: (value: string) => void;
+  setRenameInstanceSessionId: (id: string) => void;
+
   // Auto mode props
   activeBatchSessionIds?: string[]; // Session IDs that are running in auto mode
 
@@ -104,6 +298,7 @@ export function SessionList(props: SessionListProps) {
     handleDragStart, handleDragOver, handleDropOnGroup, handleDropOnUngrouped,
     finishRenamingGroup, finishRenamingSession, startRenamingGroup,
     startRenamingSession, showConfirmation, setGroups, setSessions, createNewGroup, addNewSession,
+    setRenameInstanceModalOpen, setRenameInstanceValue, setRenameInstanceSessionId,
     activeBatchSessionIds = [],
     showSessionJumpNumbers = false,
     visibleSessions = [],
@@ -117,6 +312,10 @@ export function SessionList(props: SessionListProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [liveOverlayOpen, setLiveOverlayOpen] = useState(false);
   const [urlCopied, setUrlCopied] = useState(false);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
+  const contextMenuSession = contextMenu ? sessions.find(s => s.id === contextMenu.sessionId) : null;
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const liveOverlayRef = useRef<HTMLDivElement>(null);
@@ -148,6 +347,35 @@ export function SessionList(props: SessionListProps) {
     setSessions(prev => prev.map(s =>
       s.id === sessionId ? { ...s, bookmarked: !s.bookmarked } : s
     ));
+  };
+
+  // Context menu handlers
+  const handleContextMenu = (e: React.MouseEvent, sessionId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, sessionId });
+  };
+
+  const handleMoveToGroup = (sessionId: string, groupId: string) => {
+    setSessions(prev => prev.map(s =>
+      s.id === sessionId ? { ...s, groupId: groupId || undefined } : s
+    ));
+  };
+
+  const handleDeleteSession = (sessionId: string) => {
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) return;
+    showConfirmation(
+      `Are you sure you want to remove "${session.name}"? This action cannot be undone.`,
+      () => {
+        const newSessions = sessions.filter(s => s.id !== sessionId);
+        setSessions(newSessions);
+        // If deleting the active session, switch to another one
+        if (activeSessionId === sessionId && newSessions.length > 0) {
+          setActiveSessionId(newSessions[0].id);
+        }
+      }
+    );
   };
 
   // Close menu when clicking outside
@@ -258,12 +486,20 @@ export function SessionList(props: SessionListProps) {
     };
   }, [sessions]);
 
-  // Filter sessions based on search query
+  // Filter sessions based on search query (searches session name AND AI tab names)
   const filteredSessions = sessionFilter
-    ? sessions.filter(s => s.name.toLowerCase().includes(sessionFilter.toLowerCase()))
+    ? sessions.filter(s => {
+        const query = sessionFilter.toLowerCase();
+        // Match session name
+        if (s.name.toLowerCase().includes(query)) return true;
+        // Match any AI tab name
+        if (s.aiTabs?.some(tab => tab.name?.toLowerCase().includes(query))) return true;
+        return false;
+      })
     : sessions;
 
   // Temporarily expand groups when filtering to show matching sessions
+  // Note: Only depend on sessionFilter and sessions (not filteredSessions which changes reference each render)
   useEffect(() => {
     if (sessionFilter) {
       // Save current group states before filtering
@@ -273,9 +509,14 @@ export function SessionList(props: SessionListProps) {
         setPreFilterGroupStates(currentStates);
       }
 
-      // Find groups that contain matching sessions
+      // Find groups that contain matching sessions (search session name AND AI tab names)
       const groupsWithMatches = new Set<string>();
-      filteredSessions.forEach(session => {
+      const query = sessionFilter.toLowerCase();
+      sessions.filter(s => {
+        if (s.name.toLowerCase().includes(query)) return true;
+        if (s.aiTabs?.some(tab => tab.name?.toLowerCase().includes(query))) return true;
+        return false;
+      }).forEach(session => {
         if (session.groupId) {
           groupsWithMatches.add(session.groupId);
         }
@@ -296,7 +537,8 @@ export function SessionList(props: SessionListProps) {
         setPreFilterGroupStates(new Map());
       }
     }
-  }, [sessionFilter, filteredSessions]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionFilter]);
 
   // Get the jump number (1-9, 0=10th) for a session based on its position in visibleSessions
   const getSessionJumpNumber = (sessionId: string): string | null => {
@@ -510,7 +752,7 @@ export function SessionList(props: SessionListProps) {
                         <div className="text-xs" style={{ color: theme.colors.textDim }}>View all available shortcuts</div>
                       </div>
                       <span className="text-xs font-mono px-1.5 py-0.5 rounded" style={{ backgroundColor: theme.colors.bgActivity, color: theme.colors.textDim }}>
-                        {shortcuts.help.keys.join('+').replace('Meta', '⌘')}
+                        {formatShortcutKeys(shortcuts.help.keys)}
                       </span>
                     </button>
                     <button
@@ -523,7 +765,7 @@ export function SessionList(props: SessionListProps) {
                         <div className="text-xs" style={{ color: theme.colors.textDim }}>Configure preferences</div>
                       </div>
                       <span className="text-xs font-mono px-1.5 py-0.5 rounded" style={{ backgroundColor: theme.colors.bgActivity, color: theme.colors.textDim }}>
-                        {shortcuts.settings.keys.join('+').replace('Meta', '⌘')}
+                        {formatShortcutKeys(shortcuts.settings.keys)}
                       </span>
                     </button>
                     <button
@@ -536,7 +778,7 @@ export function SessionList(props: SessionListProps) {
                         <div className="text-xs" style={{ color: theme.colors.textDim }}>View application logs</div>
                       </div>
                       <span className="text-xs font-mono px-1.5 py-0.5 rounded" style={{ backgroundColor: theme.colors.bgActivity, color: theme.colors.textDim }}>
-                        {shortcuts.systemLogs.keys.join('+').replace('Meta', '⌘').replace('Alt', '⌥')}
+                        {formatShortcutKeys(shortcuts.systemLogs.keys)}
                       </span>
                     </button>
                     <button
@@ -549,7 +791,7 @@ export function SessionList(props: SessionListProps) {
                         <div className="text-xs" style={{ color: theme.colors.textDim }}>View running processes</div>
                       </div>
                       <span className="text-xs font-mono px-1.5 py-0.5 rounded" style={{ backgroundColor: theme.colors.bgActivity, color: theme.colors.textDim }}>
-                        {shortcuts.processMonitor.keys.join('+').replace('Meta', '⌘').replace('Alt', '⌥')}
+                        {formatShortcutKeys(shortcuts.processMonitor.keys)}
                       </span>
                     </button>
                     <div className="my-1 border-t" style={{ borderColor: theme.colors.border }} />
@@ -597,7 +839,7 @@ export function SessionList(props: SessionListProps) {
                       <div className="text-xs" style={{ color: theme.colors.textDim }}>View all available shortcuts</div>
                     </div>
                     <span className="text-xs font-mono px-1.5 py-0.5 rounded" style={{ backgroundColor: theme.colors.bgActivity, color: theme.colors.textDim }}>
-                      {shortcuts.help.keys.join('+').replace('Meta', '⌘')}
+                      {formatShortcutKeys(shortcuts.help.keys)}
                     </span>
                   </button>
                   <button
@@ -610,7 +852,7 @@ export function SessionList(props: SessionListProps) {
                       <div className="text-xs" style={{ color: theme.colors.textDim }}>Configure preferences</div>
                     </div>
                     <span className="text-xs font-mono px-1.5 py-0.5 rounded" style={{ backgroundColor: theme.colors.bgActivity, color: theme.colors.textDim }}>
-                      {shortcuts.settings.keys.join('+').replace('Meta', '⌘')}
+                      {formatShortcutKeys(shortcuts.settings.keys)}
                     </span>
                   </button>
                   <button
@@ -623,7 +865,7 @@ export function SessionList(props: SessionListProps) {
                       <div className="text-xs" style={{ color: theme.colors.textDim }}>View application logs</div>
                     </div>
                     <span className="text-xs font-mono px-1.5 py-0.5 rounded" style={{ backgroundColor: theme.colors.bgActivity, color: theme.colors.textDim }}>
-                      {shortcuts.systemLogs.keys.join('+').replace('Meta', '⌘').replace('Alt', '⌥')}
+                      {formatShortcutKeys(shortcuts.systemLogs.keys)}
                     </span>
                   </button>
                   <button
@@ -636,7 +878,7 @@ export function SessionList(props: SessionListProps) {
                       <div className="text-xs" style={{ color: theme.colors.textDim }}>View running processes</div>
                     </div>
                     <span className="text-xs font-mono px-1.5 py-0.5 rounded" style={{ backgroundColor: theme.colors.bgActivity, color: theme.colors.textDim }}>
-                      {shortcuts.processMonitor.keys.join('+').replace('Meta', '⌘').replace('Alt', '⌥')}
+                      {formatShortcutKeys(shortcuts.processMonitor.keys)}
                     </span>
                   </button>
                   <div className="my-1 border-t" style={{ borderColor: theme.colors.border }} />
@@ -703,10 +945,11 @@ export function SessionList(props: SessionListProps) {
                     const group = groups.find(g => g.id === session.groupId);
                     return (
                       <div
-                        key={session.id}
+                        key={`bookmark-${session.id}`}
                         draggable
                         onDragStart={() => handleDragStart(session.id)}
                         onClick={() => setActiveSessionId(session.id)}
+                        onContextMenu={(e) => handleContextMenu(e, session.id)}
                         className={`px-4 py-2 cursor-move flex items-center justify-between group border-l-2 transition-all hover:bg-opacity-50 ${draggingSessionId === session.id ? 'opacity-50' : ''}`}
                         style={{
                           borderColor: (activeSessionId === session.id || isKeyboardSelected) ? theme.colors.accent : 'transparent',
@@ -714,7 +957,7 @@ export function SessionList(props: SessionListProps) {
                         }}
                       >
                         <div className="min-w-0 flex-1">
-                          {editingSessionId === session.id ? (
+                          {editingSessionId === `bookmark-${session.id}` ? (
                             <input
                               autoFocus
                               className="bg-transparent text-sm font-medium outline-none w-full border-b border-indigo-500"
@@ -729,7 +972,7 @@ export function SessionList(props: SessionListProps) {
                           ) : (
                             <div
                               className="flex items-center gap-1.5"
-                              onDoubleClick={() => startRenamingSession(session.id)}
+                              onDoubleClick={() => startRenamingSession(`bookmark-${session.id}`)}
                             >
                               {session.bookmarked && (
                                 <Bookmark className="w-3 h-3 shrink-0" style={{ color: theme.colors.accent }} fill={theme.colors.accent} />
@@ -823,7 +1066,7 @@ export function SessionList(props: SessionListProps) {
                 >
                   {[...filteredSessions.filter(s => s.bookmarked)].sort((a, b) => compareSessionNames(a.name, b.name)).map(s => (
                     <div
-                      key={s.id}
+                      key={`bookmark-collapsed-${s.id}`}
                       className="group/indicator relative flex-1 rounded-full opacity-50 hover:opacity-100 transition-opacity"
                       style={
                         s.toolType === 'claude' && !s.claudeSessionId
@@ -983,10 +1226,13 @@ export function SessionList(props: SessionListProps) {
                       const isKeyboardSelected = activeFocus === 'sidebar' && globalIdx === selectedSidebarIndex;
                       return (
                         <div
-                          key={session.id}
+                          key={`group-${group.id}-${session.id}`}
                           draggable
                           onDragStart={() => handleDragStart(session.id)}
+                          onDragOver={handleDragOver}
+                          onDrop={() => handleDropOnGroup(group.id)}
                           onClick={() => setActiveSessionId(session.id)}
+                          onContextMenu={(e) => handleContextMenu(e, session.id)}
                           className={`px-4 py-2 cursor-move flex items-center justify-between group border-l-2 transition-all hover:bg-opacity-50 ${draggingSessionId === session.id ? 'opacity-50' : ''}`}
                           style={{
                             borderColor: (activeSessionId === session.id || isKeyboardSelected) ? theme.colors.accent : 'transparent',
@@ -994,7 +1240,7 @@ export function SessionList(props: SessionListProps) {
                           }}
                         >
                           <div className="min-w-0 flex-1">
-                            {editingSessionId === session.id ? (
+                            {editingSessionId === `group-${group.id}-${session.id}` ? (
                               <input
                                 autoFocus
                                 className="bg-transparent text-sm font-medium outline-none w-full border-b border-indigo-500"
@@ -1010,7 +1256,7 @@ export function SessionList(props: SessionListProps) {
                               <span
                                 className="text-sm font-medium truncate"
                                 style={{ color: activeSessionId === session.id ? theme.colors.textMain : theme.colors.textDim }}
-                                onDoubleClick={() => startRenamingSession(session.id)}
+                                onDoubleClick={() => startRenamingSession(`group-${group.id}-${session.id}`)}
                               >
                                 {session.name}
                               </span>
@@ -1108,7 +1354,7 @@ export function SessionList(props: SessionListProps) {
                   >
                     {groupSessions.map(s => (
                       <div
-                        key={s.id}
+                        key={`group-collapsed-${group.id}-${s.id}`}
                         className="group/indicator relative flex-1 rounded-full opacity-50 hover:opacity-100 transition-opacity"
                         style={
                           s.toolType === 'claude' && !s.claudeSessionId
@@ -1251,10 +1497,13 @@ export function SessionList(props: SessionListProps) {
                   const isKeyboardSelected = activeFocus === 'sidebar' && globalIdx === selectedSidebarIndex;
                   return (
                 <div
-                  key={session.id}
+                  key={`ungrouped-${session.id}`}
                   draggable
                   onDragStart={() => handleDragStart(session.id)}
+                  onDragOver={handleDragOver}
+                  onDrop={handleDropOnUngrouped}
                   onClick={() => setActiveSessionId(session.id)}
+                  onContextMenu={(e) => handleContextMenu(e, session.id)}
                   className={`px-4 py-2 rounded cursor-move flex items-center justify-between mb-1 hover:bg-opacity-50 border-l-2 transition-all group ${draggingSessionId === session.id ? 'opacity-50' : ''}`}
                   style={{
                     borderColor: (activeSessionId === session.id || isKeyboardSelected) ? theme.colors.accent : 'transparent',
@@ -1262,7 +1511,7 @@ export function SessionList(props: SessionListProps) {
                   }}
                 >
                   <div className="min-w-0 flex-1">
-                    {editingSessionId === session.id ? (
+                    {editingSessionId === `ungrouped-${session.id}` ? (
                       <input
                         autoFocus
                         className="bg-transparent text-sm font-medium outline-none w-full border-b"
@@ -1279,7 +1528,7 @@ export function SessionList(props: SessionListProps) {
                       <span
                         className="text-sm font-medium truncate"
                         style={{ color: activeSessionId === session.id ? theme.colors.textMain : theme.colors.textDim }}
-                        onDoubleClick={() => startRenamingSession(session.id)}
+                        onDoubleClick={() => startRenamingSession(`ungrouped-${session.id}`)}
                       >
                         {session.name}
                       </span>
@@ -1370,7 +1619,7 @@ export function SessionList(props: SessionListProps) {
               >
                 {[...filteredSessions.filter(s => !s.groupId)].sort((a, b) => compareSessionNames(a.name, b.name)).map(s => (
                   <div
-                    key={s.id}
+                    key={`ungrouped-collapsed-${s.id}`}
                     className="group/indicator relative flex-1 rounded-full opacity-50 hover:opacity-100 transition-opacity"
                     style={
                       s.toolType === 'claude' && !s.claudeSessionId
@@ -1480,6 +1729,7 @@ export function SessionList(props: SessionListProps) {
             <div
               key={session.id}
               onClick={() => setActiveSessionId(session.id)}
+              onContextMenu={(e) => handleContextMenu(e, session.id)}
               className={`group relative w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all ${activeSessionId === session.id ? 'ring-2' : 'hover:bg-white/10'}`}
               style={{ ringColor: theme.colors.accent }}
             >
@@ -1589,7 +1839,7 @@ export function SessionList(props: SessionListProps) {
         <button
           onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
           className="flex items-center justify-center p-2 rounded hover:bg-white/5 transition-colors w-8 h-8 shrink-0"
-          title={`${leftSidebarOpen ? "Collapse" : "Expand"} Sidebar (${shortcuts.toggleSidebar.keys.join('+').replace('Meta', 'Cmd')})`}
+          title={`${leftSidebarOpen ? "Collapse" : "Expand"} Sidebar (${formatShortcutKeys(shortcuts.toggleSidebar.keys)})`}
         >
           {leftSidebarOpen ? <PanelLeftClose className="w-4 h-4 opacity-50" /> : <PanelLeftOpen className="w-4 h-4 opacity-50" />}
         </button>
@@ -1600,6 +1850,26 @@ export function SessionList(props: SessionListProps) {
           </button>
         )}
       </div>
+
+      {/* Session Context Menu */}
+      {contextMenu && contextMenuSession && (
+        <SessionContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          theme={theme}
+          session={contextMenuSession}
+          groups={groups}
+          onRename={() => {
+            setRenameInstanceValue(contextMenuSession.name);
+            setRenameInstanceSessionId(contextMenuSession.id);
+            setRenameInstanceModalOpen(true);
+          }}
+          onToggleBookmark={() => toggleBookmark(contextMenuSession.id)}
+          onMoveToGroup={(groupId) => handleMoveToGroup(contextMenuSession.id, groupId)}
+          onDelete={() => handleDeleteSession(contextMenuSession.id)}
+          onDismiss={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }

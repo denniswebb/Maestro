@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useMemo } from 'react';
-import { Terminal, Cpu, Keyboard, ImageIcon, X, ArrowUp, StopCircle, Eye, History, File, Folder } from 'lucide-react';
+import { Terminal, Cpu, Keyboard, ImageIcon, X, ArrowUp, StopCircle, Eye, History, File, Folder, GitBranch, Tag } from 'lucide-react';
 import type { Session, Theme, BatchRunState } from '../types';
-import type { TabCompletionSuggestion } from '../hooks/useTabCompletion';
+import type { TabCompletionSuggestion, TabCompletionFilter } from '../hooks/useTabCompletion';
 import { ThinkingStatusPill } from './ThinkingStatusPill';
 import { ExecutionQueueIndicator } from './ExecutionQueueIndicator';
 
@@ -50,6 +50,18 @@ interface InputAreaProps {
   tabCompletionSuggestions?: TabCompletionSuggestion[];
   selectedTabCompletionIndex?: number;
   setSelectedTabCompletionIndex?: (index: number) => void;
+  tabCompletionFilter?: TabCompletionFilter;
+  setTabCompletionFilter?: (filter: TabCompletionFilter) => void;
+  // @ mention completion props (AI mode only)
+  atMentionOpen?: boolean;
+  setAtMentionOpen?: (open: boolean) => void;
+  atMentionFilter?: string;
+  setAtMentionFilter?: (filter: string) => void;
+  atMentionStartIndex?: number;
+  setAtMentionStartIndex?: (index: number) => void;
+  atMentionSuggestions?: Array<{ value: string; type: 'file' | 'folder'; displayText: string; fullPath: string }>;
+  selectedAtMentionIndex?: number;
+  setSelectedAtMentionIndex?: (index: number) => void;
   // ThinkingStatusPill props
   sessions?: Session[];
   namedSessions?: Record<string, string>;
@@ -61,6 +73,9 @@ interface InputAreaProps {
   // Read-only mode toggle (per-tab)
   tabReadOnlyMode?: boolean;
   onToggleTabReadOnlyMode?: () => void;
+  // Save to History toggle (per-tab)
+  tabSaveToHistory?: boolean;
+  onToggleTabSaveToHistory?: () => void;
 }
 
 export const InputArea = React.memo(function InputArea(props: InputAreaProps) {
@@ -77,9 +92,16 @@ export const InputArea = React.memo(function InputArea(props: InputAreaProps) {
     tabCompletionOpen = false, setTabCompletionOpen,
     tabCompletionSuggestions = [], selectedTabCompletionIndex = 0,
     setSelectedTabCompletionIndex,
+    tabCompletionFilter = 'all', setTabCompletionFilter,
+    atMentionOpen = false, setAtMentionOpen,
+    atMentionFilter = '', setAtMentionFilter,
+    atMentionStartIndex = -1, setAtMentionStartIndex,
+    atMentionSuggestions = [], selectedAtMentionIndex = 0,
+    setSelectedAtMentionIndex,
     sessions = [], namedSessions, onSessionClick, autoRunState, onStopAutoRun,
     onOpenQueueBrowser,
-    tabReadOnlyMode = false, onToggleTabReadOnlyMode
+    tabReadOnlyMode = false, onToggleTabReadOnlyMode,
+    tabSaveToHistory = false, onToggleTabSaveToHistory
   } = props;
 
   // Check if we're in read-only mode (auto mode OR manual toggle - Claude will be in plan mode)
@@ -131,6 +153,11 @@ export const InputArea = React.memo(function InputArea(props: InputAreaProps) {
   // Refs for slash command items to enable scroll-into-view
   const slashCommandItemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
+  // Refs for tab completion items to enable scroll-into-view
+  const tabCompletionItemRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  // Refs for @ mention items to enable scroll-into-view
+  const atMentionItemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   // Memoize command history filtering to avoid expensive Set operations on every keystroke
   const commandHistoryFilterLower = commandHistoryFilter.toLowerCase();
@@ -151,6 +178,35 @@ export const InputArea = React.memo(function InputArea(props: InputAreaProps) {
       });
     }
   }, [safeSelectedIndex, slashCommandOpen]);
+
+  // Scroll selected tab completion item into view when index changes
+  useEffect(() => {
+    if (tabCompletionOpen && tabCompletionItemRefs.current[selectedTabCompletionIndex]) {
+      tabCompletionItemRefs.current[selectedTabCompletionIndex]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+    }
+  }, [selectedTabCompletionIndex, tabCompletionOpen]);
+
+  // Scroll selected @ mention item into view when index changes
+  useEffect(() => {
+    if (atMentionOpen && atMentionItemRefs.current[selectedAtMentionIndex]) {
+      atMentionItemRefs.current[selectedAtMentionIndex]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+    }
+  }, [selectedAtMentionIndex, atMentionOpen]);
+
+  // Auto-resize textarea when inputValue changes externally (e.g., tab switch)
+  // This ensures the textarea height matches the content when switching between tabs
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+      inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 112)}px`;
+    }
+  }, [inputValue, inputRef]);
 
   return (
     <div className="relative p-4 border-t" style={{ borderColor: theme.colors.border, backgroundColor: theme.colors.bgSidebar }}>
@@ -317,23 +373,121 @@ export const InputArea = React.memo(function InputArea(props: InputAreaProps) {
       )}
 
       {/* Tab Completion Dropdown - Terminal mode only */}
-      {tabCompletionOpen && isTerminalMode && tabCompletionSuggestions.length > 0 && (
+      {tabCompletionOpen && isTerminalMode && (
         <div
           className="absolute bottom-full left-0 right-0 mb-2 border rounded-lg shadow-2xl max-h-64 overflow-hidden"
           style={{ backgroundColor: theme.colors.bgSidebar, borderColor: theme.colors.border }}
         >
-          <div className="px-3 py-2 border-b text-xs opacity-60" style={{ borderColor: theme.colors.border, color: theme.colors.textDim }}>
-            Tab Completion
+          <div className="px-3 py-2 border-b flex items-center justify-between" style={{ borderColor: theme.colors.border }}>
+            <span className="text-xs opacity-60" style={{ color: theme.colors.textDim }}>
+              Tab Completion
+            </span>
+            {/* Filter buttons - only show in git repos */}
+            {session.isGitRepo && setTabCompletionFilter && (
+              <div className="flex gap-1">
+                {(['all', 'history', 'branch', 'tag', 'file'] as const).map((filterType) => {
+                  const isActive = tabCompletionFilter === filterType;
+                  const Icon = filterType === 'history' ? History :
+                               filterType === 'branch' ? GitBranch :
+                               filterType === 'tag' ? Tag :
+                               filterType === 'file' ? File : null;
+                  const label = filterType === 'all' ? 'All' :
+                               filterType === 'history' ? 'History' :
+                               filterType === 'branch' ? 'Branches' :
+                               filterType === 'tag' ? 'Tags' : 'Files';
+                  return (
+                    <button
+                      key={filterType}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTabCompletionFilter(filterType);
+                        setSelectedTabCompletionIndex?.(0);
+                      }}
+                      className={`px-2 py-0.5 text-[10px] rounded flex items-center gap-1 transition-colors ${
+                        isActive ? 'font-medium' : 'opacity-60 hover:opacity-100'
+                      }`}
+                      style={{
+                        backgroundColor: isActive ? theme.colors.accent + '30' : 'transparent',
+                        color: isActive ? theme.colors.accent : theme.colors.textDim,
+                        border: isActive ? `1px solid ${theme.colors.accent}50` : '1px solid transparent'
+                      }}
+                    >
+                      {Icon && <Icon className="w-3 h-3" />}
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
           <div className="overflow-y-auto max-h-56 scrollbar-thin">
-            {tabCompletionSuggestions.map((suggestion, idx) => {
-              const isSelected = idx === selectedTabCompletionIndex;
-              const IconComponent = suggestion.type === 'history' ? History : suggestion.type === 'folder' ? Folder : File;
-              const typeLabel = suggestion.type === 'history' ? 'history' : suggestion.type === 'folder' ? 'folder' : 'file';
+            {tabCompletionSuggestions.length > 0 ? (
+              tabCompletionSuggestions.map((suggestion, idx) => {
+                const isSelected = idx === selectedTabCompletionIndex;
+                const IconComponent = suggestion.type === 'history' ? History :
+                                     suggestion.type === 'branch' ? GitBranch :
+                                     suggestion.type === 'tag' ? Tag :
+                                     suggestion.type === 'folder' ? Folder : File;
+                const typeLabel = suggestion.type;
+
+                return (
+                  <div
+                    key={`${suggestion.type}-${suggestion.value}`}
+                    ref={el => tabCompletionItemRefs.current[idx] = el}
+                    className={`px-3 py-2 cursor-pointer text-sm font-mono flex items-center gap-2 ${isSelected ? 'ring-1 ring-inset' : ''}`}
+                    style={{
+                      backgroundColor: isSelected ? theme.colors.bgActivity : 'transparent',
+                      ringColor: theme.colors.accent,
+                      color: theme.colors.textMain
+                    }}
+                    onClick={() => {
+                      setInputValue(suggestion.value);
+                      setTabCompletionOpen?.(false);
+                      inputRef.current?.focus();
+                    }}
+                    onMouseEnter={() => setSelectedTabCompletionIndex?.(idx)}
+                  >
+                    <IconComponent className="w-3.5 h-3.5 flex-shrink-0" style={{
+                      color: suggestion.type === 'history' ? theme.colors.accent :
+                             suggestion.type === 'branch' ? theme.colors.success :
+                             suggestion.type === 'tag' ? theme.colors.info :
+                             suggestion.type === 'folder' ? theme.colors.warning : theme.colors.textDim
+                    }} />
+                    <span className="flex-1 truncate">{suggestion.displayText}</span>
+                    <span className="text-[10px] opacity-40 flex-shrink-0">{typeLabel}</span>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="px-3 py-4 text-center text-sm opacity-50" style={{ color: theme.colors.textDim }}>
+                No matching {tabCompletionFilter === 'all' ? 'suggestions' :
+                             tabCompletionFilter === 'history' ? 'history' :
+                             tabCompletionFilter === 'branch' ? 'branches' :
+                             tabCompletionFilter === 'tag' ? 'tags' : 'files'}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* @ Mention Dropdown (AI mode file picker) */}
+      {atMentionOpen && !isTerminalMode && atMentionSuggestions.length > 0 && (
+        <div
+          className="absolute bottom-full left-4 right-4 mb-1 rounded-lg border shadow-lg overflow-hidden z-50"
+          style={{ backgroundColor: theme.colors.bgSidebar, borderColor: theme.colors.border }}
+        >
+          <div className="px-3 py-2 border-b text-xs font-medium" style={{ borderColor: theme.colors.border, color: theme.colors.textDim }}>
+            Files {atMentionFilter && <span className="opacity-50">matching "{atMentionFilter}"</span>}
+          </div>
+          <div className="overflow-y-auto max-h-56 scrollbar-thin">
+            {atMentionSuggestions.map((suggestion, idx) => {
+              const isSelected = idx === selectedAtMentionIndex;
+              const IconComponent = suggestion.type === 'folder' ? Folder : File;
 
               return (
                 <div
                   key={`${suggestion.type}-${suggestion.value}`}
+                  ref={el => atMentionItemRefs.current[idx] = el}
                   className={`px-3 py-2 cursor-pointer text-sm font-mono flex items-center gap-2 ${isSelected ? 'ring-1 ring-inset' : ''}`}
                   style={{
                     backgroundColor: isSelected ? theme.colors.bgActivity : 'transparent',
@@ -341,18 +495,22 @@ export const InputArea = React.memo(function InputArea(props: InputAreaProps) {
                     color: theme.colors.textMain
                   }}
                   onClick={() => {
-                    setInputValue(suggestion.value);
-                    setTabCompletionOpen?.(false);
+                    // Replace @filter with @path
+                    const beforeAt = inputValue.substring(0, atMentionStartIndex);
+                    const afterFilter = inputValue.substring(atMentionStartIndex + 1 + atMentionFilter.length);
+                    setInputValue(beforeAt + '@' + suggestion.value + ' ' + afterFilter);
+                    setAtMentionOpen?.(false);
+                    setAtMentionFilter?.('');
+                    setAtMentionStartIndex?.(-1);
                     inputRef.current?.focus();
                   }}
-                  onMouseEnter={() => setSelectedTabCompletionIndex?.(idx)}
+                  onMouseEnter={() => setSelectedAtMentionIndex?.(idx)}
                 >
                   <IconComponent className="w-3.5 h-3.5 flex-shrink-0" style={{
-                    color: suggestion.type === 'history' ? theme.colors.accent :
-                           suggestion.type === 'folder' ? theme.colors.warning : theme.colors.textDim
+                    color: suggestion.type === 'folder' ? theme.colors.warning : theme.colors.textDim
                   }} />
-                  <span className="flex-1 truncate">{suggestion.displayText}</span>
-                  <span className="text-[10px] opacity-40 flex-shrink-0">{typeLabel}</span>
+                  <span className="flex-1 truncate">{suggestion.fullPath}</span>
+                  <span className="text-[10px] opacity-40 flex-shrink-0">{suggestion.type}</span>
                 </div>
               );
             })}
@@ -388,6 +546,7 @@ export const InputArea = React.memo(function InputArea(props: InputAreaProps) {
               onBlur={onInputBlur}
               onChange={e => {
                 const value = e.target.value;
+                const cursorPosition = e.target.selectionStart || 0;
                 setInputValue(value);
 
                 // Show slash command autocomplete when typing /
@@ -397,6 +556,41 @@ export const InputArea = React.memo(function InputArea(props: InputAreaProps) {
                   setSelectedSlashCommandIndex(0);
                 } else {
                   setSlashCommandOpen(false);
+                }
+
+                // @ mention file completion (AI mode only)
+                if (!isTerminalMode && setAtMentionOpen && setAtMentionFilter && setAtMentionStartIndex && setSelectedAtMentionIndex) {
+                  // Find the last @ before cursor that's not part of a completed mention
+                  let atIndex = -1;
+                  for (let i = cursorPosition - 1; i >= 0; i--) {
+                    if (value[i] === '@') {
+                      // Check if this @ is at start of input or after a space/newline
+                      if (i === 0 || /\s/.test(value[i - 1])) {
+                        atIndex = i;
+                        break;
+                      }
+                    }
+                    // Stop if we hit a space (means we're past any potential @ trigger)
+                    if (value[i] === ' ' || value[i] === '\n') {
+                      break;
+                    }
+                  }
+
+                  if (atIndex >= 0) {
+                    // Extract filter text after @
+                    const filterText = value.substring(atIndex + 1, cursorPosition);
+                    // Only show dropdown if filter doesn't contain spaces (incomplete mention)
+                    if (!filterText.includes(' ')) {
+                      setAtMentionOpen(true);
+                      setAtMentionFilter(filterText);
+                      setAtMentionStartIndex(atIndex);
+                      setSelectedAtMentionIndex(0);
+                    } else {
+                      setAtMentionOpen(false);
+                    }
+                  } else {
+                    setAtMentionOpen(false);
+                  }
                 }
 
                 // Auto-grow logic - limit to 5 lines (~112px with text-sm)
@@ -450,6 +644,24 @@ export const InputArea = React.memo(function InputArea(props: InputAreaProps) {
             </div>
 
             <div className="flex items-center gap-2">
+              {/* Save to History toggle - AI mode only */}
+              {session.inputMode === 'ai' && onToggleTabSaveToHistory && (
+                <button
+                  onClick={onToggleTabSaveToHistory}
+                  className={`flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full cursor-pointer transition-all ${
+                    tabSaveToHistory ? '' : 'opacity-40 hover:opacity-70'
+                  }`}
+                  style={{
+                    backgroundColor: tabSaveToHistory ? `${theme.colors.info}25` : 'transparent',
+                    color: tabSaveToHistory ? theme.colors.info : theme.colors.textDim,
+                    border: tabSaveToHistory ? `1px solid ${theme.colors.info}50` : '1px solid transparent'
+                  }}
+                  title="Save to History (Cmd+S) - Synopsis added after each completion"
+                >
+                  <History className="w-3 h-3" />
+                  <span>History</span>
+                </button>
+              )}
               {/* Read-only mode toggle - AI mode only */}
               {session.inputMode === 'ai' && onToggleTabReadOnlyMode && (
                 <button

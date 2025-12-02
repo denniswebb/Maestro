@@ -38,6 +38,9 @@ export const MODAL_PRIORITIES = {
   /** Batch runner modal for scratchpad auto mode */
   BATCH_RUNNER: 720,
 
+  /** Tab switcher modal (Opt+Cmd+T) */
+  TAB_SWITCHER: 710,
+
   /** Quick actions command palette (Cmd+K) */
   QUICK_ACTION: 700,
 

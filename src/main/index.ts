@@ -73,6 +73,28 @@ const store = new Store<MaestroSettings>({
   },
 });
 
+// Helper: Encode project path the same way Claude Code does
+// Claude replaces both '/' and '.' with '-' in the path encoding
+function encodeClaudeProjectPath(projectPath: string): string {
+  return projectPath.replace(/[/.]/g, '-');
+}
+
+// Helper: Extract semantic text from message content
+// Skips images, tool_use, and tool_result - only returns actual text content
+function extractTextFromContent(content: unknown): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    const textParts = content
+      .filter((part: { type?: string }) => part.type === 'text')
+      .map((part: { type?: string; text?: string }) => part.text || '')
+      .filter((text: string) => text.trim());
+    return textParts.join(' ');
+  }
+  return '';
+}
+
 // Sessions store
 interface SessionsData {
   sessions: any[];
@@ -938,6 +960,40 @@ function setupIpcHandlers() {
     return { stdout: result.stdout.trim(), stderr: result.stderr };
   });
 
+  // Get all local and remote branches
+  ipcMain.handle('git:branches', async (_, cwd: string) => {
+    // Get all branches (local and remote) in a simple format
+    // -a for all branches, --format to get clean names
+    const result = await execFileNoThrow('git', ['branch', '-a', '--format=%(refname:short)'], cwd);
+    if (result.exitCode !== 0) {
+      return { branches: [], stderr: result.stderr };
+    }
+    const branches = result.stdout
+      .split('\n')
+      .map(b => b.trim())
+      .filter(b => b.length > 0)
+      // Clean up remote branch names (origin/main -> main for remotes)
+      .map(b => b.replace(/^origin\//, ''))
+      // Remove duplicates (local and remote might have same name)
+      .filter((b, i, arr) => arr.indexOf(b) === i)
+      // Filter out HEAD pointer
+      .filter(b => b !== 'HEAD');
+    return { branches };
+  });
+
+  // Get all tags
+  ipcMain.handle('git:tags', async (_, cwd: string) => {
+    const result = await execFileNoThrow('git', ['tag', '--list'], cwd);
+    if (result.exitCode !== 0) {
+      return { tags: [], stderr: result.stderr };
+    }
+    const tags = result.stdout
+      .split('\n')
+      .map(t => t.trim())
+      .filter(t => t.length > 0);
+    return { tags };
+  });
+
   ipcMain.handle('git:info', async (_, cwd: string) => {
     // Get comprehensive git info in a single call
     const [branchResult, remoteResult, statusResult, behindAheadResult] = await Promise.all([
@@ -1064,6 +1120,21 @@ function setupIpcHandlers() {
       }
     } catch (error) {
       throw new Error(`Failed to read file: ${error}`);
+    }
+  });
+
+  ipcMain.handle('fs:stat', async (_, filePath: string) => {
+    try {
+      const stats = await fs.stat(filePath);
+      return {
+        size: stats.size,
+        createdAt: stats.birthtime.toISOString(),
+        modifiedAt: stats.mtime.toISOString(),
+        isDirectory: stats.isDirectory(),
+        isFile: stats.isFile()
+      };
+    } catch (error) {
+      throw new Error(`Failed to get file stats: ${error}`);
     }
   });
 
@@ -1482,8 +1553,7 @@ function setupIpcHandlers() {
       const homeDir = os.default.homedir();
       const claudeProjectsDir = path.join(homeDir, '.claude', 'projects');
 
-      // Encode the project path the same way Claude Code does
-      const encodedPath = projectPath.replace(/\//g, '-');
+      const encodedPath = encodeClaudeProjectPath(projectPath);
       const projectDir = path.join(claudeProjectsDir, encodedPath);
 
       logger.info(`Claude sessions lookup - projectPath: ${projectPath}, encodedPath: ${encodedPath}, projectDir: ${projectDir}`, 'ClaudeSessions');
@@ -1524,16 +1594,29 @@ function setupIpcHandlers() {
             const assistantMessageCount = (content.match(/"type"\s*:\s*"assistant"/g) || []).length;
             const messageCount = userMessageCount + assistantMessageCount;
 
-            // Extract first user message content - parse only first few lines
+            // Extract first meaningful message content - parse only first few lines
+            // Skip image-only messages, tool_use, and tool_result content
+            // Try user messages first, then fall back to assistant messages
             for (let i = 0; i < Math.min(lines.length, CLAUDE_SESSION_PARSE_LIMITS.FIRST_MESSAGE_SCAN_LINES); i++) {
               try {
                 const entry = JSON.parse(lines[i]);
+                // Try user messages first
                 if (entry.type === 'user' && entry.message?.content) {
-                  firstUserMessage = typeof entry.message.content === 'string'
-                    ? entry.message.content
-                    : JSON.stringify(entry.message.content);
-                  timestamp = entry.timestamp || timestamp;
-                  break; // Found first user message, stop parsing
+                  const textContent = extractTextFromContent(entry.message.content);
+                  if (textContent.trim()) {
+                    firstUserMessage = textContent;
+                    timestamp = entry.timestamp || timestamp;
+                    break;
+                  }
+                }
+                // Fall back to assistant messages if no user text found yet
+                if (!firstUserMessage && entry.type === 'assistant' && entry.message?.content) {
+                  const textContent = extractTextFromContent(entry.message.content);
+                  if (textContent.trim()) {
+                    firstUserMessage = textContent;
+                    timestamp = entry.timestamp || timestamp;
+                    // Don't break - keep looking for a user message
+                  }
                 }
               } catch {
                 // Skip malformed lines
@@ -1654,8 +1737,7 @@ function setupIpcHandlers() {
       const homeDir = os.default.homedir();
       const claudeProjectsDir = path.join(homeDir, '.claude', 'projects');
 
-      // Encode the project path the same way Claude Code does
-      const encodedPath = projectPath.replace(/\//g, '-');
+      const encodedPath = encodeClaudeProjectPath(projectPath);
       const projectDir = path.join(claudeProjectsDir, encodedPath);
 
       // Check if the directory exists
@@ -1727,16 +1809,29 @@ function setupIpcHandlers() {
             const assistantMessageCount = (content.match(/"type"\s*:\s*"assistant"/g) || []).length;
             const messageCount = userMessageCount + assistantMessageCount;
 
-            // Extract first user message content - parse only first few lines
+            // Extract first meaningful message content - parse only first few lines
+            // Skip image-only messages, tool_use, and tool_result content
+            // Try user messages first, then fall back to assistant messages
             for (let i = 0; i < Math.min(lines.length, CLAUDE_SESSION_PARSE_LIMITS.FIRST_MESSAGE_SCAN_LINES); i++) {
               try {
                 const entry = JSON.parse(lines[i]);
+                // Try user messages first
                 if (entry.type === 'user' && entry.message?.content) {
-                  firstUserMessage = typeof entry.message.content === 'string'
-                    ? entry.message.content
-                    : JSON.stringify(entry.message.content);
-                  timestamp = entry.timestamp || timestamp;
-                  break;
+                  const textContent = extractTextFromContent(entry.message.content);
+                  if (textContent.trim()) {
+                    firstUserMessage = textContent;
+                    timestamp = entry.timestamp || timestamp;
+                    break;
+                  }
+                }
+                // Fall back to assistant messages if no user text found yet
+                if (!firstUserMessage && entry.type === 'assistant' && entry.message?.content) {
+                  const textContent = extractTextFromContent(entry.message.content);
+                  if (textContent.trim()) {
+                    firstUserMessage = textContent;
+                    timestamp = entry.timestamp || timestamp;
+                    // Don't break - keep looking for a user message
+                  }
                 }
               } catch {
                 // Skip malformed lines
@@ -1854,8 +1949,7 @@ function setupIpcHandlers() {
       const homeDir = os.default.homedir();
       const claudeProjectsDir = path.join(homeDir, '.claude', 'projects');
 
-      // Encode the project path the same way Claude Code does
-      const encodedPath = projectPath.replace(/\//g, '-');
+      const encodedPath = encodeClaudeProjectPath(projectPath);
       const projectDir = path.join(claudeProjectsDir, encodedPath);
 
       // Check if the directory exists
@@ -2147,7 +2241,7 @@ function setupIpcHandlers() {
       const homeDir = os.default.homedir();
       const claudeProjectsDir = path.join(homeDir, '.claude', 'projects');
 
-      const encodedPath = projectPath.replace(/\//g, '-');
+      const encodedPath = encodeClaudeProjectPath(projectPath);
       const sessionFile = path.join(claudeProjectsDir, encodedPath, `${sessionId}.jsonl`);
 
       const content = await fs.readFile(sessionFile, 'utf-8');
@@ -2236,7 +2330,7 @@ function setupIpcHandlers() {
       const homeDir = os.default.homedir();
       const claudeProjectsDir = path.join(homeDir, '.claude', 'projects');
 
-      const encodedPath = projectPath.replace(/\//g, '-');
+      const encodedPath = encodeClaudeProjectPath(projectPath);
       const sessionFile = path.join(claudeProjectsDir, encodedPath, `${sessionId}.jsonl`);
 
       const content = await fs.readFile(sessionFile, 'utf-8');
@@ -2344,7 +2438,7 @@ function setupIpcHandlers() {
       const homeDir = os.default.homedir();
       const claudeProjectsDir = path.join(homeDir, '.claude', 'projects');
 
-      const encodedPath = projectPath.replace(/\//g, '-');
+      const encodedPath = encodeClaudeProjectPath(projectPath);
       const projectDir = path.join(claudeProjectsDir, encodedPath);
 
       // Check if the directory exists

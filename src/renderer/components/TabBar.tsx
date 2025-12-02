@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Star, Copy, Edit2 } from 'lucide-react';
+import { X, Plus, Star, Copy, Edit2, Mail } from 'lucide-react';
 import type { AITab, Theme } from '../types';
 
 interface TabBarProps {
@@ -15,6 +15,8 @@ interface TabBarProps {
   onTabReorder?: (fromIndex: number, toIndex: number) => void;
   onCloseOthers?: (tabId: string) => void;
   onTabStar?: (tabId: string, starred: boolean) => void;
+  showUnreadOnly?: boolean;
+  onToggleUnreadFilter?: () => void;
 }
 
 interface TabProps {
@@ -211,6 +213,15 @@ function Tab({
         <div
           className="w-2 h-2 rounded-full shrink-0 animate-pulse"
           style={{ backgroundColor: theme.colors.warning }}
+        />
+      )}
+
+      {/* Unread indicator - solid dot for tabs with unread messages (only when not active and not busy) */}
+      {!isActive && tab.state !== 'busy' && tab.hasUnread && (
+        <div
+          className="w-2 h-2 rounded-full shrink-0"
+          style={{ backgroundColor: theme.colors.accent }}
+          title="New messages"
         />
       )}
 
@@ -467,7 +478,9 @@ export function TabBar({
   onRequestRename,
   onTabReorder,
   onCloseOthers,
-  onTabStar
+  onTabStar,
+  showUnreadOnly: showUnreadOnlyProp,
+  onToggleUnreadFilter
 }: TabBarProps) {
   const [contextMenu, setContextMenu] = useState<{
     tabId: string;
@@ -477,34 +490,26 @@ export function TabBar({
 
   const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
+  // Use prop if provided (controlled), otherwise use local state (uncontrolled)
+  const [showUnreadOnlyLocal, setShowUnreadOnlyLocal] = useState(false);
+  const showUnreadOnly = showUnreadOnlyProp ?? showUnreadOnlyLocal;
+  const toggleUnreadFilter = onToggleUnreadFilter ?? (() => setShowUnreadOnlyLocal(prev => !prev));
 
   const tabBarRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const initialScrollDone = useRef(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
 
-  // Scroll active tab into view when it changes
+  // Scroll active tab into view when it changes or when tabs are added/removed
+  // Use a small delay to ensure the DOM element is rendered and ref is registered
   useEffect(() => {
-    const activeTabElement = tabRefs.current.get(activeTabId);
-    if (activeTabElement) {
-      activeTabElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
-    }
-  }, [activeTabId]);
-
-  // Scroll active tab into view on initial mount (after tabs are rendered)
-  useEffect(() => {
-    if (initialScrollDone.current || tabs.length === 0) return;
-
-    // Small delay to ensure refs are populated after render
     const timeoutId = setTimeout(() => {
       const activeTabElement = tabRefs.current.get(activeTabId);
       if (activeTabElement) {
-        activeTabElement.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'nearest' });
-        initialScrollDone.current = true;
+        activeTabElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
       }
     }, 0);
-
     return () => clearTimeout(timeoutId);
-  }, [tabs.length, activeTabId]);
+  }, [activeTabId, tabs.length]);
 
   // Can always close tabs - closing the last one creates a fresh new tab
   const canClose = true;
@@ -561,20 +566,94 @@ export function TabBar({
     }
   }, [onRequestRename]);
 
+  // Count unread tabs for the filter toggle tooltip
+  const unreadCount = tabs.filter(t => t.hasUnread).length;
+
+  // Filter tabs based on unread filter state
+  // When filter is on, show ONLY unread tabs (can be empty)
+  const displayedTabs = showUnreadOnly
+    ? tabs.filter(t => t.hasUnread)
+    : tabs;
+
+  // Check if tabs overflow the container (need sticky + button)
+  useEffect(() => {
+    const checkOverflow = () => {
+      if (tabBarRef.current) {
+        // scrollWidth > clientWidth means content overflows
+        setIsOverflowing(tabBarRef.current.scrollWidth > tabBarRef.current.clientWidth);
+      }
+    };
+
+    // Check after DOM renders
+    const timeoutId = setTimeout(checkOverflow, 0);
+
+    // Re-check on window resize
+    window.addEventListener('resize', checkOverflow);
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('resize', checkOverflow);
+    };
+  }, [tabs.length, displayedTabs.length]);
+
   return (
     <div
       ref={tabBarRef}
-      className="flex items-end gap-0.5 px-2 pt-2 border-b overflow-x-auto overflow-y-hidden scrollbar-thin"
+      className="flex items-end gap-0.5 px-2 pt-2 border-b overflow-x-auto overflow-y-hidden no-scrollbar"
       style={{
         backgroundColor: theme.colors.bgSidebar,
         borderColor: theme.colors.border
       }}
     >
+      {/* Unread filter toggle - sticky at the beginning with opaque background */}
+      <div
+        className="sticky left-0 z-10 flex items-center shrink-0 pr-1 mb-1 self-center group"
+        style={{ backgroundColor: theme.colors.bgSidebar }}
+      >
+        <button
+          onClick={toggleUnreadFilter}
+          className="relative flex items-center justify-center w-6 h-6 rounded transition-colors"
+          style={{
+            color: showUnreadOnly ? theme.colors.accent : theme.colors.textDim,
+            opacity: showUnreadOnly ? 1 : 0.5
+          }}
+        >
+          <Mail className="w-4 h-4" />
+          {/* Notification dot */}
+          <div
+            className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full"
+            style={{ backgroundColor: theme.colors.accent }}
+          />
+        </button>
+        {/* Hover overlay */}
+        <div
+          className="absolute left-0 top-full mt-1 px-2 py-1 rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20"
+          style={{
+            backgroundColor: theme.colors.bgSidebar,
+            border: `1px solid ${theme.colors.border}`,
+            color: theme.colors.textMain
+          }}
+        >
+          {showUnreadOnly ? 'Showing unread only' : 'Filter unread tabs'}
+        </div>
+      </div>
+
+      {/* Empty state when filter is on but no unread tabs */}
+      {showUnreadOnly && displayedTabs.length === 0 && (
+        <div
+          className="flex items-center px-3 py-1.5 text-xs italic shrink-0 self-center mb-1"
+          style={{ color: theme.colors.textDim }}
+        >
+          No unread tabs
+        </div>
+      )}
+
       {/* Tabs with separators between inactive tabs */}
-      {tabs.map((tab, index) => {
+      {displayedTabs.map((tab, index) => {
         const isActive = tab.id === activeTabId;
-        const prevTab = index > 0 ? tabs[index - 1] : null;
+        const prevTab = index > 0 ? displayedTabs[index - 1] : null;
         const isPrevActive = prevTab?.id === activeTabId;
+        // Get original index for shortcut hints (Cmd+1-9)
+        const originalIndex = tabs.findIndex(t => t.id === tab.id);
 
         // Show separator between inactive tabs (not adjacent to active tab)
         const showSeparator = index > 0 && !isActive && !isPrevActive;
@@ -604,7 +683,7 @@ export function TabBar({
               isDragOver={dragOverTabId === tab.id}
               onRename={() => handleRenameRequest(tab.id)}
               onStar={onTabStar ? (starred) => onTabStar(tab.id, starred) : undefined}
-              shortcutHint={index < 9 ? index + 1 : null}
+              shortcutHint={!showUnreadOnly && originalIndex < 9 ? originalIndex + 1 : null}
               registerRef={(el) => {
                 if (el) {
                   tabRefs.current.set(tab.id, el);
@@ -617,15 +696,20 @@ export function TabBar({
         );
       })}
 
-      {/* New Tab Button - simple plus icon, not in a tab shape */}
-      <button
-        onClick={onNewTab}
-        className="flex items-center justify-center w-6 h-6 rounded hover:bg-white/10 transition-colors shrink-0 ml-1 mb-1 self-center"
-        style={{ color: theme.colors.textDim }}
-        title="New tab (Cmd+T)"
+      {/* New Tab Button - sticky on right when tabs overflow, otherwise inline */}
+      <div
+        className={`flex items-center shrink-0 pl-1 mb-1 self-center ${isOverflowing ? 'sticky right-0 z-10' : ''}`}
+        style={{ backgroundColor: isOverflowing ? theme.colors.bgSidebar : 'transparent' }}
       >
-        <Plus className="w-4 h-4" />
-      </button>
+        <button
+          onClick={onNewTab}
+          className="flex items-center justify-center w-6 h-6 rounded hover:bg-white/10 transition-colors"
+          style={{ color: theme.colors.textDim }}
+          title="New tab (Cmd+T)"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+      </div>
 
       {/* Context Menu */}
       {contextMenu && (

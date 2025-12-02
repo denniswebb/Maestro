@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Search, X, Trash2, Download, ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import type { Theme } from '../types';
 import { useLayerStack } from '../contexts/LayerStackContext';
@@ -17,6 +17,8 @@ interface LogViewerProps {
   theme: Theme;
   onClose: () => void;
   logLevel?: string; // Current log level setting (debug, info, warn, error)
+  savedSelectedLevels?: string[]; // Persisted filter selections
+  onSelectedLevelsChange?: (levels: string[]) => void; // Callback to persist filter changes
 }
 
 // Log level priority for determining which levels are enabled
@@ -27,7 +29,7 @@ const LOG_LEVEL_PRIORITY: Record<string, number> = {
   error: 3,
 };
 
-export function LogViewer({ theme, onClose, logLevel = 'info' }: LogViewerProps) {
+export function LogViewer({ theme, onClose, logLevel = 'info', savedSelectedLevels, onSelectedLevelsChange }: LogViewerProps) {
   const [logs, setLogs] = useState<SystemLogEntry[]>([]);
   const [filteredLogs, setFilteredLogs] = useState<SystemLogEntry[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -43,10 +45,25 @@ export function LogViewer({ theme, onClose, logLevel = 'info' }: LogViewerProps)
   // Toast is always enabled (it's a special notification level)
   enabledLevels.add('toast');
 
-  // Only allow selecting levels that are enabled
-  const [selectedLevels, setSelectedLevels] = useState<Set<'debug' | 'info' | 'warn' | 'error' | 'toast'>>(
-    new Set(['debug', 'info', 'warn', 'error', 'toast'])
-  );
+  // Initialize selectedLevels from saved settings if available
+  const [selectedLevels, setSelectedLevelsState] = useState<Set<'debug' | 'info' | 'warn' | 'error' | 'toast'>>(() => {
+    if (savedSelectedLevels && savedSelectedLevels.length > 0) {
+      return new Set(savedSelectedLevels as ('debug' | 'info' | 'warn' | 'error' | 'toast')[]);
+    }
+    return new Set(['debug', 'info', 'warn', 'error', 'toast']);
+  });
+
+  // Wrapper to persist changes when selectedLevels changes
+  const setSelectedLevels = useCallback((updater: Set<'debug' | 'info' | 'warn' | 'error' | 'toast'> | ((prev: Set<'debug' | 'info' | 'warn' | 'error' | 'toast'>) => Set<'debug' | 'info' | 'warn' | 'error' | 'toast'>)) => {
+    setSelectedLevelsState(prev => {
+      const newSet = typeof updater === 'function' ? updater(prev) : updater;
+      // Persist to settings
+      if (onSelectedLevelsChange) {
+        onSelectedLevelsChange(Array.from(newSet));
+      }
+      return newSet;
+    });
+  }, [onSelectedLevelsChange]);
   const [expandedData, setExpandedData] = useState<Set<number>>(new Set());
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);

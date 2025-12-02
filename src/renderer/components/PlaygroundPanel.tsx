@@ -126,6 +126,28 @@ export function PlaygroundPanel({ theme, themeMode, onClose }: PlaygroundPanelPr
     return `${seconds}s`;
   };
 
+  // Logarithmic scale for time slider - matches badge progression
+  // Maps 0-100 slider value to 0-10years using logarithmic scale
+  const MIN_TIME = 1000; // 1 second minimum
+  const MAX_TIME = 315360000000; // 10 years in ms
+  const LOG_MIN = Math.log(MIN_TIME);
+  const LOG_MAX = Math.log(MAX_TIME);
+
+  const sliderToTime = (sliderValue: number): number => {
+    if (sliderValue === 0) return 0;
+    // Map 0-100 to logarithmic scale
+    const logValue = LOG_MIN + (sliderValue / 100) * (LOG_MAX - LOG_MIN);
+    return Math.round(Math.exp(logValue));
+  };
+
+  const timeToSlider = (timeMs: number): number => {
+    if (timeMs <= 0) return 0;
+    if (timeMs < MIN_TIME) return 0;
+    // Map logarithmic time back to 0-100
+    const logValue = Math.log(timeMs);
+    return Math.round(((logValue - LOG_MIN) / (LOG_MAX - LOG_MIN)) * 100);
+  };
+
   return (
     <>
       <div
@@ -230,9 +252,9 @@ export function PlaygroundPanel({ theme, themeMode, onClose }: PlaygroundPanelPr
                         <input
                           type="range"
                           min={0}
-                          max={315360000000} // 10 years in ms
-                          value={mockCumulativeTime}
-                          onChange={e => setMockCumulativeTime(Number(e.target.value))}
+                          max={100}
+                          value={timeToSlider(mockCumulativeTime)}
+                          onChange={e => setMockCumulativeTime(sliderToTime(Number(e.target.value)))}
                           className="w-full"
                         />
                       </div>
@@ -243,9 +265,9 @@ export function PlaygroundPanel({ theme, themeMode, onClose }: PlaygroundPanelPr
                         <input
                           type="range"
                           min={0}
-                          max={86400000 * 7} // 7 days in ms
-                          value={mockLongestRun}
-                          onChange={e => setMockLongestRun(Number(e.target.value))}
+                          max={100}
+                          value={timeToSlider(mockLongestRun)}
+                          onChange={e => setMockLongestRun(sliderToTime(Number(e.target.value)))}
                           className="w-full"
                         />
                       </div>

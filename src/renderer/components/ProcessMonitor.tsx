@@ -9,6 +9,7 @@ interface ProcessMonitorProps {
   sessions: Session[];
   groups: Group[];
   onClose: () => void;
+  onNavigateToSession?: (sessionId: string, tabId?: string) => void;
 }
 
 interface ActiveProcess {
@@ -33,10 +34,12 @@ interface ProcessNode {
   children?: ProcessNode[];
   toolType?: string;
   cwd?: string;
+  claudeSessionId?: string; // UUID octet from the Claude session (for AI processes)
+  tabId?: string; // Tab ID for navigation to specific AI tab
 }
 
 export function ProcessMonitor(props: ProcessMonitorProps) {
-  const { theme, sessions, groups, onClose } = props;
+  const { theme, sessions, groups, onClose, onNavigateToSession } = props;
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [activeProcesses, setActiveProcesses] = useState<ActiveProcess[]>([]);
@@ -178,6 +181,12 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
     return 'ai';
   };
 
+  // Extract tab ID from process session ID (format: {sessionId}-ai-{tabId})
+  const parseTabId = (processSessionId: string): string | null => {
+    const match = processSessionId.match(/-ai-([^-]+)$/);
+    return match ? match[1] : null;
+  };
+
   // Build the process tree using real active processes
   const buildProcessTree = (): ProcessNode[] => {
     const tree: ProcessNode[] = [];
@@ -231,6 +240,19 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
           label = `AI Agent (${proc.toolType})`;
         }
 
+        // Look up Claude session ID from the tab if this is an AI process
+        let claudeSessionId: string | undefined;
+        let tabId: string | undefined;
+        if (processType === 'ai') {
+          tabId = parseTabId(proc.sessionId) || undefined;
+          if (tabId && session.aiTabs) {
+            const tab = session.aiTabs.find(t => t.id === tabId);
+            if (tab?.claudeSessionId) {
+              claudeSessionId = tab.claudeSessionId;
+            }
+          }
+        }
+
         sessionNode.children!.push({
           id: `process-${proc.sessionId}`,
           type: 'process',
@@ -240,7 +262,9 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
           sessionId: session.id,
           isAlive: true, // Active processes are always alive
           toolType: proc.toolType,
-          cwd: proc.cwd
+          cwd: proc.cwd,
+          claudeSessionId,
+          tabId
         });
       });
 
@@ -445,9 +469,9 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
             )}
             {!hasChildren && <div className="w-4 h-4 flex-shrink-0" />}
             <span className="mr-2">{node.emoji}</span>
-            <span className="font-medium">{node.label}</span>
+            <span className="font-medium flex-1 truncate">{node.label}</span>
             {hasChildren && (
-              <span className="text-xs ml-auto" style={{ color: theme.colors.textDim }}>
+              <span className="text-xs flex-shrink-0" style={{ color: theme.colors.textDim }}>
                 {node.children!.length} {node.children!.length === 1 ? 'session' : 'sessions'}
               </span>
             )}
@@ -488,8 +512,8 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
             )}
             {!hasChildren && <div className="w-4 h-4 flex-shrink-0" />}
             <Activity className="w-4 h-4 flex-shrink-0" style={{ color: activeCount > 0 ? theme.colors.success : theme.colors.textDim }} />
-            <span>{node.label}</span>
-            <span className="text-xs ml-auto flex items-center gap-2" style={{ color: theme.colors.textDim }}>
+            <span className="flex-1 truncate">{node.label}</span>
+            <span className="text-xs flex items-center gap-2 flex-shrink-0" style={{ color: theme.colors.textDim }}>
               {activeCount > 0 && (
                 <span
                   className="px-1.5 py-0.5 rounded text-xs"
@@ -536,8 +560,27 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
             className="w-2 h-2 rounded-full flex-shrink-0"
             style={{ backgroundColor: statusColor }}
           />
-          <span className="text-sm">{node.label}</span>
-          <span className="text-xs ml-auto font-mono" style={{ color: theme.colors.textDim }}>
+          <span className="text-sm flex-1 truncate">{node.label}</span>
+          {node.claudeSessionId && node.sessionId && onNavigateToSession && (
+            <button
+              className="text-xs font-mono flex-shrink-0 hover:underline cursor-pointer"
+              style={{ color: theme.colors.accent }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onNavigateToSession(node.sessionId!, node.tabId);
+                onClose();
+              }}
+              title="Click to navigate to this session"
+            >
+              {node.claudeSessionId.substring(0, 8)}...
+            </button>
+          )}
+          {node.claudeSessionId && (!node.sessionId || !onNavigateToSession) && (
+            <span className="text-xs font-mono flex-shrink-0" style={{ color: theme.colors.accent }}>
+              {node.claudeSessionId.substring(0, 8)}...
+            </span>
+          )}
+          <span className="text-xs font-mono flex-shrink-0" style={{ color: theme.colors.textDim }}>
             {node.pid ? `PID: ${node.pid}` : 'No PID'}
           </span>
           <span

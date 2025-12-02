@@ -211,20 +211,26 @@ export function NewInstanceModal({ isOpen, onClose, onCreate, theme, defaultAgen
               <div className="text-sm opacity-50">Loading agents...</div>
             ) : (
               <div className="space-y-2">
-                {agents.map((agent) => (
-                  <button
+                {agents.filter(a => !a.hidden).map((agent) => (
+                  <div
                     key={agent.id}
-                    disabled={agent.id !== 'claude-code' || !agent.available}
-                    onClick={() => setSelectedAgent(agent.id)}
+                    onClick={() => {
+                      if (agent.id === 'claude-code' && agent.available) {
+                        setSelectedAgent(agent.id);
+                      }
+                    }}
                     className={`w-full text-left p-3 rounded border transition-all ${
                       selectedAgent === agent.id ? 'ring-2' : ''
-                    } ${(agent.id !== 'claude-code' || !agent.available) ? 'opacity-40 cursor-not-allowed' : 'hover:bg-opacity-10'}`}
+                    } ${(agent.id !== 'claude-code' || !agent.available) ? 'opacity-40 cursor-not-allowed' : 'hover:bg-opacity-10 cursor-pointer'}`}
                     style={{
                       borderColor: theme.colors.border,
                       backgroundColor: selectedAgent === agent.id ? theme.colors.accentDim : 'transparent',
                       ringColor: theme.colors.accent,
                       color: theme.colors.textMain,
                     }}
+                    role="option"
+                    aria-selected={selectedAgent === agent.id}
+                    tabIndex={agent.id === 'claude-code' && agent.available ? 0 : -1}
                   >
                     <div className="flex items-center justify-between">
                       <div>
@@ -264,7 +270,7 @@ export function NewInstanceModal({ isOpen, onClose, onCreate, theme, defaultAgen
                         )}
                       </div>
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}

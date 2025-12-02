@@ -1,12 +1,14 @@
 import type { Shortcut } from '../types';
 
 export const DEFAULT_SHORTCUTS: Record<string, Shortcut> = {
-  toggleSidebar: { id: 'toggleSidebar', label: 'Toggle Sidebar', keys: ['Alt', 'Meta', 'ArrowLeft'] },
+  toggleSidebar: { id: 'toggleSidebar', label: 'Toggle Left Panel', keys: ['Alt', 'Meta', 'ArrowLeft'] },
   toggleRightPanel: { id: 'toggleRightPanel', label: 'Toggle Right Panel', keys: ['Alt', 'Meta', 'ArrowRight'] },
-  cyclePrev: { id: 'cyclePrev', label: 'Previous Agent', keys: ['Meta', 'Shift', '{'] },
-  cycleNext: { id: 'cycleNext', label: 'Next Agent', keys: ['Meta', 'Shift', '}'] },
+  cyclePrev: { id: 'cyclePrev', label: 'Previous Agent', keys: ['Meta', '['] },
+  cycleNext: { id: 'cycleNext', label: 'Next Agent', keys: ['Meta', ']'] },
+  navBack: { id: 'navBack', label: 'Navigate Back', keys: ['Meta', 'Shift', ','] },
+  navForward: { id: 'navForward', label: 'Navigate Forward', keys: ['Meta', 'Shift', '.'] },
   newInstance: { id: 'newInstance', label: 'New Agent', keys: ['Meta', 'n'] },
-  killInstance: { id: 'killInstance', label: 'Kill Agent', keys: ['Meta', 'Shift', 'Backspace'] },
+  killInstance: { id: 'killInstance', label: 'Remove Agent', keys: ['Meta', 'Shift', 'Backspace'] },
   moveToGroup: { id: 'moveToGroup', label: 'Move Session to Group', keys: ['Meta', 'Shift', 'm'] },
   toggleMode: { id: 'toggleMode', label: 'Switch AI/Shell Mode', keys: ['Meta', 'j'] },
   quickAction: { id: 'quickAction', label: 'Quick Actions', keys: ['Meta', 'k'] },
@@ -18,31 +20,34 @@ export const DEFAULT_SHORTCUTS: Record<string, Shortcut> = {
   copyFilePath: { id: 'copyFilePath', label: 'Copy File Path (in Preview)', keys: ['Meta', 'p'] },
   toggleMarkdownMode: { id: 'toggleMarkdownMode', label: 'Toggle Markdown Raw/Preview', keys: ['Meta', 'e'] },
   focusInput: { id: 'focusInput', label: 'Focus Input Field', keys: ['Meta', '.'] },
-  focusSidebar: { id: 'focusSidebar', label: 'Focus Left Sidebar', keys: ['Meta', 'Shift', 'a'] },
+  focusSidebar: { id: 'focusSidebar', label: 'Focus Left Panel', keys: ['Meta', 'Shift', 'a'] },
   viewGitDiff: { id: 'viewGitDiff', label: 'View Git Diff', keys: ['Meta', 'Shift', 'd'] },
   viewGitLog: { id: 'viewGitLog', label: 'View Git Log', keys: ['Meta', 'Shift', 'g'] },
   agentSessions: { id: 'agentSessions', label: 'View Agent Sessions', keys: ['Meta', 'Shift', 'l'] },
   systemLogs: { id: 'systemLogs', label: 'System Log Viewer', keys: ['Alt', 'Meta', 'l'] },
   processMonitor: { id: 'processMonitor', label: 'System Process Monitor', keys: ['Alt', 'Meta', 'p'] },
   jumpToBottom: { id: 'jumpToBottom', label: 'Jump to Bottom', keys: ['Meta', 'Shift', 'j'] },
+  prevTab: { id: 'prevTab', label: 'Previous Tab', keys: ['Meta', 'Shift', '['] },
+  nextTab: { id: 'nextTab', label: 'Next Tab', keys: ['Meta', 'Shift', ']'] },
 };
 
 // Non-editable shortcuts (displayed in help but not configurable)
 export const FIXED_SHORTCUTS: Record<string, Shortcut> = {
   jumpToSession: { id: 'jumpToSession', label: 'Jump to Session (1-9, 0=10th)', keys: ['Alt', 'Meta', '1-0'] },
   filterFiles: { id: 'filterFiles', label: 'Filter Files (in Files tab)', keys: ['/'] },
-  filterSessions: { id: 'filterSessions', label: 'Filter Sessions (in Sidebar)', keys: ['/'] },
+  filterSessions: { id: 'filterSessions', label: 'Filter Sessions (in Left Panel)', keys: ['/'] },
 };
 
 // Tab navigation shortcuts (AI mode only)
 export const TAB_SHORTCUTS: Record<string, Shortcut> = {
+  tabSwitcher: { id: 'tabSwitcher', label: 'Tab Switcher', keys: ['Alt', 'Meta', 't'] },
   newTab: { id: 'newTab', label: 'New Tab', keys: ['Meta', 't'] },
   closeTab: { id: 'closeTab', label: 'Close Tab', keys: ['Meta', 'w'] },
   reopenClosedTab: { id: 'reopenClosedTab', label: 'Reopen Closed Tab', keys: ['Meta', 'Shift', 't'] },
   renameTab: { id: 'renameTab', label: 'Rename Tab', keys: ['Meta', 'Shift', 'r'] },
   toggleReadOnlyMode: { id: 'toggleReadOnlyMode', label: 'Toggle Read-Only Mode', keys: ['Meta', 'r'] },
-  prevTab: { id: 'prevTab', label: 'Previous Tab', keys: ['Meta', '['] },
-  nextTab: { id: 'nextTab', label: 'Next Tab', keys: ['Meta', ']'] },
+  toggleSaveToHistory: { id: 'toggleSaveToHistory', label: 'Toggle Save to History', keys: ['Meta', 's'] },
+  filterUnreadTabs: { id: 'filterUnreadTabs', label: 'Filter Unread Tabs', keys: ['Meta', 'u'] },
   goToTab1: { id: 'goToTab1', label: 'Go to Tab 1', keys: ['Meta', '1'] },
   goToTab2: { id: 'goToTab2', label: 'Go to Tab 2', keys: ['Meta', '2'] },
   goToTab3: { id: 'goToTab3', label: 'Go to Tab 3', keys: ['Meta', '3'] },

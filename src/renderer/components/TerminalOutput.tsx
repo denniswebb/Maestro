@@ -1,8 +1,12 @@
 import React, { useRef, useEffect, useMemo, forwardRef, useState, useCallback, memo } from 'react';
-import { Activity, X, ChevronDown, ChevronUp, Filter, PlusCircle, MinusCircle, Trash2, Copy, Volume2, Square, Check, ArrowDown, Eye } from 'lucide-react';
+import { Activity, X, ChevronDown, ChevronUp, Filter, PlusCircle, MinusCircle, Trash2, Copy, Volume2, Square, Check, ArrowDown, Eye, FileText } from 'lucide-react';
 import type { Session, Theme, LogEntry } from '../types';
 import Convert from 'ansi-to-html';
 import DOMPurify from 'dompurify';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useLayerStack } from '../contexts/LayerStackContext';
 import { MODAL_PRIORITIES } from '../constants/modalPriorities';
 import { getActiveTab } from '../utils/tabHelpers';
@@ -77,6 +81,43 @@ const filterTextByLinesHelper = (text: string, query: string, mode: 'include' | 
   }
 };
 
+// Strip markdown formatting to show plain text
+const stripMarkdown = (text: string): string => {
+  return text
+    // Remove code blocks (```...```)
+    .replace(/```[\s\S]*?```/g, (match) => {
+      // Extract just the code content without the fence
+      const lines = match.split('\n');
+      // Remove first line (```lang) and last line (```)
+      return lines.slice(1, -1).join('\n');
+    })
+    // Remove inline code backticks
+    .replace(/`([^`]+)`/g, '$1')
+    // Remove bold/italic (***text***, **text**, *text*, ___text___, __text__, _text_)
+    .replace(/\*\*\*(.+?)\*\*\*/g, '$1')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/___(.+?)___/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/_(.+?)_/g, '$1')
+    // Remove headers (# text)
+    .replace(/^#{1,6}\s+/gm, '')
+    // Remove blockquotes (> text)
+    .replace(/^>\s*/gm, '')
+    // Remove horizontal rules
+    .replace(/^[-*_]{3,}\s*$/gm, '---')
+    // Remove link formatting [text](url) -> text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    // Remove image formatting ![alt](url) -> alt
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+    // Remove strikethrough
+    .replace(/~~(.+?)~~/g, '$1')
+    // Clean up bullet points - convert to simple dashes
+    .replace(/^[\s]*[-*+]\s+/gm, '- ')
+    // Clean up numbered lists - keep the numbers
+    .replace(/^[\s]*(\d+)\.\s+/gm, '$1. ');
+};
+
 // ============================================================================
 // LogItem - Memoized component for individual log entries
 // ============================================================================
@@ -116,6 +157,9 @@ interface LogItemProps {
   audioFeedbackCommand?: string;
   // ANSI converter
   ansiConverter: Convert;
+  // Markdown rendering mode for AI responses
+  markdownRawMode: boolean;
+  onToggleMarkdownRawMode: () => void;
 }
 
 const LogItemComponent = memo(({
@@ -148,6 +192,8 @@ const LogItemComponent = memo(({
   speakingLogId,
   audioFeedbackCommand,
   ansiConverter,
+  markdownRawMode,
+  onToggleMarkdownRawMode,
 }: LogItemProps) => {
   // Ref for the log item container - used for scroll-into-view on expand
   const logItemRef = useRef<HTMLDivElement>(null);
@@ -329,7 +375,7 @@ const LogItemComponent = memo(({
            style={{ fontFamily, color: theme.colors.textDim, opacity: 0.6 }}>
         {new Date(log.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
       </div>
-      <div className={`flex-1 p-4 ${isUserMessage && log.readOnly ? 'pt-8' : ''} rounded-xl border ${isUserMessage ? 'rounded-tr-none' : 'rounded-tl-none'} relative`}
+      <div className={`flex-1 min-w-0 p-4 pb-10 ${isUserMessage && log.readOnly ? 'pt-8' : ''} rounded-xl border ${isUserMessage ? 'rounded-tr-none' : 'rounded-tl-none'} relative overflow-hidden`}
            style={{
              backgroundColor: isUserMessage
                ? isAIMode
@@ -470,17 +516,101 @@ const LogItemComponent = memo(({
         ) : shouldCollapse && !isExpanded ? (
           <div>
             <div
-              className={`${isTerminal && log.source !== 'user' ? 'whitespace-pre-wrap text-sm overflow-x-auto' : 'whitespace-pre-wrap text-sm'}`}
+              className={`${isTerminal && log.source !== 'user' ? 'whitespace-pre text-sm' : 'whitespace-pre-wrap text-sm break-all'}`}
               style={{
                 maxHeight: `${maxOutputLines * 1.5}em`,
-                overflow: 'hidden',
+                overflow: isTerminal && log.source !== 'user' ? 'hidden' : 'hidden',
                 color: theme.colors.textMain,
-                fontFamily
+                fontFamily,
+                wordBreak: isTerminal && log.source !== 'user' ? undefined : 'break-all'
               }}
             >
               {isTerminal && log.source !== 'user' ? (
                 // Content sanitized with DOMPurify above
-                <div dangerouslySetInnerHTML={{ __html: displayHtmlContent }} />
+                // Horizontal scroll for terminal output to preserve column alignment
+                <div className="overflow-x-auto scrollbar-thin" dangerouslySetInnerHTML={{ __html: displayHtmlContent }} />
+              ) : isAIMode && !markdownRawMode ? (
+                // Collapsed markdown preview with rendered markdown
+                <div className="prose prose-sm max-w-none" style={{ color: theme.colors.textMain, lineHeight: 1.5 }}>
+                  <style>{`
+                    .prose { line-height: 1.4; }
+                    .prose > *:first-child { margin-top: 0; }
+                    .prose > *:last-child { margin-bottom: 0; }
+                    .prose h1 { color: ${theme.colors.accent}; font-size: 2em; font-weight: bold; margin: 0; line-height: 1.4; }
+                    .prose h2 { color: ${theme.colors.success}; font-size: 1.75em; font-weight: bold; margin: 0; line-height: 1.4; }
+                    .prose h3 { color: ${theme.colors.warning}; font-size: 1.5em; font-weight: bold; margin: 0; line-height: 1.4; }
+                    .prose h4 { color: ${theme.colors.textMain}; font-size: 1.35em; font-weight: bold; margin: 0; line-height: 1.4; }
+                    .prose h5 { color: ${theme.colors.textMain}; font-size: 1.2em; font-weight: bold; margin: 0; line-height: 1.4; }
+                    .prose h6 { color: ${theme.colors.textDim}; font-size: 1.1em; font-weight: bold; margin: 0; line-height: 1.4; }
+                    .prose p { color: ${theme.colors.textMain}; margin: 0; line-height: 1.4; }
+                    .prose > ul, .prose > ol { color: ${theme.colors.textMain}; margin: 0.5em 0; padding-left: 2em; }
+                    .prose li ul, .prose li ol { margin: 0 !important; padding-left: 1.5em; }
+                    .prose li { margin: 0 !important; padding: 0; line-height: 1.4; display: list-item; }
+                    .prose li > p:first-child { margin: 0 !important; display: inline !important; }
+                    .prose li > p:first-child + ul, .prose li > p:first-child + ol { display: block; margin-top: 0 !important; }
+                    .prose li > p + ul, .prose li > p + ol { margin-top: 0 !important; }
+                    .prose li:has(> input[type="checkbox"]) { list-style: none; margin-left: -1.5em; }
+                    .prose code { background-color: ${theme.colors.bgSidebar}; color: ${theme.colors.textMain}; padding: 0.15em 0.3em; border-radius: 3px; font-size: 0.9em; }
+                    .prose pre { background-color: ${theme.colors.bgSidebar}; color: ${theme.colors.textMain}; padding: 0.5em; border-radius: 6px; overflow-x: auto; margin: 0; }
+                    .prose pre code { background: none; padding: 0; }
+                    .prose blockquote { border-left: 3px solid ${theme.colors.border}; padding-left: 0.75em; margin: 0; color: ${theme.colors.textDim}; }
+                    .prose a { color: ${theme.colors.accent}; text-decoration: underline; }
+                    .prose hr { border: none; border-top: 1px solid ${theme.colors.border}; margin: 0.75em 0; }
+                    .prose table { border-collapse: collapse; width: 100%; margin: 0; }
+                    .prose th, .prose td { border: 1px solid ${theme.colors.border}; padding: 0.25em 0.5em; text-align: left; }
+                    .prose th { background-color: ${theme.colors.bgSidebar}; font-weight: bold; }
+                    .prose strong { font-weight: bold; }
+                    .prose em { font-style: italic; }
+                  `}</style>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      a: ({ node, href, children, ...props }) => (
+                        <a
+                          href={href}
+                          {...props}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            if (href) {
+                              window.maestro.shell.openExternal(href);
+                            }
+                          }}
+                          style={{ color: theme.colors.accent, textDecoration: 'underline', cursor: 'pointer' }}
+                        >
+                          {children}
+                        </a>
+                      ),
+                      code: ({ node, inline, className, children, ...props }: any) => {
+                        const match = (className || '').match(/language-(\w+)/);
+                        const language = match ? match[1] : 'text';
+                        const codeContent = String(children).replace(/\n$/, '');
+
+                        return !inline && match ? (
+                          <SyntaxHighlighter
+                            language={language}
+                            style={vscDarkPlus}
+                            customStyle={{
+                              margin: '0.5em 0',
+                              padding: '1em',
+                              background: theme.colors.bgSidebar,
+                              fontSize: '0.9em',
+                              borderRadius: '6px',
+                            }}
+                            PreTag="div"
+                          >
+                            {codeContent}
+                          </SyntaxHighlighter>
+                        ) : (
+                          <code className={className} {...props}>
+                            {children}
+                          </code>
+                        );
+                      }
+                    }}
+                  >
+                    {displayText}
+                  </ReactMarkdown>
+                </div>
               ) : (
                 displayText
               )}
@@ -501,13 +631,14 @@ const LogItemComponent = memo(({
         ) : shouldCollapse && isExpanded ? (
           <div>
             <div
-              className={`${isTerminal && log.source !== 'user' ? 'whitespace-pre-wrap text-sm overflow-x-auto scrollbar-thin' : 'whitespace-pre-wrap text-sm'}`}
+              className={`${isTerminal && log.source !== 'user' ? 'whitespace-pre text-sm scrollbar-thin' : 'whitespace-pre-wrap text-sm break-all'}`}
               style={{
                 maxHeight: '600px',
                 overflow: 'auto',
                 overscrollBehavior: 'contain',
                 color: theme.colors.textMain,
-                fontFamily
+                fontFamily,
+                wordBreak: isTerminal && log.source !== 'user' ? undefined : 'break-all'
               }}
               onWheel={(e) => {
                 // Prevent scroll from propagating to parent when this container can scroll
@@ -524,6 +655,7 @@ const LogItemComponent = memo(({
             >
               {isTerminal && log.source !== 'user' ? (
                 // Content sanitized with DOMPurify above
+                // Horizontal scroll for terminal output to preserve column alignment
                 <div dangerouslySetInnerHTML={{ __html: displayHtmlContent }} />
               ) : log.source === 'user' && isTerminal ? (
                 <div style={{ fontFamily }}>
@@ -548,6 +680,88 @@ const LogItemComponent = memo(({
                   </div>
                   <div>{highlightMatches(filteredText, outputSearchQuery)}</div>
                 </div>
+              ) : isAIMode && !markdownRawMode ? (
+                // Expanded markdown rendering
+                <div className="prose prose-sm max-w-none text-sm" style={{ color: theme.colors.textMain, lineHeight: 1.5 }}>
+                  <style>{`
+                    .prose { line-height: 1.4; }
+                    .prose > *:first-child { margin-top: 0; }
+                    .prose > *:last-child { margin-bottom: 0; }
+                    .prose h1 { color: ${theme.colors.accent}; font-size: 2em; font-weight: bold; margin: 0; line-height: 1.4; }
+                    .prose h2 { color: ${theme.colors.success}; font-size: 1.75em; font-weight: bold; margin: 0; line-height: 1.4; }
+                    .prose h3 { color: ${theme.colors.warning}; font-size: 1.5em; font-weight: bold; margin: 0; line-height: 1.4; }
+                    .prose h4 { color: ${theme.colors.textMain}; font-size: 1.35em; font-weight: bold; margin: 0; line-height: 1.4; }
+                    .prose h5 { color: ${theme.colors.textMain}; font-size: 1.2em; font-weight: bold; margin: 0; line-height: 1.4; }
+                    .prose h6 { color: ${theme.colors.textDim}; font-size: 1.1em; font-weight: bold; margin: 0; line-height: 1.4; }
+                    .prose p { color: ${theme.colors.textMain}; margin: 0; line-height: 1.4; }
+                    .prose > ul, .prose > ol { color: ${theme.colors.textMain}; margin: 0.5em 0; padding-left: 2em; }
+                    .prose li ul, .prose li ol { margin: 0 !important; padding-left: 1.5em; }
+                    .prose li { margin: 0 !important; padding: 0; line-height: 1.4; display: list-item; }
+                    .prose li > p:first-child { margin: 0 !important; display: inline !important; }
+                    .prose li > p:first-child + ul, .prose li > p:first-child + ol { display: block; margin-top: 0 !important; }
+                    .prose li > p + ul, .prose li > p + ol { margin-top: 0 !important; }
+                    .prose li:has(> input[type="checkbox"]) { list-style: none; margin-left: -1.5em; }
+                    .prose code { background-color: ${theme.colors.bgSidebar}; color: ${theme.colors.textMain}; padding: 0.15em 0.3em; border-radius: 3px; font-size: 0.9em; }
+                    .prose pre { background-color: ${theme.colors.bgSidebar}; color: ${theme.colors.textMain}; padding: 0.5em; border-radius: 6px; overflow-x: auto; margin: 0; }
+                    .prose pre code { background: none; padding: 0; }
+                    .prose blockquote { border-left: 3px solid ${theme.colors.border}; padding-left: 0.75em; margin: 0; color: ${theme.colors.textDim}; }
+                    .prose a { color: ${theme.colors.accent}; text-decoration: underline; }
+                    .prose hr { border: none; border-top: 1px solid ${theme.colors.border}; margin: 0.75em 0; }
+                    .prose table { border-collapse: collapse; width: 100%; margin: 0; }
+                    .prose th, .prose td { border: 1px solid ${theme.colors.border}; padding: 0.25em 0.5em; text-align: left; }
+                    .prose th { background-color: ${theme.colors.bgSidebar}; font-weight: bold; }
+                    .prose strong { font-weight: bold; }
+                    .prose em { font-style: italic; }
+                  `}</style>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      a: ({ node, href, children, ...props }) => (
+                        <a
+                          href={href}
+                          {...props}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            if (href) {
+                              window.maestro.shell.openExternal(href);
+                            }
+                          }}
+                          style={{ color: theme.colors.accent, textDecoration: 'underline', cursor: 'pointer' }}
+                        >
+                          {children}
+                        </a>
+                      ),
+                      code: ({ node, inline, className, children, ...props }: any) => {
+                        const match = (className || '').match(/language-(\w+)/);
+                        const language = match ? match[1] : 'text';
+                        const codeContent = String(children).replace(/\n$/, '');
+
+                        return !inline && match ? (
+                          <SyntaxHighlighter
+                            language={language}
+                            style={vscDarkPlus}
+                            customStyle={{
+                              margin: '0.5em 0',
+                              padding: '1em',
+                              background: theme.colors.bgSidebar,
+                              fontSize: '0.9em',
+                              borderRadius: '6px',
+                            }}
+                            PreTag="div"
+                          >
+                            {codeContent}
+                          </SyntaxHighlighter>
+                        ) : (
+                          <code className={className} {...props}>
+                            {children}
+                          </code>
+                        );
+                      }
+                    }}
+                  >
+                    {filteredText}
+                  </ReactMarkdown>
+                </div>
               ) : (
                 <div>{highlightMatches(filteredText, outputSearchQuery)}</div>
               )}
@@ -570,12 +784,12 @@ const LogItemComponent = memo(({
             {isTerminal && log.source !== 'user' ? (
               // Content sanitized with DOMPurify above
               <div
-                className="whitespace-pre-wrap text-sm overflow-x-auto scrollbar-thin"
+                className="whitespace-pre text-sm overflow-x-auto scrollbar-thin"
                 style={{ color: theme.colors.textMain, fontFamily, overscrollBehavior: 'contain' }}
                 dangerouslySetInnerHTML={{ __html: displayHtmlContent }}
               />
             ) : log.source === 'user' && isTerminal ? (
-              <div className="whitespace-pre-wrap text-sm" style={{ color: theme.colors.textMain, fontFamily }}>
+              <div className="whitespace-pre-wrap text-sm break-all" style={{ color: theme.colors.textMain, fontFamily }}>
                 <span style={{ color: theme.colors.accent }}>$ </span>
                 {highlightMatches(filteredText, outputSearchQuery)}
               </div>
@@ -595,13 +809,96 @@ const LogItemComponent = memo(({
                     {log.aiCommand.description}
                   </span>
                 </div>
-                <div className="whitespace-pre-wrap text-sm" style={{ color: theme.colors.textMain }}>
+                <div className="whitespace-pre-wrap text-sm break-all" style={{ color: theme.colors.textMain }}>
                   {highlightMatches(filteredText, outputSearchQuery)}
                 </div>
               </div>
+            ) : isAIMode && !markdownRawMode ? (
+              // Rendered markdown for AI responses
+              <div className="prose prose-sm max-w-none text-sm" style={{ color: theme.colors.textMain, lineHeight: 1.4 }}>
+                <style>{`
+                  .prose { line-height: 1.4; }
+                  .prose > *:first-child { margin-top: 0; }
+                  .prose > *:last-child { margin-bottom: 0; }
+                  .prose h1 { color: ${theme.colors.accent}; font-size: 2em; font-weight: bold; margin: 0; line-height: 1.4; }
+                  .prose h2 { color: ${theme.colors.success}; font-size: 1.75em; font-weight: bold; margin: 0; line-height: 1.4; }
+                  .prose h3 { color: ${theme.colors.warning}; font-size: 1.5em; font-weight: bold; margin: 0; line-height: 1.4; }
+                  .prose h4 { color: ${theme.colors.textMain}; font-size: 1.35em; font-weight: bold; margin: 0; line-height: 1.4; }
+                  .prose h5 { color: ${theme.colors.textMain}; font-size: 1.2em; font-weight: bold; margin: 0; line-height: 1.4; }
+                  .prose h6 { color: ${theme.colors.textDim}; font-size: 1.1em; font-weight: bold; margin: 0; line-height: 1.4; }
+                  .prose p { color: ${theme.colors.textMain}; margin: 0; line-height: 1.4; }
+                  .prose > ul, .prose > ol { color: ${theme.colors.textMain}; margin: 0.5em 0; padding-left: 2em; }
+                  .prose li ul, .prose li ol { margin: 0 !important; padding-left: 1.5em; }
+                  .prose li { margin: 0 !important; padding: 0; line-height: 1.4; display: list-item; }
+                  .prose li > p:first-child { margin: 0 !important; display: inline !important; }
+                  .prose li > p:first-child + ul, .prose li > p:first-child + ol { display: block; margin-top: 0 !important; }
+                  .prose li > p + ul, .prose li > p + ol { margin-top: 0 !important; }
+                  .prose li:has(> input[type="checkbox"]) { list-style: none; margin-left: -1.5em; }
+                  .prose code { background-color: ${theme.colors.bgSidebar}; color: ${theme.colors.textMain}; padding: 0.15em 0.3em; border-radius: 3px; font-size: 0.9em; }
+                  .prose pre { background-color: ${theme.colors.bgSidebar}; color: ${theme.colors.textMain}; padding: 0.5em; border-radius: 6px; overflow-x: auto; margin: 0; }
+                  .prose pre code { background: none; padding: 0; }
+                  .prose blockquote { border-left: 3px solid ${theme.colors.border}; padding-left: 0.75em; margin: 0; color: ${theme.colors.textDim}; }
+                  .prose a { color: ${theme.colors.accent}; text-decoration: underline; }
+                  .prose hr { border: none; border-top: 1px solid ${theme.colors.border}; margin: 0.75em 0; }
+                  .prose table { border-collapse: collapse; width: 100%; margin: 0; }
+                  .prose th, .prose td { border: 1px solid ${theme.colors.border}; padding: 0.25em 0.5em; text-align: left; }
+                  .prose th { background-color: ${theme.colors.bgSidebar}; font-weight: bold; }
+                  .prose strong { font-weight: bold; }
+                  .prose em { font-style: italic; }
+                `}</style>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    a: ({ node, href, children, ...props }) => (
+                      <a
+                        href={href}
+                        {...props}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (href) {
+                            window.maestro.shell.openExternal(href);
+                          }
+                        }}
+                        style={{ color: theme.colors.accent, textDecoration: 'underline', cursor: 'pointer' }}
+                      >
+                        {children}
+                      </a>
+                    ),
+                    code: ({ node, inline, className, children, ...props }: any) => {
+                      const match = (className || '').match(/language-(\w+)/);
+                      const language = match ? match[1] : 'text';
+                      const codeContent = String(children).replace(/\n$/, '');
+
+                      return !inline && match ? (
+                        <SyntaxHighlighter
+                          language={language}
+                          style={vscDarkPlus}
+                          customStyle={{
+                            margin: '0.5em 0',
+                            padding: '1em',
+                            background: theme.colors.bgSidebar,
+                            fontSize: '0.9em',
+                            borderRadius: '6px',
+                          }}
+                          PreTag="div"
+                        >
+                          {codeContent}
+                        </SyntaxHighlighter>
+                      ) : (
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
+                      );
+                    }
+                  }}
+                >
+                  {filteredText}
+                </ReactMarkdown>
+              </div>
             ) : (
-              <div className="whitespace-pre-wrap text-sm" style={{ color: theme.colors.textMain }}>
-                {highlightMatches(filteredText, outputSearchQuery)}
+              // Plain text mode (strip markdown formatting for readability)
+              <div className="whitespace-pre-wrap text-sm break-all" style={{ color: theme.colors.textMain }}>
+                {highlightMatches(isAIMode ? stripMarkdown(filteredText) : filteredText, outputSearchQuery)}
               </div>
             )}
           </>
@@ -611,6 +908,17 @@ const LogItemComponent = memo(({
           className="absolute bottom-2 right-2 flex items-center gap-1"
           style={{ transition: 'opacity 0.15s ease-in-out' }}
         >
+          {/* Markdown toggle button for AI responses */}
+          {log.source !== 'user' && isAIMode && (
+            <button
+              onClick={onToggleMarkdownRawMode}
+              className="p-1.5 rounded opacity-0 group-hover:opacity-50 hover:!opacity-100"
+              style={{ color: markdownRawMode ? theme.colors.accent : theme.colors.textDim }}
+              title={markdownRawMode ? "Show formatted (⌘E)" : "Show plain text (⌘E)"}
+            >
+              {markdownRawMode ? <Eye className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+            </button>
+          )}
           {/* Speak/Stop Button - only show for non-user messages when TTS is configured */}
           {audioFeedbackCommand && log.source !== 'user' && (
             speakingLogId === log.id ? (
@@ -715,7 +1023,8 @@ const LogItemComponent = memo(({
     prevProps.speakingLogId === nextProps.speakingLogId &&
     prevProps.outputSearchQuery === nextProps.outputSearchQuery &&
     prevProps.theme === nextProps.theme &&
-    prevProps.maxOutputLines === nextProps.maxOutputLines
+    prevProps.maxOutputLines === nextProps.maxOutputLines &&
+    prevProps.markdownRawMode === nextProps.markdownRawMode
   );
 });
 
@@ -779,6 +1088,8 @@ interface TerminalOutputProps {
   audioFeedbackCommand?: string; // TTS command for speech synthesis
   onScrollPositionChange?: (scrollTop: number) => void; // Callback to save scroll position
   initialScrollTop?: number; // Initial scroll position to restore
+  markdownRawMode: boolean; // Whether to show raw markdown or rendered markdown for AI responses
+  setMarkdownRawMode: (value: boolean) => void; // Toggle markdown raw mode
 }
 
 export const TerminalOutput = forwardRef<HTMLDivElement, TerminalOutputProps>((props, ref) => {
@@ -786,7 +1097,8 @@ export const TerminalOutput = forwardRef<HTMLDivElement, TerminalOutputProps>((p
     session, theme, fontFamily, activeFocus, outputSearchOpen, outputSearchQuery,
     setOutputSearchOpen, setOutputSearchQuery, setActiveFocus, setLightboxImage,
     inputRef, logsEndRef, maxOutputLines, onDeleteLog, onRemoveQueuedItem, onInterrupt,
-    audioFeedbackCommand, onScrollPositionChange, initialScrollTop
+    audioFeedbackCommand, onScrollPositionChange, initialScrollTop,
+    markdownRawMode, setMarkdownRawMode
   } = props;
 
   // Use the forwarded ref if provided, otherwise create a local one
@@ -1015,6 +1327,11 @@ export const TerminalOutput = forwardRef<HTMLDivElement, TerminalOutputProps>((p
       return newMap;
     });
   }, [setLocalFilterQuery]);
+
+  // Callback to toggle markdown raw mode
+  const toggleMarkdownRawMode = useCallback(() => {
+    setMarkdownRawMode(!markdownRawMode);
+  }, [markdownRawMode, setMarkdownRawMode]);
 
   // Auto-focus on search input when opened
   useEffect(() => {
@@ -1371,6 +1688,8 @@ export const TerminalOutput = forwardRef<HTMLDivElement, TerminalOutputProps>((p
             speakingLogId={speakingLogId}
             audioFeedbackCommand={audioFeedbackCommand}
             ansiConverter={ansiConverter}
+            markdownRawMode={markdownRawMode}
+            onToggleMarkdownRawMode={toggleMarkdownRawMode}
           />
         ))}
 

@@ -159,9 +159,11 @@ export interface AITab {
   createdAt: number;               // Timestamp for ordering
   state: 'idle' | 'busy';          // Tab-level state for write-mode tracking
   readOnlyMode?: boolean;          // When true, Claude operates in plan/read-only mode
+  saveToHistory?: boolean;         // When true, synopsis is requested after each completion and saved to History
   awaitingSessionId?: boolean;     // True when this tab sent a message and is awaiting its session ID
   thinkingStartTime?: number;      // Timestamp when tab started thinking (for elapsed time display)
   scrollTop?: number;              // Saved scroll position for this tab's output view
+  hasUnread?: boolean;             // True when tab has new messages while not active
 }
 
 // Closed tab entry for undo functionality (Cmd+Shift+T)
@@ -188,8 +190,11 @@ export interface Session {
   // Usage statistics from AI responses
   usageStats?: UsageStats;
   inputMode: 'terminal' | 'ai';
-  // Dual-process PIDs: each session has both AI and terminal processes
+  // AI process PID (for non-batch agents like Aider)
+  // For Claude batch mode, this is 0 since processes spawn per-message
   aiPid: number;
+  // Terminal uses runCommand() which spawns fresh shells per command
+  // This field is kept for backwards compatibility but is always 0
   terminalPid: number;
   port: number;
   // Live mode - makes session accessible via web interface
@@ -197,6 +202,10 @@ export interface Session {
   liveUrl?: string;
   changedFiles: FileArtifact[];
   isGitRepo: boolean;
+  // Git branches and tags cache (for tab completion)
+  gitBranches?: string[];
+  gitTags?: string[];
+  gitRefsCacheTime?: number;  // Timestamp when branches/tags were last fetched
   // File Explorer per-session state
   fileTree: any[];
   fileExplorerExpanded: string[];
@@ -253,6 +262,8 @@ export interface Session {
   closedTabHistory: ClosedTab[];
   // Saved scroll position for terminal/shell output view
   terminalScrollTop?: number;
+  // Draft input for terminal mode (persisted across session switches)
+  terminalDraftInput?: string;
 }
 
 export interface Group {
@@ -269,6 +280,7 @@ export interface AgentConfig {
   path?: string;
   command?: string;
   args?: string[];
+  hidden?: boolean; // If true, agent is hidden from UI (internal use only)
 }
 
 // Process spawning configuration

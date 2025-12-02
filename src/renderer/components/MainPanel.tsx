@@ -10,6 +10,7 @@ import { AgentSessionsBrowser } from './AgentSessionsBrowser';
 import { TabBar } from './TabBar';
 import { gitService } from '../services/git';
 import { getActiveTab, getBusyTabs } from '../utils/tabHelpers';
+import { formatShortcutKeys } from '../utils/shortcutFormatter';
 import type { Session, Theme, Shortcut, FocusArea, BatchRunState } from '../types';
 
 interface SlashCommand {
@@ -44,6 +45,13 @@ interface MainPanelProps {
   tabCompletionOpen?: boolean;
   tabCompletionSuggestions?: import('../hooks/useTabCompletion').TabCompletionSuggestion[];
   selectedTabCompletionIndex?: number;
+  tabCompletionFilter?: import('../hooks/useTabCompletion').TabCompletionFilter;
+  // @ mention completion props (AI mode)
+  atMentionOpen?: boolean;
+  atMentionFilter?: string;
+  atMentionStartIndex?: number;
+  atMentionSuggestions?: Array<{ value: string; type: 'file' | 'folder'; displayText: string; fullPath: string }>;
+  selectedAtMentionIndex?: number;
   previewFile: { name: string; content: string; path: string } | null;
   markdownRawMode: boolean;
   shortcuts: Record<string, Shortcut>;
@@ -52,6 +60,8 @@ interface MainPanelProps {
   gitDiffPreview: string | null;
   fileTreeFilterOpen: boolean;
   logLevel?: string; // Current log level setting for LogViewer
+  logViewerSelectedLevels: string[]; // Persisted filter selections for LogViewer
+  setLogViewerSelectedLevels: (levels: string[]) => void;
 
   // Setters
   setGitDiffPreview: (preview: string | null) => void;
@@ -76,6 +86,12 @@ interface MainPanelProps {
   // Tab completion setters
   setTabCompletionOpen?: (open: boolean) => void;
   setSelectedTabCompletionIndex?: (index: number) => void;
+  setTabCompletionFilter?: (filter: import('../hooks/useTabCompletion').TabCompletionFilter) => void;
+  // @ mention completion setters
+  setAtMentionOpen?: (open: boolean) => void;
+  setAtMentionFilter?: (filter: string) => void;
+  setAtMentionStartIndex?: (index: number) => void;
+  setSelectedAtMentionIndex?: (index: number) => void;
   setPreviewFile: (file: { name: string; content: string; path: string } | null) => void;
   setMarkdownRawMode: (mode: boolean) => void;
   setAboutModalOpen: (open: boolean) => void;
@@ -121,6 +137,9 @@ interface MainPanelProps {
   onTabStar?: (tabId: string, starred: boolean) => void;
   onUpdateTabByClaudeSessionId?: (claudeSessionId: string, updates: { name?: string | null; starred?: boolean }) => void;
   onToggleTabReadOnlyMode?: () => void;
+  onToggleTabSaveToHistory?: () => void;
+  showUnreadOnly?: boolean;
+  onToggleUnreadFilter?: () => void;
   // Scroll position persistence
   onScrollPositionChange?: (scrollTop: number) => void;
   // Input blur handler for persisting AI input state
@@ -132,8 +151,10 @@ export function MainPanel(props: MainPanelProps) {
     logViewerOpen, agentSessionsOpen, activeClaudeSessionId, activeSession, sessions, theme, activeFocus, outputSearchOpen, outputSearchQuery,
     inputValue, enterToSendAI, enterToSendTerminal, stagedImages, commandHistoryOpen, commandHistoryFilter,
     commandHistorySelectedIndex, slashCommandOpen, slashCommands, selectedSlashCommandIndex,
-    tabCompletionOpen, tabCompletionSuggestions, selectedTabCompletionIndex,
-    setTabCompletionOpen, setSelectedTabCompletionIndex,
+    tabCompletionOpen, tabCompletionSuggestions, selectedTabCompletionIndex, tabCompletionFilter,
+    setTabCompletionOpen, setSelectedTabCompletionIndex, setTabCompletionFilter,
+    atMentionOpen, atMentionFilter, atMentionStartIndex, atMentionSuggestions, selectedAtMentionIndex,
+    setAtMentionOpen, setAtMentionFilter, setAtMentionStartIndex, setSelectedAtMentionIndex,
     previewFile, markdownRawMode, shortcuts, rightPanelOpen, maxOutputLines, gitDiffPreview,
     fileTreeFilterOpen, logLevel, setGitDiffPreview, setLogViewerOpen, setAgentSessionsOpen, setActiveClaudeSessionId,
     onResumeClaudeSession, onNewClaudeSession, setActiveFocus, setOutputSearchOpen, setOutputSearchQuery,
@@ -161,7 +182,7 @@ export function MainPanel(props: MainPanelProps) {
   const headerRef = useRef<HTMLDivElement>(null);
 
   // Extract tab handlers from props
-  const { onTabSelect, onTabClose, onNewTab, onTabRename, onRequestTabRename, onTabReorder, onCloseOtherTabs, onTabStar } = props;
+  const { onTabSelect, onTabClose, onNewTab, onTabRename, onRequestTabRename, onTabReorder, onCloseOtherTabs, onTabStar, showUnreadOnly, onToggleUnreadFilter } = props;
 
   // Get the active tab for header display
   // The header should show the active tab's data (UUID, name, cost, context), not session-level data
@@ -212,6 +233,22 @@ export function MainPanel(props: MainPanelProps) {
   // Copy notification state (centered flash notice)
   const [copyNotification, setCopyNotification] = useState<string | null>(null);
 
+  // Fetch git info - extracted as a callback so it can be triggered manually
+  const fetchGitInfo = useCallback(async () => {
+    if (!activeSession?.isGitRepo) {
+      setGitInfo(null);
+      return;
+    }
+    try {
+      const cwd = activeSession.inputMode === 'terminal' ? (activeSession.shellCwd || activeSession.cwd) : activeSession.cwd;
+      const info = await window.maestro.git.info(cwd);
+      setGitInfo(info);
+    } catch (error) {
+      console.error('Failed to fetch git info:', error);
+      setGitInfo(null);
+    }
+  }, [activeSession?.isGitRepo, activeSession?.inputMode, activeSession?.shellCwd, activeSession?.cwd]);
+
   // Fetch git info when session changes or becomes a git repo
   useEffect(() => {
     if (!activeSession?.isGitRepo) {
@@ -219,22 +256,11 @@ export function MainPanel(props: MainPanelProps) {
       return;
     }
 
-    const fetchGitInfo = async () => {
-      try {
-        const cwd = activeSession.inputMode === 'terminal' ? (activeSession.shellCwd || activeSession.cwd) : activeSession.cwd;
-        const info = await window.maestro.git.info(cwd);
-        setGitInfo(info);
-      } catch (error) {
-        console.error('Failed to fetch git info:', error);
-        setGitInfo(null);
-      }
-    };
-
     fetchGitInfo();
     // Refresh git info every 30 seconds (reduced from 10s for performance)
     const interval = setInterval(fetchGitInfo, 30000);
     return () => clearInterval(interval);
-  }, [activeSession?.id, activeSession?.isGitRepo, activeSession?.cwd, activeSession?.shellCwd, activeSession?.inputMode]);
+  }, [activeSession?.id, activeSession?.isGitRepo, fetchGitInfo]);
 
   // Cleanup hover timeouts on unmount
   useEffect(() => {
@@ -294,7 +320,13 @@ export function MainPanel(props: MainPanelProps) {
   if (logViewerOpen) {
     return (
       <div className="flex-1 flex flex-col min-w-0 relative" style={{ backgroundColor: theme.colors.bgMain }}>
-        <LogViewer theme={theme} onClose={() => setLogViewerOpen(false)} logLevel={logLevel} />
+        <LogViewer
+          theme={theme}
+          onClose={() => setLogViewerOpen(false)}
+          logLevel={logLevel}
+          savedSelectedLevels={props.logViewerSelectedLevels}
+          onSelectedLevelsChange={props.setLogViewerSelectedLevels}
+        />
       </div>
     );
   }
@@ -372,7 +404,10 @@ export function MainPanel(props: MainPanelProps) {
                     className={`flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border cursor-pointer ${activeSession.isGitRepo ? 'border-orange-500/30 text-orange-500 bg-orange-500/10 hover:bg-orange-500/20' : 'border-blue-500/30 text-blue-500 bg-blue-500/10'}`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (activeSession.isGitRepo) setGitLogOpen(true);
+                      if (activeSession.isGitRepo) {
+                        fetchGitInfo(); // Refresh git info immediately on click
+                        setGitLogOpen(true);
+                      }
                     }}
                   >
                     {activeSession.isGitRepo ? (
@@ -710,7 +745,7 @@ export function MainPanel(props: MainPanelProps) {
               </button>
 
               {!rightPanelOpen && (
-                <button onClick={() => setRightPanelOpen(true)} className="p-2 rounded hover:bg-white/5" title={`Show right panel (${shortcuts.toggleRightPanel.keys.join('+').replace('Meta', 'Cmd')})`}>
+                <button onClick={() => setRightPanelOpen(true)} className="p-2 rounded hover:bg-white/5" title={`Show right panel (${formatShortcutKeys(shortcuts.toggleRightPanel.keys)})`}>
                   <Columns className="w-4 h-4" />
                 </button>
               )}
@@ -732,6 +767,8 @@ export function MainPanel(props: MainPanelProps) {
               onTabReorder={onTabReorder}
               onCloseOthers={onCloseOtherTabs}
               onTabStar={onTabStar}
+              showUnreadOnly={showUnreadOnly}
+              onToggleUnreadFilter={onToggleUnreadFilter}
             />
           )}
 
@@ -787,6 +824,8 @@ export function MainPanel(props: MainPanelProps) {
                     ? activeTab?.scrollTop
                     : activeSession.terminalScrollTop
                 }
+                markdownRawMode={markdownRawMode}
+                setMarkdownRawMode={setMarkdownRawMode}
               />
 
               {/* Input Area (hidden in mobile landscape for focused reading) */}
@@ -817,6 +856,17 @@ export function MainPanel(props: MainPanelProps) {
                 tabCompletionSuggestions={tabCompletionSuggestions}
                 selectedTabCompletionIndex={selectedTabCompletionIndex}
                 setSelectedTabCompletionIndex={setSelectedTabCompletionIndex}
+                tabCompletionFilter={tabCompletionFilter}
+                setTabCompletionFilter={setTabCompletionFilter}
+                atMentionOpen={atMentionOpen}
+                setAtMentionOpen={setAtMentionOpen}
+                atMentionFilter={atMentionFilter}
+                setAtMentionFilter={setAtMentionFilter}
+                atMentionStartIndex={atMentionStartIndex}
+                setAtMentionStartIndex={setAtMentionStartIndex}
+                atMentionSuggestions={atMentionSuggestions}
+                selectedAtMentionIndex={selectedAtMentionIndex}
+                setSelectedAtMentionIndex={setSelectedAtMentionIndex}
                 inputRef={inputRef}
                 handleInputKeyDown={handleInputKeyDown}
                 handlePaste={handlePaste}
@@ -834,6 +884,8 @@ export function MainPanel(props: MainPanelProps) {
                 onOpenQueueBrowser={onOpenQueueBrowser}
                 tabReadOnlyMode={activeTab?.readOnlyMode ?? false}
                 onToggleTabReadOnlyMode={props.onToggleTabReadOnlyMode}
+                tabSaveToHistory={activeTab?.saveToHistory ?? false}
+                onToggleTabSaveToHistory={props.onToggleTabSaveToHistory}
               />
               )}
             </>

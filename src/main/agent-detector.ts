@@ -23,45 +23,46 @@ export interface AgentConfig {
   path?: string;
   requiresPty?: boolean; // Whether this agent needs a pseudo-terminal
   configOptions?: AgentConfigOption[]; // Agent-specific configuration
+  hidden?: boolean; // If true, agent is hidden from UI (internal use only)
 }
 
 const AGENT_DEFINITIONS: Omit<AgentConfig, 'available' | 'path'>[] = [
+  {
+    id: 'terminal',
+    name: 'Terminal',
+    binaryName: 'bash',
+    command: 'bash',
+    args: [],
+    requiresPty: true,
+    hidden: true, // Internal agent, not shown in UI
+  },
   {
     id: 'claude-code',
     name: 'Claude Code',
     binaryName: 'claude',
     command: 'claude',
-    args: ['--print', '--verbose', '--output-format', 'stream-json'],
-    configOptions: [
-      {
-        key: 'yoloMode',
-        type: 'checkbox',
-        label: 'YOLO',
-        description: 'Skip permission prompts (runs with --dangerously-skip-permissions)',
-        default: false,
-        argBuilder: (enabled: boolean) => enabled ? ['--dangerously-skip-permissions'] : []
-      }
-    ]
+    // YOLO mode (--dangerously-skip-permissions) is always enabled - Maestro requires it
+    args: ['--print', '--verbose', '--output-format', 'stream-json', '--dangerously-skip-permissions'],
   },
   {
-    id: 'aider-gemini',
-    name: 'Aider (Gemini)',
-    binaryName: 'aider',
-    command: 'aider',
-    args: ['--model', 'gemini/gemini-2.0-flash-exp'],
-  },
-  {
-    id: 'qwen-coder',
-    name: 'Qwen Coder',
-    binaryName: 'qwen-coder',
-    command: 'qwen-coder',
+    id: 'openai-codex',
+    name: 'OpenAI Codex',
+    binaryName: 'codex',
+    command: 'codex',
     args: [],
   },
   {
-    id: 'terminal',
-    name: 'CLI Terminal',
-    binaryName: 'bash',
-    command: 'bash',
+    id: 'gemini-cli',
+    name: 'Gemini CLI',
+    binaryName: 'gemini',
+    command: 'gemini',
+    args: [],
+  },
+  {
+    id: 'qwen3-coder',
+    name: 'Qwen3 Coder',
+    binaryName: 'qwen3-coder',
+    command: 'qwen3-coder',
     args: [],
   },
 ];

@@ -1,0 +1,419 @@
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Search } from 'lucide-react';
+import type { AITab, Theme, Shortcut } from '../types';
+import { fuzzyMatchWithScore } from '../utils/search';
+import { useLayerStack } from '../contexts/LayerStackContext';
+import { MODAL_PRIORITIES } from '../constants/modalPriorities';
+import { getContextColor } from '../utils/theme';
+
+interface TabSwitcherModalProps {
+  theme: Theme;
+  tabs: AITab[];
+  activeTabId: string;
+  shortcut?: Shortcut;
+  onTabSelect: (tabId: string) => void;
+  onClose: () => void;
+}
+
+/**
+ * Format token count with K suffix for thousands
+ */
+function formatTokens(tokens: number): string {
+  if (tokens >= 1000) {
+    return (tokens / 1000).toFixed(1) + 'K';
+  }
+  return tokens.toString();
+}
+
+/**
+ * Format cost as USD with appropriate precision
+ */
+function formatCost(cost: number): string {
+  if (cost === 0) return '$0.00';
+  if (cost < 0.01) return '<$0.01';
+  return '$' + cost.toFixed(2);
+}
+
+/**
+ * Get context usage percentage from usage stats
+ * Uses inputTokens + outputTokens (not cache tokens) to match MainPanel calculation
+ */
+function getContextPercentage(tab: AITab): number {
+  if (!tab.usageStats) return 0;
+  const { inputTokens, outputTokens, contextWindow } = tab.usageStats;
+  if (!contextWindow || contextWindow === 0) return 0;
+  const contextTokens = inputTokens + outputTokens;
+  return Math.min(100, Math.round((contextTokens / contextWindow) * 100));
+}
+
+/**
+ * Get the display name for a tab.
+ * Priority: name > first UUID octet > "New Session"
+ */
+function getTabDisplayName(tab: AITab): string {
+  if (tab.name) {
+    return tab.name;
+  }
+  if (tab.claudeSessionId) {
+    return tab.claudeSessionId.split('-')[0].toUpperCase();
+  }
+  return 'New Session';
+}
+
+/**
+ * Get the UUID pill display (first octet of session ID)
+ */
+function getUuidPill(tab: AITab): string | null {
+  if (!tab.claudeSessionId) return null;
+  return tab.claudeSessionId.split('-')[0].toUpperCase();
+}
+
+/**
+ * Circular progress gauge component
+ */
+function ContextGauge({ percentage, theme, size = 36 }: { percentage: number; theme: Theme; size?: number }) {
+  const strokeWidth = 3;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (percentage / 100) * circumference;
+  const color = getContextColor(percentage, theme);
+
+  return (
+    <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="transform -rotate-90">
+        {/* Background circle */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={theme.colors.border}
+          strokeWidth={strokeWidth}
+        />
+        {/* Progress circle */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={color}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          style={{ transition: 'stroke-dashoffset 0.3s ease' }}
+        />
+      </svg>
+      {/* Percentage text in center */}
+      <span
+        className="absolute text-[9px] font-bold"
+        style={{ color }}
+      >
+        {percentage}%
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Tab Switcher Modal - Quick navigation between AI tabs with fuzzy search.
+ * Shows context window consumption, cost, custom name, and UUID pill for each tab.
+ */
+export function TabSwitcherModal({
+  theme,
+  tabs,
+  activeTabId,
+  shortcut,
+  onTabSelect,
+  onClose
+}: TabSwitcherModalProps) {
+  const [search, setSearch] = useState('');
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [firstVisibleIndex, setFirstVisibleIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const selectedItemRef = useRef<HTMLButtonElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const layerIdRef = useRef<string>();
+
+  const { registerLayer, unregisterLayer, updateLayerHandler } = useLayerStack();
+
+  // Register layer on mount
+  useEffect(() => {
+    layerIdRef.current = registerLayer({
+      type: 'modal',
+      priority: MODAL_PRIORITIES.TAB_SWITCHER,
+      blocksLowerLayers: true,
+      capturesFocus: true,
+      focusTrap: 'strict',
+      ariaLabel: 'Tab Switcher',
+      onEscape: () => onClose()
+    });
+
+    return () => {
+      if (layerIdRef.current) {
+        unregisterLayer(layerIdRef.current);
+      }
+    };
+  }, [registerLayer, unregisterLayer, onClose]);
+
+  // Update handler when onClose changes
+  useEffect(() => {
+    if (layerIdRef.current) {
+      updateLayerHandler(layerIdRef.current, () => {
+        onClose();
+      });
+    }
+  }, [onClose, updateLayerHandler]);
+
+  // Focus input on mount
+  useEffect(() => {
+    const timer = setTimeout(() => inputRef.current?.focus(), 50);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Scroll selected item into view
+  useEffect(() => {
+    selectedItemRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [selectedIndex]);
+
+  // Track scroll position to determine which items are visible
+  const handleScroll = () => {
+    if (scrollContainerRef.current) {
+      const scrollTop = scrollContainerRef.current.scrollTop;
+      const itemHeight = 52; // Approximate height of each item (py-3 = 12px top + 12px bottom + content)
+      const visibleIndex = Math.floor(scrollTop / itemHeight);
+      setFirstVisibleIndex(visibleIndex);
+    }
+  };
+
+  // Filter and sort tabs based on search query
+  const filteredTabs = useMemo(() => {
+    if (!search.trim()) {
+      // When no search, sort alphabetically by display name
+      return [...tabs].sort((a, b) => {
+        const nameA = getTabDisplayName(a).toLowerCase();
+        const nameB = getTabDisplayName(b).toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
+    }
+
+    // Fuzzy search on tab name and UUID
+    const results = tabs.map(tab => {
+      const displayName = getTabDisplayName(tab);
+      const uuid = tab.claudeSessionId || '';
+
+      // Score both name and UUID, take the better score
+      const nameResult = fuzzyMatchWithScore(displayName, search);
+      const uuidResult = fuzzyMatchWithScore(uuid, search);
+
+      const bestScore = Math.max(nameResult.score, uuidResult.score);
+      const matches = nameResult.matches || uuidResult.matches;
+
+      return { tab, score: bestScore, matches };
+    });
+
+    return results
+      .filter(r => r.matches)
+      .sort((a, b) => b.score - a.score)
+      .map(r => r.tab);
+  }, [tabs, search]);
+
+  // Reset selection and scroll tracking when search changes
+  useEffect(() => {
+    setSelectedIndex(0);
+    setFirstVisibleIndex(0);
+  }, [search]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex(prev => Math.min(prev + 1, filteredTabs.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex(prev => Math.max(prev - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (filteredTabs[selectedIndex]) {
+        onTabSelect(filteredTabs[selectedIndex].id);
+        onClose();
+      }
+    } else if (e.metaKey && ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'].includes(e.key)) {
+      e.preventDefault();
+      // 1-9 map to positions 1-9, 0 maps to position 10
+      const number = e.key === '0' ? 10 : parseInt(e.key);
+      // Cap firstVisibleIndex so hotkeys always work for the last 10 items
+      const maxFirstIndex = Math.max(0, filteredTabs.length - 10);
+      const effectiveFirstIndex = Math.min(firstVisibleIndex, maxFirstIndex);
+      const targetIndex = effectiveFirstIndex + number - 1;
+      if (filteredTabs[targetIndex]) {
+        onTabSelect(filteredTabs[targetIndex].id);
+        onClose();
+      }
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-start justify-center pt-16 z-[9999] animate-in fade-in duration-100">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Tab Switcher"
+        tabIndex={-1}
+        className="w-[600px] rounded-xl shadow-2xl border overflow-hidden flex flex-col max-h-[700px] outline-none"
+        style={{ backgroundColor: theme.colors.bgActivity, borderColor: theme.colors.border }}
+      >
+        {/* Search Header */}
+        <div className="p-4 border-b flex items-center gap-3" style={{ borderColor: theme.colors.border }}>
+          <Search className="w-5 h-5" style={{ color: theme.colors.textDim }} />
+          <input
+            ref={inputRef}
+            className="flex-1 bg-transparent outline-none text-lg placeholder-opacity-50"
+            placeholder="Search tabs..."
+            style={{ color: theme.colors.textMain }}
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+          <div className="flex items-center gap-2">
+            {shortcut && (
+              <span className="text-xs font-mono opacity-60" style={{ color: theme.colors.textDim }}>
+                {shortcut.keys.join('+')}
+              </span>
+            )}
+            <div
+              className="px-2 py-0.5 rounded text-xs font-bold"
+              style={{ backgroundColor: theme.colors.bgMain, color: theme.colors.textDim }}
+            >
+              ESC
+            </div>
+          </div>
+        </div>
+
+        {/* Tab List */}
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="overflow-y-auto py-2 scrollbar-thin"
+        >
+          {filteredTabs.map((tab, i) => {
+            const isActive = tab.id === activeTabId;
+            const isSelected = i === selectedIndex;
+            const displayName = getTabDisplayName(tab);
+            const uuidPill = getUuidPill(tab);
+            const contextPct = getContextPercentage(tab);
+            const cost = tab.usageStats?.totalCostUsd || 0;
+
+            // Calculate dynamic number badge (1-9, 0) based on first visible item
+            // Cap firstVisibleIndex so we always show 10 numbered items when near the end
+            const maxFirstIndex = Math.max(0, filteredTabs.length - 10);
+            const effectiveFirstIndex = Math.min(firstVisibleIndex, maxFirstIndex);
+            const distanceFromFirstVisible = i - effectiveFirstIndex;
+            const showNumber = distanceFromFirstVisible >= 0 && distanceFromFirstVisible < 10;
+            // 1-9 for positions 1-9, 0 for position 10
+            const numberBadge = distanceFromFirstVisible === 9 ? 0 : distanceFromFirstVisible + 1;
+
+            return (
+              <button
+                key={tab.id}
+                ref={isSelected ? selectedItemRef : null}
+                onClick={() => {
+                  onTabSelect(tab.id);
+                  onClose();
+                }}
+                className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-opacity-10"
+                style={{
+                  backgroundColor: isSelected ? theme.colors.accent : 'transparent',
+                  color: isSelected ? theme.colors.accentForeground : theme.colors.textMain
+                }}
+              >
+                {/* Number Badge */}
+                {showNumber ? (
+                  <div
+                    className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center text-xs font-bold"
+                    style={{ backgroundColor: theme.colors.bgMain, color: theme.colors.textDim }}
+                  >
+                    {numberBadge}
+                  </div>
+                ) : (
+                  <div className="flex-shrink-0 w-5 h-5" />
+                )}
+
+                {/* Busy/Active Indicator */}
+                <div className="flex-shrink-0 w-2 h-2">
+                  {tab.state === 'busy' ? (
+                    <div
+                      className="w-2 h-2 rounded-full animate-pulse"
+                      style={{ backgroundColor: theme.colors.warning }}
+                    />
+                  ) : isActive ? (
+                    <div
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: theme.colors.success }}
+                    />
+                  ) : null}
+                </div>
+
+                {/* Tab Info */}
+                <div className="flex flex-col flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    {/* Custom Name */}
+                    <span className="font-medium truncate">{displayName}</span>
+
+                    {/* UUID Pill (only if tab has a custom name, show UUID as secondary) */}
+                    {tab.name && uuidPill && (
+                      <span
+                        className="text-[10px] px-1.5 py-0.5 rounded font-mono flex-shrink-0"
+                        style={{
+                          backgroundColor: isSelected ? 'rgba(255,255,255,0.2)' : theme.colors.bgMain,
+                          color: isSelected ? theme.colors.accentForeground : theme.colors.textDim
+                        }}
+                      >
+                        {uuidPill}
+                      </span>
+                    )}
+
+                    {/* Starred indicator */}
+                    {tab.starred && (
+                      <span style={{ color: theme.colors.warning }}>★</span>
+                    )}
+                  </div>
+
+                  {/* Stats Row */}
+                  <div className="flex items-center gap-3 text-[10px] opacity-60">
+                    {tab.usageStats && (
+                      <>
+                        <span>{formatTokens(tab.usageStats.inputTokens + tab.usageStats.outputTokens)} tokens</span>
+                        <span>{formatCost(cost)}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Context Gauge */}
+                <div className="flex-shrink-0">
+                  <ContextGauge percentage={contextPct} theme={theme} />
+                </div>
+              </button>
+            );
+          })}
+
+          {filteredTabs.length === 0 && (
+            <div className="px-4 py-4 text-center opacity-50 text-sm" style={{ color: theme.colors.textDim }}>
+              No tabs found
+            </div>
+          )}
+        </div>
+
+        {/* Footer with stats */}
+        <div
+          className="px-4 py-2 border-t text-xs flex items-center justify-between"
+          style={{ borderColor: theme.colors.border, color: theme.colors.textDim }}
+        >
+          <span>{filteredTabs.length} of {tabs.length} tabs</span>
+          <span>↑↓ navigate • Enter select • ⌘1-9 quick select</span>
+        </div>
+      </div>
+    </div>
+  );
+}

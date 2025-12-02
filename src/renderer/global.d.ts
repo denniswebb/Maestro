@@ -21,6 +21,7 @@ interface AgentConfig {
   path?: string;
   command?: string;
   args?: string[];
+  hidden?: boolean;
 }
 
 interface DirectoryEntry {

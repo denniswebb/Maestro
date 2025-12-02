@@ -2,7 +2,7 @@
 
 > A unified, highly-responsive developer command center for managing your fleet of AI coding agents.
 
-Maestro is a desktop application that allows you to run and manage multiple AI coding instances in parallel with a Linear/Superhuman-level responsive interface. Currently supporting Claude Code with plans for additional agentic coding tools (Aider, OpenCode, etc.) based on user demand.
+Maestro is a desktop application that allows you to run and manage multiple AI coding instances in parallel with a Linear/Superhuman-level responsive interface. Currently supporting Claude Code with plans for additional agentic coding tools (OpenAI Codex, Gemini CLI, Qwen3 Coder) based on user demand.
 
 <img width="3592" height="2302" alt="image" src="https://github.com/user-attachments/assets/ba496fb7-708f-486c-a3ed-20a4a643a958" />
 
@@ -86,8 +86,8 @@ Each session shows a color-coded status indicator:
 | New Agent | `Cmd+N` | `Ctrl+N` |
 | Kill Agent | `Cmd+Shift+Backspace` | `Ctrl+Shift+Backspace` |
 | Move Agent to Group | `Cmd+Shift+M` | `Ctrl+Shift+M` |
-| Previous Agent | `Cmd+Shift+{` | `Ctrl+Shift+{` |
-| Next Agent | `Cmd+Shift+}` | `Ctrl+Shift+}` |
+| Previous Agent | `Cmd+[` | `Ctrl+[` |
+| Next Agent | `Cmd+]` | `Ctrl+]` |
 | Jump to Agent (1-9, 0=10th) | `Opt+Cmd+NUMBER` | `Alt+Ctrl+NUMBER` |
 | Switch AI/Command Terminal | `Cmd+J` | `Ctrl+J` |
 | Show Shortcuts Help | `Cmd+/` | `Ctrl+/` |
@@ -122,6 +122,40 @@ Each session shows a color-coded status indicator:
 | Page Up/Down | `Alt+Up/Down Arrow` while in output |
 | Jump to Top/Bottom | `Cmd+Up/Down Arrow` while in output |
 
+### Tab Completion (Command Terminal)
+
+The Command Terminal provides intelligent tab completion for faster command entry:
+
+| Action | Key |
+|--------|-----|
+| Open Tab Completion | `Tab` (when there's input text) |
+| Navigate Suggestions | `Up/Down Arrow` |
+| Select Suggestion | `Enter` |
+| Cycle Filter Types | `Tab` (while dropdown is open, git repos only) |
+| Cycle Filter Backwards | `Shift+Tab` (while dropdown is open) |
+| Close Dropdown | `Esc` |
+
+**Completion Sources:**
+- **History** - Previous shell commands from your session
+- **Files/Folders** - Files and directories in your current working directory
+- **Git Branches** - Local and remote branches (git repos only)
+- **Git Tags** - Available tags (git repos only)
+
+In git repositories, filter buttons appear in the dropdown header allowing you to filter by type (All, History, Branches, Tags, Files). Use `Tab`/`Shift+Tab` to cycle through filters or click directly.
+
+### @ File Mentions (AI Terminal)
+
+In AI mode, use `@` to reference files in your prompts:
+
+| Action | Key |
+|--------|-----|
+| Open File Picker | Type `@` followed by a search term |
+| Navigate Suggestions | `Up/Down Arrow` |
+| Select File | `Tab` or `Enter` |
+| Close Dropdown | `Esc` |
+
+**Example**: Type `@readme` to see matching files, then select to insert the file reference into your prompt. The AI will have context about the referenced file.
+
 ### Navigation & Search
 
 | Action | Key |
@@ -147,14 +181,7 @@ Each session shows a color-coded status indicator:
 
 ## Slash Commands
 
-Maestro includes an extensible slash command system with autocomplete:
-
-| Command | Description |
-|---------|-------------|
-| `/clear` | Clear the output history for the current mode |
-| `/jump` | Jump to current working directory in file tree (terminal mode only) |
-
-Type `/` in the input area to open the autocomplete menu, use arrow keys to navigate, and press `Tab` or `Enter` to select.
+Maestro includes an extensible slash command system with autocomplete. Type `/` in the input area to open the autocomplete menu, use arrow keys to navigate, and press `Tab` or `Enter` to select.
 
 ### Custom AI Commands
 

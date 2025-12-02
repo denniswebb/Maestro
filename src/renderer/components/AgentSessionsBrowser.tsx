@@ -933,7 +933,7 @@ export function AgentSessionsBrowser({
                 </span>
               </div>
 
-              {/* Total Tokens (Context Window) */}
+              {/* Context Window with visual gauge */}
               <div className="flex flex-col">
                 <div className="flex items-center gap-2 mb-1">
                   <Zap className="w-4 h-4" style={{ color: theme.colors.accent }} />
@@ -941,12 +941,39 @@ export function AgentSessionsBrowser({
                     Total Tokens
                   </span>
                 </div>
-                <span className="text-lg font-mono font-semibold" style={{ color: theme.colors.textMain }}>
-                  {formatNumber(viewingSession.inputTokens + viewingSession.outputTokens)}
-                </span>
-                <span className="text-[10px]" style={{ color: theme.colors.textDim }}>
-                  {((viewingSession.inputTokens + viewingSession.outputTokens) / 200000 * 100).toFixed(1)}% of 200k context
-                </span>
+                {(() => {
+                  const totalTokens = viewingSession.inputTokens + viewingSession.outputTokens;
+                  const contextUsage = Math.min(100, (totalTokens / 200000) * 100);
+                  const getContextColor = (usage: number) => {
+                    if (usage >= 90) return theme.colors.error;
+                    if (usage >= 70) return theme.colors.warning;
+                    return theme.colors.accent;
+                  };
+                  return (
+                    <>
+                      <span className="text-lg font-mono font-semibold" style={{ color: theme.colors.textMain }}>
+                        {formatNumber(totalTokens)}
+                      </span>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="w-24 h-2 rounded-full overflow-hidden" style={{ backgroundColor: theme.colors.border }}>
+                          <div
+                            className="h-full transition-all duration-500 ease-out"
+                            style={{
+                              width: `${contextUsage}%`,
+                              backgroundColor: getContextColor(contextUsage)
+                            }}
+                          />
+                        </div>
+                        <span className="text-[10px] font-mono font-bold" style={{ color: getContextColor(contextUsage) }}>
+                          {contextUsage.toFixed(1)}%
+                        </span>
+                      </div>
+                      <span className="text-[10px] mt-0.5" style={{ color: theme.colors.textDim }}>
+                        of 200k context
+                      </span>
+                    </>
+                  );
+                })()}
               </div>
 
               {/* Messages */}

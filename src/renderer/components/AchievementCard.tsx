@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Trophy, Clock, Zap, Star, ExternalLink, ChevronRight, ChevronDown, History } from 'lucide-react';
+import { Trophy, Clock, Zap, Star, ExternalLink, ChevronDown, History } from 'lucide-react';
 import type { Theme } from '../types';
 import type { AutoRunStats } from '../types';
 import {
@@ -12,6 +12,118 @@ import {
   type ConductorBadge,
 } from '../constants/conductorBadges';
 import { MaestroSilhouette } from './MaestroSilhouette';
+
+/**
+ * Circular progress ring with 11 segments that fill as badges are unlocked
+ */
+interface BadgeProgressRingProps {
+  currentLevel: number;
+  size: number;
+  theme: Theme;
+}
+
+function BadgeProgressRing({ currentLevel, size, theme }: BadgeProgressRingProps) {
+  const segments = 11;
+  const strokeWidth = 4;
+  const gap = 4; // Gap between segments in degrees
+  const radius = (size - strokeWidth) / 2;
+  const center = size / 2;
+
+  // Each segment takes up (360 - total gaps) / segments degrees
+  const totalGapDegrees = gap * segments;
+  const segmentDegrees = (360 - totalGapDegrees) / segments;
+
+  // Start from top (-90 degrees) and go clockwise
+  const startAngle = -90;
+
+  // Generate SVG arc path for a segment
+  const getArcPath = (segmentIndex: number): string => {
+    const segmentStart = startAngle + segmentIndex * (segmentDegrees + gap);
+    const segmentEnd = segmentStart + segmentDegrees;
+
+    const startRad = (segmentStart * Math.PI) / 180;
+    const endRad = (segmentEnd * Math.PI) / 180;
+
+    const x1 = center + radius * Math.cos(startRad);
+    const y1 = center + radius * Math.sin(startRad);
+    const x2 = center + radius * Math.cos(endRad);
+    const y2 = center + radius * Math.sin(endRad);
+
+    // Large arc flag is 0 since each segment is less than 180 degrees
+    return `M ${x1} ${y1} A ${radius} ${radius} 0 0 1 ${x2} ${y2}`;
+  };
+
+  // Get color for segment based on its level
+  const getSegmentColor = (level: number, isUnlocked: boolean): string => {
+    if (!isUnlocked) {
+      return theme.colors.border;
+    }
+    // Same gradient logic as the horizontal bar
+    if (level <= 3) {
+      return theme.colors.accent;
+    } else if (level <= 7) {
+      // Transition from accent to gold
+      const t = (level - 3) / 4;
+      return interpolateColor(theme.colors.accent, '#FFD700', t);
+    } else {
+      // Transition from gold to orange
+      const t = (level - 7) / 4;
+      return interpolateColor('#FFD700', '#FF6B35', t);
+    }
+  };
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      className="absolute inset-0"
+      style={{ transform: 'rotate(0deg)' }}
+    >
+      {Array.from({ length: segments }, (_, i) => {
+        const level = i + 1;
+        const isUnlocked = level <= currentLevel;
+        const color = getSegmentColor(level, isUnlocked);
+
+        return (
+          <path
+            key={i}
+            d={getArcPath(i)}
+            fill="none"
+            stroke={color}
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            opacity={isUnlocked ? 1 : 0.3}
+            style={{
+              filter: isUnlocked ? `drop-shadow(0 0 2px ${color}60)` : 'none',
+              transition: 'all 0.5s ease-out',
+            }}
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
+// Helper to interpolate between two hex colors
+function interpolateColor(color1: string, color2: string, t: number): string {
+  const hex1 = color1.replace('#', '');
+  const hex2 = color2.replace('#', '');
+
+  const r1 = parseInt(hex1.substring(0, 2), 16);
+  const g1 = parseInt(hex1.substring(2, 4), 16);
+  const b1 = parseInt(hex1.substring(4, 6), 16);
+
+  const r2 = parseInt(hex2.substring(0, 2), 16);
+  const g2 = parseInt(hex2.substring(2, 4), 16);
+  const b2 = parseInt(hex2.substring(4, 6), 16);
+
+  const r = Math.round(r1 + (r2 - r1) * t);
+  const g = Math.round(g1 + (g2 - g1) * t);
+  const b = Math.round(b1 + (b2 - b1) * t);
+
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
 
 interface AchievementCardProps {
   theme: Theme;
@@ -206,27 +318,45 @@ export function AchievementCard({ theme, autoRunStats, onEscapeWithBadgeOpen }: 
 
       {/* Current badge display */}
       <div className="flex items-center gap-4 mb-4">
-        {/* Maestro icon */}
-        <div
-          className="relative flex-shrink-0 p-2 rounded-lg"
-          style={{
-            background: currentLevel > 0
-              ? `linear-gradient(135deg, ${theme.colors.accent}30 0%, #FFD70030 100%)`
-              : theme.colors.bgMain,
-            border: `2px solid ${currentLevel > 0 ? '#FFD700' : theme.colors.border}`,
-          }}
-        >
-          <MaestroSilhouette
-            variant="dark"
-            size={48}
-            style={{ opacity: currentLevel > 0 ? 1 : 0.3 }}
-          />
+        {/* Maestro icon with circular progress ring */}
+        <div className="relative flex-shrink-0" style={{ width: 72, height: 72 }}>
+          {/* Circular progress ring - 11 segments */}
+          <BadgeProgressRing currentLevel={currentLevel} size={72} theme={theme} />
+
+          {/* Inner circle with Maestro icon */}
+          <div
+            className="absolute rounded-full flex items-center justify-center"
+            style={{
+              top: 8,
+              left: 8,
+              width: 56,
+              height: 56,
+              background: currentLevel > 0
+                ? `linear-gradient(135deg, ${theme.colors.accent}20 0%, #FFD70020 100%)`
+                : theme.colors.bgMain,
+              border: `2px solid ${currentLevel > 0 ? '#FFD700' : theme.colors.border}`,
+            }}
+          >
+            <MaestroSilhouette
+              variant="dark"
+              size={36}
+              style={{ opacity: currentLevel > 0 ? 1 : 0.3 }}
+            />
+          </div>
+
+          {/* Level number badge - positioned outside the ring */}
           {currentLevel > 0 && (
             <div
-              className="absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold"
+              className="absolute flex items-center justify-center text-xs font-bold"
               style={{
+                top: -2,
+                right: -2,
+                width: 20,
+                height: 20,
+                borderRadius: '50%',
                 background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)',
                 color: '#000',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
               }}
             >
               {currentLevel}
