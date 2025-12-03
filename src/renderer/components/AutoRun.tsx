@@ -4,19 +4,32 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Eye, Edit, Play, Square, HelpCircle, Loader2, Image, X, Search, ChevronUp, ChevronDown, ChevronRight, ChevronLeft, Copy, Check, Trash2 } from 'lucide-react';
-import type { BatchRunState, SessionState } from '../types';
+import type { BatchRunState, SessionState, Theme } from '../types';
 import { AutoRunnerHelpModal } from './AutoRunnerHelpModal';
 import { MermaidRenderer } from './MermaidRenderer';
+import { AutoRunDocumentSelector } from './AutoRunDocumentSelector';
 
 // Memoize remarkPlugins array - it never changes
 const REMARK_PLUGINS = [remarkGfm];
 
 interface AutoRunProps {
-  content: string;
-  onChange: (content: string) => void;
-  theme: any;
+  theme: Theme;
   sessionId: string; // Maestro session ID for per-session attachment storage
-  initialMode?: 'edit' | 'preview';
+
+  // Folder & document state
+  folderPath: string | null;
+  selectedFile: string | null;
+  documentList: string[];  // Filenames without .md
+
+  // Content state
+  content: string;
+  onContentChange: (content: string) => void;
+
+  // Mode state
+  mode: 'edit' | 'preview';
+  onModeChange: (mode: 'edit' | 'preview') => void;
+
+  // Scroll/cursor state
   initialCursorPosition?: number;
   initialEditScrollPos?: number;
   initialPreviewScrollPos?: number;
@@ -26,12 +39,23 @@ interface AutoRunProps {
     editScrollPos: number;
     previewScrollPos: number;
   }) => void;
+
+  // Actions
+  onOpenSetup: () => void;
+  onRefresh: () => void;
+  onSelectDocument: (filename: string) => void;
+  isLoadingDocuments?: boolean;
+
   // Batch processing props
   batchRunState?: BatchRunState;
   onOpenBatchRunner?: () => void;
   onStopBatchRun?: () => void;
+
   // Session state for disabling Run when agent is busy
   sessionState?: SessionState;
+
+  // Legacy prop for backwards compatibility
+  onChange?: (content: string) => void;
 }
 
 // Cache for loaded images to avoid repeated IPC calls
@@ -304,24 +328,46 @@ function ImagePreview({
 
 // Inner implementation component
 function AutoRunInner({
-  content,
-  onChange,
   theme,
   sessionId,
-  initialMode = 'edit',
+  folderPath,
+  selectedFile,
+  documentList,
+  content,
+  onContentChange,
+  mode: externalMode,
+  onModeChange,
   initialCursorPosition = 0,
   initialEditScrollPos = 0,
   initialPreviewScrollPos = 0,
   onStateChange,
+  onOpenSetup,
+  onRefresh,
+  onSelectDocument,
+  isLoadingDocuments = false,
   batchRunState,
   onOpenBatchRunner,
   onStopBatchRun,
-  sessionState
+  sessionState,
+  onChange,  // Legacy prop for backwards compatibility
 }: AutoRunProps) {
   const isLocked = batchRunState?.isRunning || false;
   const isAgentBusy = sessionState === 'busy' || sessionState === 'connecting';
   const isStopping = batchRunState?.isStopping || false;
-  const [mode, setMode] = useState<'edit' | 'preview'>(initialMode);
+
+  // Use external mode if provided, otherwise use local state
+  const [localMode, setLocalMode] = useState<'edit' | 'preview'>(externalMode || 'edit');
+  const mode = externalMode || localMode;
+  const setMode = useCallback((newMode: 'edit' | 'preview') => {
+    if (onModeChange) {
+      onModeChange(newMode);
+    } else {
+      setLocalMode(newMode);
+    }
+  }, [onModeChange]);
+
+  // Use onContentChange if provided, otherwise fall back to legacy onChange
+  const handleContentChange = onContentChange || onChange || (() => {});
 
   // Local content state for responsive typing - syncs to parent on blur
   const [localContent, setLocalContent] = useState(content);
@@ -351,9 +397,9 @@ function AutoRunInner({
   const syncContentToParent = useCallback(() => {
     isEditingRef.current = false;
     if (localContent !== content) {
-      onChange(localContent);
+      handleContentChange(localContent);
     }
-  }, [localContent, content, onChange]);
+  }, [localContent, content, handleContentChange]);
   // Track mode before auto-run to restore when it ends
   const modeBeforeAutoRunRef = useRef<'edit' | 'preview' | null>(null);
   const [helpModalOpen, setHelpModalOpen] = useState(false);
@@ -654,7 +700,7 @@ function AutoRunInner({
               const newContent = textBefore + prefix + imageMarkdown + suffix + textAfter;
               // Update local state and sync to parent immediately for explicit user action
               setLocalContent(newContent);
-              onChange(newContent);
+              handleContentChange(newContent);
 
               // Move cursor after the inserted markdown
               const newCursorPos = cursorPos + prefix.length + imageMarkdown.length + suffix.length;
@@ -669,7 +715,7 @@ function AutoRunInner({
         break; // Only handle first image
       }
     }
-  }, [localContent, isLocked, onChange, sessionId]);
+  }, [localContent, isLocked, handleContentChange, sessionId]);
 
   // Handle file input for manual image upload
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -694,14 +740,14 @@ function AutoRunInner({
         const imageMarkdown = `\n![${result.filename}](maestro-attachment://${result.filename})\n`;
         const newContent = localContent + imageMarkdown;
         setLocalContent(newContent);
-        onChange(newContent);
+        handleContentChange(newContent);
       }
     };
     reader.readAsDataURL(file);
 
     // Reset input so same file can be selected again
     e.target.value = '';
-  }, [localContent, onChange, sessionId]);
+  }, [localContent, handleContentChange, sessionId]);
 
   // Handle removing an attachment
   const handleRemoveAttachment = useCallback(async (filename: string) => {
@@ -719,11 +765,11 @@ function AutoRunInner({
     const regex = new RegExp(`!\\[${filename}\\]\\(maestro-attachment://${filename}\\)\\n?`, 'g');
     const newContent = localContent.replace(regex, '');
     setLocalContent(newContent);
-    onChange(newContent);
+    handleContentChange(newContent);
 
     // Clear from cache
     imageCache.delete(`${sessionId}:${filename}`);
-  }, [localContent, onChange, sessionId]);
+  }, [localContent, handleContentChange, sessionId]);
 
   // Lightbox helpers - handles both attachment filenames and external URLs
   const openLightboxByFilename = useCallback((filenameOrUrl: string) => {
@@ -802,7 +848,7 @@ function AutoRunInner({
     const regex = new RegExp(`!\\[${lightboxFilename}\\]\\(maestro-attachment://${lightboxFilename}\\)\\n?`, 'g');
     const newContent = localContent.replace(regex, '');
     setLocalContent(newContent);
-    onChange(newContent);
+    handleContentChange(newContent);
 
     // Clear from cache
     imageCache.delete(`${sessionId}:${lightboxFilename}`);
@@ -820,7 +866,7 @@ function AutoRunInner({
       const newList = attachmentsList.filter(f => f !== lightboxFilename);
       setLightboxFilename(newList[currentIndex] || null);
     }
-  }, [lightboxFilename, lightboxCurrentIndex, attachmentsList, sessionId, localContent, onChange, closeLightbox]);
+  }, [lightboxFilename, lightboxCurrentIndex, attachmentsList, sessionId, localContent, handleContentChange, closeLightbox]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Command-E to toggle between edit and preview
@@ -1060,6 +1106,21 @@ function AutoRunInner({
         }
       }}
     >
+      {/* Document Selector */}
+      {folderPath && (
+        <div className="pt-2 px-2">
+          <AutoRunDocumentSelector
+            theme={theme}
+            documents={documentList}
+            selectedDocument={selectedFile}
+            onSelectDocument={onSelectDocument}
+            onRefresh={onRefresh}
+            onChangeFolder={onOpenSetup}
+            isLoading={isLoadingDocuments}
+          />
+        </div>
+      )}
+
       {/* Mode Toggle */}
       <div className="flex gap-2 mb-3 justify-center pt-2">
         <button
@@ -1448,8 +1509,13 @@ export const AutoRun = memo(AutoRunInner, (prevProps, nextProps) => {
   return (
     prevProps.content === nextProps.content &&
     prevProps.sessionId === nextProps.sessionId &&
-    prevProps.initialMode === nextProps.initialMode &&
+    prevProps.mode === nextProps.mode &&
     prevProps.theme === nextProps.theme &&
+    // Document state
+    prevProps.folderPath === nextProps.folderPath &&
+    prevProps.selectedFile === nextProps.selectedFile &&
+    prevProps.documentList === nextProps.documentList &&
+    prevProps.isLoadingDocuments === nextProps.isLoadingDocuments &&
     // Compare batch run state values, not object reference
     prevProps.batchRunState?.isRunning === nextProps.batchRunState?.isRunning &&
     prevProps.batchRunState?.isStopping === nextProps.batchRunState?.isStopping &&
@@ -1458,10 +1524,14 @@ export const AutoRun = memo(AutoRunInner, (prevProps, nextProps) => {
     // Session state affects UI (busy disables Run button)
     prevProps.sessionState === nextProps.sessionState &&
     // Callbacks are typically stable, but check identity
-    prevProps.onChange === nextProps.onChange &&
+    prevProps.onContentChange === nextProps.onContentChange &&
+    prevProps.onModeChange === nextProps.onModeChange &&
     prevProps.onStateChange === nextProps.onStateChange &&
     prevProps.onOpenBatchRunner === nextProps.onOpenBatchRunner &&
-    prevProps.onStopBatchRun === nextProps.onStopBatchRun
+    prevProps.onStopBatchRun === nextProps.onStopBatchRun &&
+    prevProps.onOpenSetup === nextProps.onOpenSetup &&
+    prevProps.onRefresh === nextProps.onRefresh &&
+    prevProps.onSelectDocument === nextProps.onSelectDocument
     // Note: initialCursorPosition, initialEditScrollPos, initialPreviewScrollPos
     // are intentionally NOT compared - they're only used on mount
   );

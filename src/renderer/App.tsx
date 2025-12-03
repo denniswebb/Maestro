@@ -278,6 +278,11 @@ export default function MaestroConsole() {
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [webInterfaceUrl, setWebInterfaceUrl] = useState<string | null>(null);
 
+  // Auto Run document management state
+  const [autoRunDocumentList, setAutoRunDocumentList] = useState<string[]>([]);
+  const [autoRunContent, setAutoRunContent] = useState<string>('');
+  const [autoRunIsLoadingDocuments, setAutoRunIsLoadingDocuments] = useState(false);
+
   // Restore focus when LogViewer closes to ensure global hotkeys work
   useEffect(() => {
     // When LogViewer closes, restore focus to main container or input
@@ -2339,13 +2344,38 @@ export default function MaestroConsole() {
   }, [activeSession]);
 
   // Handler for auto run folder selection from setup modal
-  const handleAutoRunFolderSelected = useCallback((folderPath: string) => {
+  const handleAutoRunFolderSelected = useCallback(async (folderPath: string) => {
     if (!activeSession) return;
-    setSessions(prev => prev.map(s =>
-      s.id === activeSession.id
-        ? { ...s, autoRunFolderPath: folderPath }
-        : s
-    ));
+
+    // Load the document list from the folder
+    const result = await window.maestro.autorun.listDocs(folderPath);
+    if (result.success) {
+      setAutoRunDocumentList(result.files || []);
+      // Auto-select first document if available
+      const firstFile = result.files?.[0] || null;
+      setSessions(prev => prev.map(s =>
+        s.id === activeSession.id
+          ? {
+              ...s,
+              autoRunFolderPath: folderPath,
+              autoRunSelectedFile: firstFile,
+            }
+          : s
+      ));
+      // Load content of first document
+      if (firstFile) {
+        const contentResult = await window.maestro.autorun.readDoc(folderPath, firstFile + '.md');
+        if (contentResult.success) {
+          setAutoRunContent(contentResult.content || '');
+        }
+      }
+    } else {
+      setSessions(prev => prev.map(s =>
+        s.id === activeSession.id
+          ? { ...s, autoRunFolderPath: folderPath }
+          : s
+      ));
+    }
     setAutoRunSetupModalOpen(false);
     // Switch to the autorun tab now that folder is configured
     setActiveRightTab('autorun');
@@ -3305,6 +3335,42 @@ export default function MaestroConsole() {
     }
   }, [shortcutsHelpOpen]);
 
+  // Load Auto Run document list and content when session changes or autorun tab becomes active
+  useEffect(() => {
+    const loadAutoRunData = async () => {
+      if (!activeSession?.autoRunFolderPath) {
+        setAutoRunDocumentList([]);
+        setAutoRunContent('');
+        return;
+      }
+
+      // Load document list
+      setAutoRunIsLoadingDocuments(true);
+      const listResult = await window.maestro.autorun.listDocs(activeSession.autoRunFolderPath);
+      if (listResult.success) {
+        setAutoRunDocumentList(listResult.files || []);
+      }
+      setAutoRunIsLoadingDocuments(false);
+
+      // Load content of selected document
+      if (activeSession.autoRunSelectedFile) {
+        const contentResult = await window.maestro.autorun.readDoc(
+          activeSession.autoRunFolderPath,
+          activeSession.autoRunSelectedFile + '.md'
+        );
+        if (contentResult.success) {
+          setAutoRunContent(contentResult.content || '');
+        } else {
+          setAutoRunContent('');
+        }
+      } else {
+        setAutoRunContent('');
+      }
+    };
+
+    loadAutoRunData();
+  }, [activeSessionId, activeSession?.autoRunFolderPath, activeSession?.autoRunSelectedFile]);
+
   // Auto-scroll logs
   const activeTabLogs = activeSession ? getActiveTab(activeSession)?.logs : undefined;
   useEffect(() => {
@@ -3760,21 +3826,90 @@ export default function MaestroConsole() {
     }
   };
 
-  // TODO: Auto Run content is now stored in files, not session state
-  // This function will be removed once AutoRun component is updated to use file-based storage
-  const updateScratchPad = useCallback((_content: string) => {
-    // No-op: content is now stored in files via autorun:writeDoc IPC
-  }, []);
+  // Auto Run document content change handler
+  const handleAutoRunContentChange = useCallback(async (content: string) => {
+    setAutoRunContent(content);
+    // Auto-save to file
+    if (activeSession?.autoRunFolderPath && activeSession?.autoRunSelectedFile) {
+      await window.maestro.autorun.writeDoc(
+        activeSession.autoRunFolderPath,
+        activeSession.autoRunSelectedFile + '.md',
+        content
+      );
+    }
+  }, [activeSession?.autoRunFolderPath, activeSession?.autoRunSelectedFile]);
 
-  // TODO: Auto Run state tracking to be updated once new autoRun session fields are added
-  // This function will be updated to use the new autoRun* fields
-  const updateScratchPadState = useCallback((_state: {
+  // Auto Run mode change handler
+  const handleAutoRunModeChange = useCallback((mode: 'edit' | 'preview') => {
+    if (!activeSession) return;
+    setSessions(prev => prev.map(s =>
+      s.id === activeSession.id ? { ...s, autoRunMode: mode } : s
+    ));
+  }, [activeSession]);
+
+  // Auto Run state change handler (scroll/cursor positions)
+  const handleAutoRunStateChange = useCallback((state: {
     mode: 'edit' | 'preview';
     cursorPosition: number;
     editScrollPos: number;
     previewScrollPos: number;
   }) => {
-    // No-op until new autoRun* fields are added to Session interface
+    if (!activeSession) return;
+    setSessions(prev => prev.map(s =>
+      s.id === activeSession.id ? {
+        ...s,
+        autoRunMode: state.mode,
+        autoRunCursorPosition: state.cursorPosition,
+        autoRunEditScrollPos: state.editScrollPos,
+        autoRunPreviewScrollPos: state.previewScrollPos,
+      } : s
+    ));
+  }, [activeSession]);
+
+  // Auto Run document selection handler
+  const handleAutoRunSelectDocument = useCallback(async (filename: string) => {
+    if (!activeSession?.autoRunFolderPath) return;
+
+    // Save current document first if there's content
+    if (activeSession.autoRunSelectedFile && autoRunContent) {
+      await window.maestro.autorun.writeDoc(
+        activeSession.autoRunFolderPath,
+        activeSession.autoRunSelectedFile + '.md',
+        autoRunContent
+      );
+    }
+
+    // Update session with new selected file
+    setSessions(prev => prev.map(s =>
+      s.id === activeSession.id ? { ...s, autoRunSelectedFile: filename } : s
+    ));
+
+    // Load new document content
+    const result = await window.maestro.autorun.readDoc(
+      activeSession.autoRunFolderPath,
+      filename + '.md'
+    );
+    if (result.success) {
+      setAutoRunContent(result.content || '');
+    } else {
+      setAutoRunContent('');
+    }
+  }, [activeSession, autoRunContent]);
+
+  // Auto Run refresh handler - reload document list
+  const handleAutoRunRefresh = useCallback(async () => {
+    if (!activeSession?.autoRunFolderPath) return;
+    setAutoRunIsLoadingDocuments(true);
+    const result = await window.maestro.autorun.listDocs(activeSession.autoRunFolderPath);
+    if (result.success) {
+      setAutoRunDocumentList(result.files || []);
+    }
+    setAutoRunIsLoadingDocuments(false);
+  }, [activeSession?.autoRunFolderPath]);
+
+  // Auto Run open setup handler
+  const handleAutoRunOpenSetup = useCallback(() => {
+    setAutoRunSetupModalOpen(true);
   }, []);
 
   const processInput = async (overrideInputValue?: string) => {
@@ -6317,8 +6452,15 @@ export default function MaestroConsole() {
             updateSessionWorkingDirectory={updateSessionWorkingDirectory}
             refreshFileTree={refreshFileTree}
             setSessions={setSessions}
-            updateScratchPad={updateScratchPad}
-            updateScratchPadState={updateScratchPadState}
+            autoRunDocumentList={autoRunDocumentList}
+            autoRunContent={autoRunContent}
+            autoRunIsLoadingDocuments={autoRunIsLoadingDocuments}
+            onAutoRunContentChange={handleAutoRunContentChange}
+            onAutoRunModeChange={handleAutoRunModeChange}
+            onAutoRunStateChange={handleAutoRunStateChange}
+            onAutoRunSelectDocument={handleAutoRunSelectDocument}
+            onAutoRunRefresh={handleAutoRunRefresh}
+            onAutoRunOpenSetup={handleAutoRunOpenSetup}
             batchRunState={activeBatchRunState}
             onOpenBatchRunner={handleOpenBatchRunner}
             onStopBatchRun={handleStopBatchRun}

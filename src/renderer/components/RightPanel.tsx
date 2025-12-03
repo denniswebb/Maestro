@@ -51,14 +51,21 @@ interface RightPanelProps {
   refreshFileTree: (sessionId: string) => Promise<void>;
   setSessions: React.Dispatch<React.SetStateAction<Session[]>>;
 
-  // Scratchpad handlers
-  updateScratchPad: (content: string) => void;
-  updateScratchPadState: (state: {
+  // Auto Run handlers
+  autoRunDocumentList: string[];        // List of document filenames (without .md)
+  autoRunContent: string;               // Content of currently selected document
+  autoRunIsLoadingDocuments: boolean;   // Loading state
+  onAutoRunContentChange: (content: string) => void;
+  onAutoRunModeChange: (mode: 'edit' | 'preview') => void;
+  onAutoRunStateChange: (state: {
     mode: 'edit' | 'preview';
     cursorPosition: number;
     editScrollPos: number;
     previewScrollPos: number;
   }) => void;
+  onAutoRunSelectDocument: (filename: string) => void;
+  onAutoRunRefresh: () => void;
+  onAutoRunOpenSetup: () => void;
 
   // Batch processing props
   batchRunState?: BatchRunState;
@@ -76,7 +83,10 @@ export const RightPanel = forwardRef<RightPanelHandle, RightPanelProps>(function
     fileTreeFilter, setFileTreeFilter, fileTreeFilterOpen, setFileTreeFilterOpen,
     filteredFileTree, selectedFileIndex, setSelectedFileIndex, previewFile, fileTreeContainerRef,
     fileTreeFilterInputRef, toggleFolder, handleFileClick, expandAllFolders, collapseAllFolders,
-    updateSessionWorkingDirectory, refreshFileTree, setSessions, updateScratchPad, updateScratchPadState,
+    updateSessionWorkingDirectory, refreshFileTree, setSessions,
+    autoRunDocumentList, autoRunContent, autoRunIsLoadingDocuments,
+    onAutoRunContentChange, onAutoRunModeChange, onAutoRunStateChange,
+    onAutoRunSelectDocument, onAutoRunRefresh, onAutoRunOpenSetup,
     batchRunState, onOpenBatchRunner, onStopBatchRun, onJumpToClaudeSession, onResumeSession,
     onOpenSessionAsTab
   } = props;
@@ -230,15 +240,23 @@ export const RightPanel = forwardRef<RightPanelHandle, RightPanelProps>(function
 
         {activeRightTab === 'autorun' && (
           <AutoRun
-            content=""  // TODO: Content now loaded from files via autorun:readDoc IPC
-            onChange={updateScratchPad}
             theme={theme}
             sessionId={session.id}
-            initialMode="edit"  // TODO: Use session.autoRunMode once field is added
-            initialCursorPosition={0}  // TODO: Use session.autoRunCursorPosition once field is added
-            initialEditScrollPos={0}  // TODO: Use session.autoRunEditScrollPos once field is added
-            initialPreviewScrollPos={0}  // TODO: Use session.autoRunPreviewScrollPos once field is added
-            onStateChange={updateScratchPadState}
+            folderPath={session.autoRunFolderPath || null}
+            selectedFile={session.autoRunSelectedFile || null}
+            documentList={autoRunDocumentList}
+            content={autoRunContent}
+            onContentChange={onAutoRunContentChange}
+            mode={session.autoRunMode || 'edit'}
+            onModeChange={onAutoRunModeChange}
+            initialCursorPosition={session.autoRunCursorPosition || 0}
+            initialEditScrollPos={session.autoRunEditScrollPos || 0}
+            initialPreviewScrollPos={session.autoRunPreviewScrollPos || 0}
+            onStateChange={onAutoRunStateChange}
+            onOpenSetup={onAutoRunOpenSetup}
+            onRefresh={onAutoRunRefresh}
+            onSelectDocument={onAutoRunSelectDocument}
+            isLoadingDocuments={autoRunIsLoadingDocuments}
             batchRunState={batchRunState}
             onOpenBatchRunner={onOpenBatchRunner}
             onStopBatchRun={onStopBatchRun}
