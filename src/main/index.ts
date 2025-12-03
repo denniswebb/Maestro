@@ -3246,6 +3246,50 @@ function setupIpcHandlers() {
       return { success: false, files: [], error: String(error) };
     }
   });
+
+  // Read a markdown document for Auto Run
+  ipcMain.handle(
+    'autorun:readDoc',
+    async (_event, folderPath: string, filename: string) => {
+      try {
+        // Sanitize filename to prevent directory traversal
+        const sanitizedFilename = path.basename(filename);
+        if (sanitizedFilename !== filename || filename.includes('..')) {
+          return { success: false, content: '', error: 'Invalid filename' };
+        }
+
+        // Ensure filename has .md extension
+        const fullFilename = sanitizedFilename.endsWith('.md')
+          ? sanitizedFilename
+          : `${sanitizedFilename}.md`;
+
+        const filePath = path.join(folderPath, fullFilename);
+
+        // Validate the file is within the folder path (prevent traversal)
+        const resolvedPath = path.resolve(filePath);
+        const resolvedFolder = path.resolve(folderPath);
+        if (!resolvedPath.startsWith(resolvedFolder)) {
+          return { success: false, content: '', error: 'Invalid file path' };
+        }
+
+        // Check if file exists
+        try {
+          await fs.access(filePath);
+        } catch {
+          return { success: false, content: '', error: 'File not found' };
+        }
+
+        // Read the file
+        const content = await fs.readFile(filePath, 'utf-8');
+
+        logger.info(`Read Auto Run doc: ${fullFilename}`, 'AutoRun');
+        return { success: true, content };
+      } catch (error) {
+        logger.error('Error reading Auto Run doc', 'AutoRun', error);
+        return { success: false, content: '', error: String(error) };
+      }
+    }
+  );
 }
 
 // Handle process output streaming (set up after initialization)
