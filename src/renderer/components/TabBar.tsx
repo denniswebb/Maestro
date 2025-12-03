@@ -510,32 +510,19 @@ export function TabBar({
   const tabBarRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const [isOverflowing, setIsOverflowing] = useState(false);
-  const prevTabCountRef = useRef(tabs.length);
-  const prevActiveTabIdRef = useRef(activeTabId);
 
-  // Scroll active tab into view when user navigates to a different tab
-  // Don't scroll when closing tabs (tab count decreased) to avoid jarring movement
+  // Center the active tab in the scrollable area when activeTabId changes
   useEffect(() => {
-    const tabCountDecreased = tabs.length < prevTabCountRef.current;
-    const activeTabChanged = activeTabId !== prevActiveTabIdRef.current;
-
-    // Update refs for next comparison
-    prevTabCountRef.current = tabs.length;
-    prevActiveTabIdRef.current = activeTabId;
-
-    // Only scroll if active tab changed AND we didn't just close a tab
-    if (activeTabChanged && !tabCountDecreased) {
-      // Use rAF to ensure the new tab has rendered
-      const rafId = requestAnimationFrame(() => {
-        // Query the DOM directly using data attribute - more reliable than refs for async tab creation
-        const activeTabElement = tabBarRef.current?.querySelector(`[data-tab-id="${activeTabId}"]`);
-        if (activeTabElement) {
-          activeTabElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-        }
-      });
-      return () => cancelAnimationFrame(rafId);
-    }
-  }, [activeTabId, tabs.length]);
+    requestAnimationFrame(() => {
+      const container = tabBarRef.current;
+      const tabElement = container?.querySelector(`[data-tab-id="${activeTabId}"]`) as HTMLElement | null;
+      if (container && tabElement) {
+        // Calculate scroll position to center the tab
+        const scrollLeft = tabElement.offsetLeft - (container.clientWidth / 2) + (tabElement.offsetWidth / 2);
+        container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+      }
+    });
+  }, [activeTabId]);
 
   // Can always close tabs - closing the last one creates a fresh new tab
   const canClose = true;
