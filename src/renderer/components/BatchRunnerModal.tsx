@@ -9,9 +9,18 @@ import { PlaybookNameModal } from './PlaybookNameModal';
 import { AgentPromptComposerModal } from './AgentPromptComposerModal';
 
 // Default batch processing prompt
-export const DEFAULT_BATCH_PROMPT = `CRITICAL: You must complete EXACTLY ONE task and then exit. Do not attempt multiple tasks.
+export const DEFAULT_BATCH_PROMPT = `# Context
 
-Your responsibilities are as follows:
+You are **{{AGENT_NAME}}**, a Maestro-managed AI agent working on the **{{PROJECT_NAME}}** project.
+
+- **Project Path:** {{PROJECT_PATH}}
+- **Git Branch:** {{GIT_BRANCH}}
+- **Auto Run Folder:** {{AUTORUN_FOLDER}}
+- **Loop Iteration:** {{LOOP_NUMBER}}
+
+---
+
+## Instructions
 
 1. Project Orientation
     Begin by reviewing CLAUDE.md (when available) in this folder to understand the project's structure, conventions, and workflow expectations.
