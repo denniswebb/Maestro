@@ -1696,7 +1696,7 @@ function AutoRunInner({
       )}
 
       {/* Content Area */}
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 overflow-hidden">
         {/* Empty folder state - show when folder is configured but has no documents */}
         {folderPath && documentList.length === 0 && !isLoadingDocuments ? (
           <div

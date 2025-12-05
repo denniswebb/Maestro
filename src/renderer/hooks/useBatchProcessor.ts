@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import type { BatchRunState, BatchRunConfig, BatchDocumentEntry, Session, HistoryEntry, UsageStats } from '../types';
+import type { BatchRunState, BatchRunConfig, BatchDocumentEntry, Session, HistoryEntry, UsageStats, Group } from '../types';
+import { substituteTemplateVariables, TemplateContext } from '../utils/templateVariables';
 
 // Regex to count unchecked markdown checkboxes: - [ ] task
 const UNCHECKED_TASK_REGEX = /^[\s]*-\s*\[\s*\]\s*.+$/gm;
@@ -55,6 +56,7 @@ interface PRResultInfo {
 
 interface UseBatchProcessorProps {
   sessions: Session[];
+  groups: Group[];
   onUpdateSession: (sessionId: string, updates: Partial<Session>) => void;
   onSpawnAgent: (sessionId: string, prompt: string, cwdOverride?: string) => Promise<{ success: boolean; response?: string; claudeSessionId?: string; usageStats?: UsageStats }>;
   onSpawnSynopsis: (sessionId: string, cwd: string, claudeSessionId: string, prompt: string) => Promise<{ success: boolean; response?: string }>;
@@ -98,6 +100,73 @@ function formatLoopDuration(ms: number): string {
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
   return `${hours}h ${remainingMinutes}m`;
+}
+
+/**
+ * Create a loop summary history entry
+ */
+interface LoopSummaryParams {
+  loopIteration: number;
+  loopTasksCompleted: number;
+  loopStartTime: number;
+  loopTotalInputTokens: number;
+  loopTotalOutputTokens: number;
+  loopTotalCost: number;
+  sessionCwd: string;
+  sessionId: string;
+  isFinal: boolean;
+  exitReason?: string;
+}
+
+function createLoopSummaryEntry(params: LoopSummaryParams): Omit<HistoryEntry, 'id'> {
+  const {
+    loopIteration,
+    loopTasksCompleted,
+    loopStartTime,
+    loopTotalInputTokens,
+    loopTotalOutputTokens,
+    loopTotalCost,
+    sessionCwd,
+    sessionId,
+    isFinal,
+    exitReason
+  } = params;
+
+  const loopElapsedMs = Date.now() - loopStartTime;
+  const loopNumber = loopIteration + 1;
+  const summaryPrefix = isFinal ? `Loop ${loopNumber} (final)` : `Loop ${loopNumber}`;
+  const loopSummary = `${summaryPrefix} completed: ${loopTasksCompleted} task${loopTasksCompleted !== 1 ? 's' : ''} accomplished`;
+
+  const loopDetails = [
+    `**${summaryPrefix} Summary**`,
+    '',
+    `- **Tasks Accomplished:** ${loopTasksCompleted}`,
+    `- **Duration:** ${formatLoopDuration(loopElapsedMs)}`,
+    loopTotalInputTokens > 0 || loopTotalOutputTokens > 0
+      ? `- **Tokens:** ${(loopTotalInputTokens + loopTotalOutputTokens).toLocaleString()} (${loopTotalInputTokens.toLocaleString()} in / ${loopTotalOutputTokens.toLocaleString()} out)`
+      : '',
+    loopTotalCost > 0 ? `- **Cost:** $${loopTotalCost.toFixed(4)}` : '',
+    exitReason ? `- **Exit Reason:** ${exitReason}` : '',
+  ].filter(line => line !== '').join('\n');
+
+  return {
+    type: 'LOOP',
+    timestamp: Date.now(),
+    summary: loopSummary,
+    fullResponse: loopDetails,
+    projectPath: sessionCwd,
+    sessionId: sessionId,
+    success: true,
+    elapsedTimeMs: loopElapsedMs,
+    usageStats: loopTotalInputTokens > 0 || loopTotalOutputTokens > 0 ? {
+      inputTokens: loopTotalInputTokens,
+      outputTokens: loopTotalOutputTokens,
+      cacheReadInputTokens: 0,
+      cacheCreationInputTokens: 0,
+      totalCostUsd: loopTotalCost,
+      contextWindow: 0
+    } : undefined
+  };
 }
 
 /**
@@ -161,6 +230,7 @@ function parseSynopsis(response: string): { shortSummary: string; fullSynopsis: 
 
 export function useBatchProcessor({
   sessions,
+  groups,
   onUpdateSession,
   onSpawnAgent,
   onSpawnSynopsis,
@@ -395,11 +465,30 @@ ${docList}
     let loopTotalOutputTokens = 0;
     let loopTotalCost = 0;
 
+    // Helper to add final loop summary (defined here so it has access to tracking vars)
+    const addFinalLoopSummary = (exitReason: string) => {
+      if (loopEnabled && (loopTasksCompleted > 0 || loopIteration > 0)) {
+        onAddHistoryEntry(createLoopSummaryEntry({
+          loopIteration,
+          loopTasksCompleted,
+          loopStartTime,
+          loopTotalInputTokens,
+          loopTotalOutputTokens,
+          loopTotalCost,
+          sessionCwd: session.cwd,
+          sessionId,
+          isFinal: true,
+          exitReason
+        }));
+      }
+    };
+
     // Main processing loop (handles loop mode)
     while (true) {
       // Check for stop request
       if (stopRequestedRefs.current[sessionId]) {
         console.log('[BatchProcessor] Batch run stopped by user for session:', sessionId);
+        addFinalLoopSummary('Stopped by user');
         break;
       }
 
@@ -495,7 +584,8 @@ ${docList}
 
             // Re-read document to get updated task count
             const { taskCount: newRemainingTasks } = await readDocAndCountTasks(folderPath, docEntry.filename);
-            const tasksCompletedThisRun = remainingTasks - newRemainingTasks;
+            // Calculate tasks completed - ensure it's never negative (Claude may have added tasks)
+            const tasksCompletedThisRun = Math.max(0, remainingTasks - newRemainingTasks);
 
             // Update counters
             docTasksCompleted += tasksCompletedThisRun;
@@ -643,17 +733,20 @@ ${docList}
       // Check if we've hit the max loop limit
       if (maxLoops !== null && maxLoops !== undefined && loopIteration + 1 >= maxLoops) {
         console.log(`[BatchProcessor] Reached max loop limit (${maxLoops}), exiting loop`);
+        addFinalLoopSummary(`Reached max loop limit (${maxLoops})`);
         break;
       }
 
       // Check for stop request after full pass
       if (stopRequestedRefs.current[sessionId]) {
+        addFinalLoopSummary('Stopped by user');
         break;
       }
 
       // Safety check: if we didn't process ANY tasks this iteration, exit to avoid infinite loop
       if (!anyTasksProcessedThisIteration) {
         console.warn('[BatchProcessor] No tasks processed this iteration - exiting to avoid infinite loop');
+        addFinalLoopSummary('No tasks processed this iteration');
         break;
       }
 
@@ -676,6 +769,7 @@ ${docList}
 
         if (!anyNonResetDocsHaveTasks) {
           console.log('[BatchProcessor] All non-reset documents completed, exiting loop');
+          addFinalLoopSummary('All tasks completed');
           break;
         }
       }
@@ -706,7 +800,7 @@ ${docList}
       ].filter(line => line !== '').join('\n');
 
       onAddHistoryEntry({
-        type: 'LOOP_SUMMARY',
+        type: 'LOOP',
         timestamp: Date.now(),
         summary: loopSummary,
         fullResponse: loopDetails,

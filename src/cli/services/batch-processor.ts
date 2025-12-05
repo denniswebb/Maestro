@@ -481,7 +481,7 @@ export async function* runPlaybook(
       const loopSummary = `Loop ${loopIteration + 1} completed: ${loopTasksCompleted} tasks accomplished`;
       const historyEntry: HistoryEntry = {
         id: generateUUID(),
-        type: 'LOOP_SUMMARY',
+        type: 'LOOP',
         timestamp: Date.now(),
         summary: loopSummary,
         projectPath: session.cwd,

@@ -200,11 +200,12 @@ export type GetCustomCommandsCallback = () => CustomAICommand[];
 // History entry type for the history API
 export interface HistoryEntryData {
   id: string;
-  type: 'AUTO' | 'USER';
+  type: 'AUTO' | 'USER' | 'LOOP';
   timestamp: number;
   summary: string;
   fullResponse?: string;
   claudeSessionId?: string;
+  sessionName?: string;
   projectPath: string;
   sessionId?: string;
   contextUsage?: number;
@@ -218,6 +219,7 @@ export interface HistoryEntryData {
   };
   success?: boolean;
   elapsedTimeMs?: number;
+  validated?: boolean;
 }
 
 // Callback type for fetching history entries

@@ -39,6 +39,7 @@ interface ProcessNode {
   claudeSessionId?: string; // UUID octet from the Claude session (for AI processes)
   tabId?: string; // Tab ID for navigation to specific AI tab
   startTime?: number; // Process start timestamp for runtime calculation
+  isAutoRun?: boolean; // True for batch processes from Auto Run
 }
 
 // Format runtime in human readable format (e.g., "2m 30s", "1h 5m", "3d 2h")
@@ -289,10 +290,12 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
       sessionProcesses.forEach(proc => {
         const processType = getProcessType(proc.sessionId);
         let label: string;
+        let isAutoRun = false;
         if (processType === 'terminal') {
           label = 'Terminal Shell';
         } else if (processType === 'batch') {
-          label = `AI Agent (${proc.toolType}) - Batch`;
+          label = `AI Agent (${proc.toolType})`;
+          isAutoRun = true;
         } else if (processType === 'synopsis') {
           label = `AI Agent (${proc.toolType}) - Synopsis`;
         } else {
@@ -336,7 +339,8 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
           cwd: proc.cwd,
           claudeSessionId,
           tabId,
-          startTime: proc.startTime
+          startTime: proc.startTime,
+          isAutoRun
         });
       });
 
@@ -631,6 +635,17 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
             style={{ backgroundColor: theme.colors.success }}
           />
           <span className="text-sm flex-1 truncate">{node.label}</span>
+          {node.isAutoRun && (
+            <span
+              className="text-xs font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
+              style={{
+                backgroundColor: theme.colors.accent + '20',
+                color: theme.colors.accent
+              }}
+            >
+              AUTO
+            </span>
+          )}
           {node.claudeSessionId && node.sessionId && onNavigateToSession && (
             <button
               className="text-xs font-mono flex-shrink-0 hover:underline cursor-pointer"

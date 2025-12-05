@@ -52,6 +52,7 @@ interface RightPanelProps {
   refreshFileTree: (sessionId: string) => Promise<FileTreeChanges | undefined>;
   setSessions: React.Dispatch<React.SetStateAction<Session[]>>;
   onAutoRefreshChange?: (interval: number) => void;
+  onShowFlash?: (message: string) => void;
 
   // Auto Run handlers
   autoRunDocumentList: string[];        // List of document filenames (without .md)
@@ -87,7 +88,7 @@ export const RightPanel = forwardRef<RightPanelHandle, RightPanelProps>(function
     fileTreeFilter, setFileTreeFilter, fileTreeFilterOpen, setFileTreeFilterOpen,
     filteredFileTree, selectedFileIndex, setSelectedFileIndex, previewFile, fileTreeContainerRef,
     fileTreeFilterInputRef, toggleFolder, handleFileClick, expandAllFolders, collapseAllFolders,
-    updateSessionWorkingDirectory, refreshFileTree, setSessions, onAutoRefreshChange,
+    updateSessionWorkingDirectory, refreshFileTree, setSessions, onAutoRefreshChange, onShowFlash,
     autoRunDocumentList, autoRunDocumentTree, autoRunContent, autoRunIsLoadingDocuments,
     onAutoRunContentChange, onAutoRunModeChange, onAutoRunStateChange,
     onAutoRunSelectDocument, onAutoRunCreateDocument, onAutoRunRefresh, onAutoRunOpenSetup,
@@ -229,6 +230,7 @@ export const RightPanel = forwardRef<RightPanelHandle, RightPanelProps>(function
             refreshFileTree={refreshFileTree}
             setSessions={setSessions}
             onAutoRefreshChange={onAutoRefreshChange}
+            onShowFlash={onShowFlash}
           />
         )}
 

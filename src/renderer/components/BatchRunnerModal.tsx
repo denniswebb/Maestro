@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { X, RotateCcw, Play, Variable, ChevronDown, ChevronRight, Save, GripVertical, Plus, Repeat, FolderOpen, Bookmark, GitBranch, AlertTriangle, Loader2, Maximize2, Download, Upload } from 'lucide-react';
+import { X, RotateCcw, Play, Variable, ChevronDown, ChevronRight, Save, GripVertical, Plus, Repeat, FolderOpen, Bookmark, GitBranch, AlertTriangle, Loader2, Maximize2, Download, Upload, RefreshCw } from 'lucide-react';
 import type { Theme, BatchDocumentEntry, BatchRunConfig, Playbook, PlaybookDocumentEntry, WorktreeConfig } from '../types';
 import { useLayerStack } from '../contexts/LayerStackContext';
 import { MODAL_PRIORITIES } from '../constants/modalPriorities';
@@ -72,6 +72,7 @@ interface BatchRunnerModalProps {
   currentDocument: string;
   allDocuments: string[]; // All available docs in folder (without .md)
   getDocumentTaskCount: (filename: string) => Promise<number>; // Get task count for a document
+  onRefreshDocuments: () => Promise<void>; // Refresh document list from folder
   // Session ID for playbook storage
   sessionId: string;
   // Session cwd for git worktree support
@@ -116,6 +117,7 @@ export function BatchRunnerModal(props: BatchRunnerModalProps) {
     currentDocument,
     allDocuments,
     getDocumentTaskCount,
+    onRefreshDocuments,
     sessionId,
     sessionCwd
   } = props;
@@ -141,6 +143,9 @@ export function BatchRunnerModal(props: BatchRunnerModalProps) {
   // Document selector modal state
   const [showDocSelector, setShowDocSelector] = useState(false);
   const [selectedDocsInSelector, setSelectedDocsInSelector] = useState<Set<string>>(new Set());
+  const [docSelectorRefreshing, setDocSelectorRefreshing] = useState(false);
+  const [docSelectorRefreshMessage, setDocSelectorRefreshMessage] = useState<string | null>(null);
+  const [prevDocCount, setPrevDocCount] = useState(allDocuments.length);
 
   // Loop mode state
   const [loopEnabled, setLoopEnabled] = useState(false);
@@ -648,6 +653,42 @@ export function BatchRunnerModal(props: BatchRunnerModalProps) {
       return next;
     });
   }, []);
+
+  // Handle refresh in the document selector modal
+  const handleDocSelectorRefresh = useCallback(async () => {
+    const countBefore = allDocuments.length;
+    setDocSelectorRefreshing(true);
+    setDocSelectorRefreshMessage(null);
+
+    await onRefreshDocuments();
+
+    // The parent will update allDocuments - we need to calculate the diff
+    // after the refresh completes. Use a small timeout to let the prop update.
+    setTimeout(() => {
+      setDocSelectorRefreshing(false);
+    }, 500);
+  }, [onRefreshDocuments, allDocuments.length]);
+
+  // Track document count changes for refresh notification
+  useEffect(() => {
+    if (docSelectorRefreshing === false && prevDocCount !== allDocuments.length) {
+      const diff = allDocuments.length - prevDocCount;
+      let message: string;
+      if (diff > 0) {
+        message = `Found ${diff} new document${diff === 1 ? '' : 's'}`;
+      } else if (diff < 0) {
+        message = `${Math.abs(diff)} document${Math.abs(diff) === 1 ? '' : 's'} removed`;
+      } else {
+        message = 'No changes';
+      }
+      setDocSelectorRefreshMessage(message);
+      setPrevDocCount(allDocuments.length);
+
+      // Clear message after 3 seconds
+      const timer = setTimeout(() => setDocSelectorRefreshMessage(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [allDocuments.length, prevDocCount, docSelectorRefreshing]);
 
   // Handle loading a playbook
   const handleLoadPlaybook = useCallback((playbook: Playbook) => {
@@ -1869,12 +1910,36 @@ export function BatchRunnerModal(props: BatchRunnerModalProps) {
           >
             {/* Selector Header */}
             <div className="p-4 border-b flex items-center justify-between shrink-0" style={{ borderColor: theme.colors.border }}>
-              <h3 className="text-sm font-bold" style={{ color: theme.colors.textMain }}>
-                Select Documents
-              </h3>
-              <button onClick={() => setShowDocSelector(false)} style={{ color: theme.colors.textDim }}>
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold" style={{ color: theme.colors.textMain }}>
+                  Select Documents
+                </h3>
+                {docSelectorRefreshMessage && (
+                  <span
+                    className="text-xs px-2 py-0.5 rounded animate-in fade-in"
+                    style={{
+                      backgroundColor: theme.colors.success + '20',
+                      color: theme.colors.success
+                    }}
+                  >
+                    {docSelectorRefreshMessage}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={handleDocSelectorRefresh}
+                  disabled={docSelectorRefreshing}
+                  className="p-1 rounded hover:bg-white/10 transition-colors disabled:opacity-50"
+                  style={{ color: theme.colors.textDim }}
+                  title="Refresh document list"
+                >
+                  <RefreshCw className={`w-4 h-4 ${docSelectorRefreshing ? 'animate-spin' : ''}`} />
+                </button>
+                <button onClick={() => setShowDocSelector(false)} className="p-1 rounded hover:bg-white/10 transition-colors" style={{ color: theme.colors.textDim }}>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Document Checkboxes */}

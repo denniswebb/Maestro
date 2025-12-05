@@ -6,6 +6,7 @@ import { Command } from 'commander';
 import { listGroups } from './commands/list-groups';
 import { listAgents } from './commands/list-agents';
 import { listPlaybooks } from './commands/list-playbooks';
+import { showPlaybook } from './commands/show-playbook';
 import { runPlaybook } from './commands/run-playbook';
 
 const program = new Command();
@@ -37,6 +38,15 @@ list
   .option('-a, --agent <id>', 'Agent ID (shows all if not specified)')
   .option('--json', 'Output as JSON lines (for scripting)')
   .action(listPlaybooks);
+
+// Show command
+const show = program.command('show').description('Show details of a resource');
+
+show
+  .command('playbook <id>')
+  .description('Show detailed information about a playbook')
+  .option('--json', 'Output as JSON (for scripting)')
+  .action(showPlaybook);
 
 // Run command
 program

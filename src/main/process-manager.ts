@@ -321,6 +321,7 @@ export class ProcessManager extends EventEmitter {
                 // Only emit once per process to prevent duplicates
                 if (msg.type === 'result' && msg.result && !managedProcess.resultEmitted) {
                   managedProcess.resultEmitted = true;
+                  console.log(`[ProcessManager] Emitting result data for session ${sessionId}, length: ${msg.result.length}`);
                   this.emit('data', sessionId, msg.result);
                 }
                 // Skip 'assistant' type - we prefer the complete 'result' over streaming chunks
@@ -329,6 +330,12 @@ export class ProcessManager extends EventEmitter {
                 if (msg.session_id && !managedProcess.sessionIdEmitted) {
                   managedProcess.sessionIdEmitted = true;
                   this.emit('session-id', sessionId, msg.session_id);
+                }
+                // Extract slash commands from init message
+                // Claude Code emits available slash commands (built-in + user-defined) in the init message
+                if (msg.type === 'system' && msg.subtype === 'init' && msg.slash_commands) {
+                  console.log(`[ProcessManager] Received ${msg.slash_commands.length} slash commands from Claude Code init:`, msg.slash_commands.slice(0, 5), '...');
+                  this.emit('slash-commands', sessionId, msg.slash_commands);
                 }
                 // Extract usage statistics from stream-json messages (typically in 'result' type)
                 // Note: We need to aggregate token counts from modelUsage for accurate context window tracking

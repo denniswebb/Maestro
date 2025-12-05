@@ -153,14 +153,15 @@ const windowStateStore = new Store<WindowState>({
   },
 });
 
-// History entries store (per-project history for AUTO and USER entries)
+// History entries store (per-project history for AUTO, USER, and LOOP entries)
 interface HistoryEntry {
   id: string;
-  type: 'AUTO' | 'USER';
+  type: 'AUTO' | 'USER' | 'LOOP';
   timestamp: number;
   summary: string;
   fullResponse?: string;
   claudeSessionId?: string;
+  sessionName?: string; // User-defined session name
   projectPath: string;
   sessionId?: string; // Maestro session ID for isolation
   contextUsage?: number; // Context window usage percentage at time of entry
@@ -618,6 +619,19 @@ app.whenReady().then(() => {
   processManager = new ProcessManager();
   // Note: webServer is created on-demand when user enables web interface (see setupWebServerCallbacks)
   agentDetector = new AgentDetector();
+
+  // Load custom agent paths from settings
+  const allAgentConfigs = agentConfigsStore.get('configs', {});
+  const customPaths: Record<string, string> = {};
+  for (const [agentId, config] of Object.entries(allAgentConfigs)) {
+    if (config && typeof config === 'object' && 'customPath' in config && config.customPath) {
+      customPaths[agentId] = config.customPath as string;
+    }
+  }
+  if (Object.keys(customPaths).length > 0) {
+    agentDetector.setCustomPaths(customPaths);
+    logger.info(`Loaded custom agent paths: ${JSON.stringify(customPaths)}`, 'Startup');
+  }
 
   logger.info('Core services initialized', 'Startup');
 
@@ -1736,6 +1750,55 @@ function setupIpcHandlers() {
     agentConfigsStore.set('configs', allConfigs);
     logger.debug(`Updated config ${key} for agent ${agentId}`, 'AgentConfig', { value });
     return true;
+  });
+
+  // Set custom path for an agent - used when agent is not in standard PATH locations
+  ipcMain.handle('agents:setCustomPath', async (_event, agentId: string, customPath: string | null) => {
+    if (!agentDetector) throw new Error('Agent detector not initialized');
+
+    const allConfigs = agentConfigsStore.get('configs', {});
+    if (!allConfigs[agentId]) {
+      allConfigs[agentId] = {};
+    }
+
+    if (customPath) {
+      allConfigs[agentId].customPath = customPath;
+      logger.info(`Set custom path for agent ${agentId}: ${customPath}`, 'AgentConfig');
+    } else {
+      delete allConfigs[agentId].customPath;
+      logger.info(`Cleared custom path for agent ${agentId}`, 'AgentConfig');
+    }
+
+    agentConfigsStore.set('configs', allConfigs);
+
+    // Update agent detector with all custom paths
+    const allCustomPaths: Record<string, string> = {};
+    for (const [id, config] of Object.entries(allConfigs)) {
+      if (config && typeof config === 'object' && 'customPath' in config && config.customPath) {
+        allCustomPaths[id] = config.customPath as string;
+      }
+    }
+    agentDetector.setCustomPaths(allCustomPaths);
+
+    return true;
+  });
+
+  // Get custom path for an agent
+  ipcMain.handle('agents:getCustomPath', async (_event, agentId: string) => {
+    const allConfigs = agentConfigsStore.get('configs', {});
+    return allConfigs[agentId]?.customPath || null;
+  });
+
+  // Get all custom paths for agents
+  ipcMain.handle('agents:getAllCustomPaths', async () => {
+    const allConfigs = agentConfigsStore.get('configs', {});
+    const customPaths: Record<string, string> = {};
+    for (const [agentId, config] of Object.entries(allConfigs)) {
+      if (config && typeof config === 'object' && 'customPath' in config && config.customPath) {
+        customPaths[agentId] = config.customPath as string;
+      }
+    }
+    return customPaths;
   });
 
   // Folder selection dialog
@@ -4266,6 +4329,11 @@ function setupProcessListeners() {
 
     processManager.on('session-id', (sessionId: string, claudeSessionId: string) => {
       mainWindow?.webContents.send('process:session-id', sessionId, claudeSessionId);
+    });
+
+    // Handle slash commands from Claude Code init message
+    processManager.on('slash-commands', (sessionId: string, slashCommands: string[]) => {
+      mainWindow?.webContents.send('process:slash-commands', sessionId, slashCommands);
     });
 
     // Handle stderr separately from runCommand (for clean command execution)

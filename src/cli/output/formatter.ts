@@ -179,6 +179,83 @@ export function formatPlaybooks(
   return lines.join('\n').trimEnd();
 }
 
+// Playbook detail formatting
+export interface PlaybookDetailDisplay {
+  id: string;
+  name: string;
+  agentId: string;
+  agentName: string;
+  folderPath?: string;
+  loopEnabled?: boolean;
+  maxLoops?: number | null;
+  prompt: string;
+  documents: {
+    filename: string;
+    resetOnCompletion: boolean;
+    taskCount: number;
+    tasks: string[];
+  }[];
+}
+
+export function formatPlaybookDetail(playbook: PlaybookDetailDisplay): string {
+  const lines: string[] = [];
+
+  // Header
+  lines.push(bold(c('cyan', 'PLAYBOOK')));
+  lines.push('');
+
+  // Basic info
+  lines.push(`  ${c('white', 'Name:')}       ${playbook.name}`);
+  lines.push(`  ${c('white', 'ID:')}         ${playbook.id}`);
+  lines.push(`  ${c('white', 'Agent:')}      ${playbook.agentName} ${dim(`(${playbook.agentId.slice(0, 8)})`)}`);
+
+  if (playbook.folderPath) {
+    lines.push(`  ${c('white', 'Folder:')}     ${dim(playbook.folderPath)}`);
+  }
+
+  // Loop configuration
+  if (playbook.loopEnabled) {
+    const loopInfo = playbook.maxLoops ? `max ${playbook.maxLoops}` : '∞';
+    lines.push(`  ${c('white', 'Loop:')}       ${c('yellow', `enabled (${loopInfo})`)}`);
+  } else {
+    lines.push(`  ${c('white', 'Loop:')}       ${dim('disabled')}`);
+  }
+
+  lines.push('');
+
+  // Prompt
+  lines.push(`  ${c('white', 'Prompt:')}`);
+  const promptLines = playbook.prompt.split('\n');
+  for (const line of promptLines) {
+    lines.push(`    ${dim(line)}`);
+  }
+
+  lines.push('');
+
+  // Documents
+  const totalTasks = playbook.documents.reduce((sum, d) => sum + d.taskCount, 0);
+  lines.push(`  ${c('white', 'Documents:')} ${dim(`(${playbook.documents.length} files, ${totalTasks} pending tasks)`)}`);
+  lines.push('');
+
+  for (const doc of playbook.documents) {
+    const reset = doc.resetOnCompletion ? c('magenta', ' ↺ reset') : '';
+    const taskInfo = doc.taskCount > 0 ? c('green', ` (${doc.taskCount} tasks)`) : dim(' (0 tasks)');
+    lines.push(`    ${c('blue', '📄')} ${doc.filename}${taskInfo}${reset}`);
+
+    // Show tasks (up to 5)
+    const tasksToShow = doc.tasks.slice(0, 5);
+    for (let i = 0; i < tasksToShow.length; i++) {
+      const task = truncate(tasksToShow[i], 60);
+      lines.push(`        ${dim(`${i + 1}.`)} ${task}`);
+    }
+    if (doc.tasks.length > 5) {
+      lines.push(`        ${dim(`... and ${doc.tasks.length - 5} more`)}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
 export function formatPlaybooksByAgent(groups: PlaybooksByAgent[]): string {
   // Filter to only agents with playbooks
   const agentsWithPlaybooks = groups.filter((g) => g.playbooks.length > 0);

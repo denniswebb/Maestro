@@ -15,6 +15,7 @@ interface TabBarProps {
   onSelectTab: (tabId: string) => void;
   onNewTab: () => void;
   onCloseTab: (tabId: string) => void;
+  onOpenTabSearch?: () => void;
 }
 
 interface TabProps {
@@ -135,6 +136,7 @@ export function TabBar({
   onSelectTab,
   onNewTab,
   onCloseTab,
+  onOpenTabSearch,
 }: TabBarProps) {
   const colors = useThemeColors();
 
@@ -160,6 +162,44 @@ export function TabBar({
         msOverflowStyle: 'none',
       }}
     >
+      {/* Search tabs button - pinned at start */}
+      {onOpenTabSearch && (
+        <button
+          onClick={onOpenTabSearch}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '28px',
+            height: '28px',
+            borderRadius: '14px',
+            border: `1px solid ${colors.border}`,
+            backgroundColor: colors.bgMain,
+            color: colors.textDim,
+            cursor: 'pointer',
+            flexShrink: 0,
+            marginRight: '6px',
+            marginBottom: '4px',
+            alignSelf: 'center',
+          }}
+          title={`Search ${tabs.length} tabs`}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </button>
+      )}
+
       {tabs.map((tab) => (
         <Tab
           key={tab.id}
