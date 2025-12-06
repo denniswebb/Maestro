@@ -55,9 +55,9 @@ show
   .option('--json', 'Output as JSON (for scripting)')
   .action(showPlaybook);
 
-// Run command
+// Playbook command
 program
-  .command('run <playbook-id>')
+  .command('playbook <playbook-id>')
   .description('Run a playbook')
   .option('--dry-run', 'Show what would be executed without running')
   .option('--no-history', 'Do not write history entries')
