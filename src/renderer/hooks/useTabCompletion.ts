@@ -177,6 +177,7 @@ export function useTabCompletion(session: Session | null): UseTabCompletionRetur
     // Handle path-like completions (e.g., "cd src/comp" should match files in src/)
     // Also handle ./ prefix (e.g., "./src" -> "src")
     if (filter === 'all' || filter === 'file') {
+      const hasDotSlashPrefix = lastPart.startsWith('./');
       const normalizedLastPart = lastPart.replace(/^\.\//, ''); // Strip leading ./
       const pathParts = normalizedLastPart.split('/');
       let searchInPath = pathParts.length > 1 ? pathParts.slice(0, -1).join('/') : '';
@@ -206,14 +207,16 @@ export function useTabCompletion(session: Session | null): UseTabCompletionRetur
         }
 
         const completedPath = searchInPath ? `${searchInPath}/${file.name}` : file.name;
-        const fullValue = prefix ? `${prefix} ${completedPath}` : completedPath;
+        // Preserve the ./ prefix if the user typed it
+        const completedPathWithPrefix = hasDotSlashPrefix ? `./${completedPath}` : completedPath;
+        const fullValue = prefix ? `${prefix} ${completedPathWithPrefix}` : completedPathWithPrefix;
 
         if (!seenValues.has(fullValue)) {
           seenValues.add(fullValue);
           suggestions.push({
             value: fullValue + (file.type === 'folder' ? '/' : ''),
             type: file.type,
-            displayText: completedPath + (file.type === 'folder' ? '/' : '')
+            displayText: completedPathWithPrefix + (file.type === 'folder' ? '/' : '')
           });
         }
       }
