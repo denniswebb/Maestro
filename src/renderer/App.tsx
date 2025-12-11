@@ -224,6 +224,11 @@ export default function MaestroConsole() {
   // Git Diff State
   const [gitDiffPreview, setGitDiffPreview] = useState<string | null>(null);
 
+  // Stable callbacks for memoized modals (prevents re-renders from callback reference changes)
+  const handleCloseGitDiff = useCallback(() => setGitDiffPreview(null), []);
+  const handleCloseGitLog = useCallback(() => setGitLogOpen(false), []);
+  const handleCloseSettings = useCallback(() => setSettingsModalOpen(false), []);
+
   // Tour Overlay State
   const [tourOpen, setTourOpen] = useState(false);
   const [tourFromWizard, setTourFromWizard] = useState(false);
@@ -1562,6 +1567,16 @@ export default function MaestroConsole() {
     [sessions, activeSessionId]
   );
   const theme = THEMES[activeThemeId];
+
+  // Memoized cwd for git viewers (prevents re-renders from inline computation)
+  const gitViewerCwd = useMemo(() =>
+    activeSession
+      ? (activeSession.inputMode === 'terminal'
+          ? (activeSession.shellCwd || activeSession.cwd)
+          : activeSession.cwd)
+      : '',
+    [activeSession?.inputMode, activeSession?.shellCwd, activeSession?.cwd]
+  );
 
   // Tab completion hook for terminal mode
   const { getSuggestions: getTabCompletionSuggestions } = useTabCompletion(activeSession);
@@ -6668,18 +6683,18 @@ export default function MaestroConsole() {
       {gitDiffPreview && activeSession && (
         <GitDiffViewer
           diffText={gitDiffPreview}
-          cwd={activeSession.inputMode === 'terminal' ? (activeSession.shellCwd || activeSession.cwd) : activeSession.cwd}
+          cwd={gitViewerCwd}
           theme={theme}
-          onClose={() => setGitDiffPreview(null)}
+          onClose={handleCloseGitDiff}
         />
       )}
 
       {/* --- GIT LOG VIEWER --- */}
       {gitLogOpen && activeSession && (
         <GitLogViewer
-          cwd={activeSession.inputMode === 'terminal' ? (activeSession.shellCwd || activeSession.cwd) : activeSession.cwd}
+          cwd={gitViewerCwd}
           theme={theme}
-          onClose={() => setGitLogOpen(false)}
+          onClose={handleCloseGitLog}
         />
       )}
 
@@ -7554,7 +7569,7 @@ export default function MaestroConsole() {
       {/* --- SETTINGS MODAL (New Component) --- */}
       <SettingsModal
         isOpen={settingsModalOpen}
-        onClose={() => setSettingsModalOpen(false)}
+        onClose={handleCloseSettings}
         theme={theme}
         themes={THEMES}
         activeThemeId={activeThemeId}
