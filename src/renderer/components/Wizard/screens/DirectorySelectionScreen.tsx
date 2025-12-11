@@ -16,6 +16,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import type { Theme, AgentConfig } from '../../../types';
 import { useWizard } from '../WizardContext';
 import { ScreenReaderAnnouncement } from '../ScreenReaderAnnouncement';
+import { ExistingAutoRunDocsModal } from '../ExistingAutoRunDocsModal';
+import { AUTO_RUN_FOLDER_NAME } from '../services/phaseGenerator';
 
 interface DirectorySelectionScreenProps {
   theme: Theme;
@@ -30,6 +32,8 @@ export function DirectorySelectionScreen({ theme }: DirectorySelectionScreenProp
     setDirectoryPath,
     setIsGitRepo,
     setDirectoryError,
+    setHasExistingAutoRunDocs,
+    setExistingDocsChoice,
     nextStep,
     previousStep,
     canProceedToNext,
@@ -40,6 +44,8 @@ export function DirectorySelectionScreen({ theme }: DirectorySelectionScreenProp
   const [isBrowsing, setIsBrowsing] = useState(false);
   const [isDetecting, setIsDetecting] = useState(true);
   const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null);
+  const [showExistingDocsModal, setShowExistingDocsModal] = useState(false);
+  const [pendingDirectoryPath, setPendingDirectoryPath] = useState<string | null>(null);
 
   // Screen reader announcement state
   const [announcement, setAnnouncement] = useState('');
@@ -105,12 +111,30 @@ export function DirectorySelectionScreen({ theme }: DirectorySelectionScreenProp
   }, []);
 
   /**
+   * Check if Auto Run Docs folder exists in the given path
+   */
+  const checkForExistingDocs = useCallback(async (dirPath: string): Promise<{ exists: boolean; count: number }> => {
+    try {
+      const autoRunPath = `${dirPath}/${AUTO_RUN_FOLDER_NAME}`;
+      const result = await window.maestro.autorun.listDocs(autoRunPath);
+      if (result.success && result.files && result.files.length > 0) {
+        return { exists: true, count: result.files.length };
+      }
+      return { exists: false, count: 0 };
+    } catch {
+      // Folder doesn't exist or error reading it
+      return { exists: false, count: 0 };
+    }
+  }, []);
+
+  /**
    * Validate directory and check Git repo status
    */
-  const validateDirectory = useCallback(async (path: string, shouldAnnounce: boolean = true) => {
+  const validateDirectory = useCallback(async (path: string, shouldAnnounce: boolean = true, skipExistingDocsCheck: boolean = false) => {
     if (!path.trim()) {
       setDirectoryError(null);
       setIsGitRepo(false);
+      setHasExistingAutoRunDocs(false, 0);
       return;
     }
 
@@ -123,6 +147,12 @@ export function DirectorySelectionScreen({ theme }: DirectorySelectionScreenProp
       const isRepo = await window.maestro.git.isRepo(path);
       setIsGitRepo(isRepo);
       setDirectoryError(null);
+
+      // Check for existing Auto Run Docs folder (unless we're skipping because user already made a choice)
+      if (!skipExistingDocsCheck && !state.existingDocsChoice) {
+        const existingDocs = await checkForExistingDocs(path);
+        setHasExistingAutoRunDocs(existingDocs.exists, existingDocs.count);
+      }
 
       // Announce validation result
       if (shouldAnnounce) {
@@ -138,6 +168,7 @@ export function DirectorySelectionScreen({ theme }: DirectorySelectionScreenProp
       console.error('Directory validation error:', error);
       setDirectoryError('Unable to access this directory. Please check the path exists.');
       setIsGitRepo(false);
+      setHasExistingAutoRunDocs(false, 0);
 
       // Announce error
       if (shouldAnnounce) {
@@ -147,7 +178,7 @@ export function DirectorySelectionScreen({ theme }: DirectorySelectionScreenProp
     }
 
     setIsValidating(false);
-  }, [setIsGitRepo, setDirectoryError]);
+  }, [setIsGitRepo, setDirectoryError, setHasExistingAutoRunDocs, checkForExistingDocs, state.existingDocsChoice]);
 
   /**
    * Focus input on mount (after detection completes)
@@ -204,6 +235,23 @@ export function DirectorySelectionScreen({ theme }: DirectorySelectionScreenProp
   }, [setDirectoryPath, validateDirectory, canProceedToNext, setDirectoryError]);
 
   /**
+   * Attempt to proceed to next step, showing modal if existing docs are found
+   */
+  const attemptNextStep = useCallback(() => {
+    if (!canProceedToNext()) return;
+
+    // If existing docs found and user hasn't made a choice yet, show the modal
+    if (state.hasExistingAutoRunDocs && !state.existingDocsChoice) {
+      setPendingDirectoryPath(state.directoryPath);
+      setShowExistingDocsModal(true);
+      return;
+    }
+
+    // Otherwise proceed to next step
+    nextStep();
+  }, [canProceedToNext, nextStep, state.hasExistingAutoRunDocs, state.existingDocsChoice, state.directoryPath]);
+
+  /**
    * Handle keyboard navigation
    */
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -211,7 +259,7 @@ export function DirectorySelectionScreen({ theme }: DirectorySelectionScreenProp
       case 'Enter':
         e.preventDefault();
         if (canProceedToNext() && !isValidating) {
-          nextStep();
+          attemptNextStep();
         }
         break;
 
@@ -220,16 +268,65 @@ export function DirectorySelectionScreen({ theme }: DirectorySelectionScreenProp
         previousStep();
         break;
     }
-  }, [canProceedToNext, isValidating, nextStep, previousStep]);
+  }, [canProceedToNext, isValidating, attemptNextStep, previousStep]);
 
   /**
    * Handle continue button click
    */
   const handleContinue = useCallback(() => {
     if (canProceedToNext()) {
-      nextStep();
+      attemptNextStep();
     }
-  }, [canProceedToNext, nextStep]);
+  }, [canProceedToNext, attemptNextStep]);
+
+  /**
+   * Handle user choosing to continue with existing docs
+   */
+  const handleContinuePlanning = useCallback(() => {
+    setExistingDocsChoice('continue');
+    setShowExistingDocsModal(false);
+    setPendingDirectoryPath(null);
+    nextStep();
+  }, [setExistingDocsChoice, nextStep]);
+
+  /**
+   * Handle user choosing to start fresh (delete existing docs)
+   */
+  const handleStartFresh = useCallback(async () => {
+    if (!pendingDirectoryPath) return;
+
+    try {
+      // Delete the Auto Run Docs folder
+      const result = await window.maestro.autorun.deleteFolder(pendingDirectoryPath);
+      if (!result.success) {
+        console.error('Failed to delete Auto Run Docs folder:', result.error);
+        setDirectoryError('Failed to delete existing documents. Please try again.');
+        setShowExistingDocsModal(false);
+        setPendingDirectoryPath(null);
+        return;
+      }
+
+      // Update state to reflect docs are gone
+      setExistingDocsChoice('fresh');
+      setHasExistingAutoRunDocs(false, 0);
+      setShowExistingDocsModal(false);
+      setPendingDirectoryPath(null);
+      nextStep();
+    } catch (error) {
+      console.error('Error deleting Auto Run Docs folder:', error);
+      setDirectoryError('Failed to delete existing documents. Please try again.');
+      setShowExistingDocsModal(false);
+      setPendingDirectoryPath(null);
+    }
+  }, [pendingDirectoryPath, setExistingDocsChoice, setHasExistingAutoRunDocs, setDirectoryError, nextStep]);
+
+  /**
+   * Handle user canceling the existing docs modal
+   */
+  const handleCancelExistingDocsModal = useCallback(() => {
+    setShowExistingDocsModal(false);
+    setPendingDirectoryPath(null);
+  }, []);
 
   /**
    * Handle back button click
@@ -642,6 +739,18 @@ export function DirectorySelectionScreen({ theme }: DirectorySelectionScreenProp
           Exit Wizard
         </span>
       </div>
+
+      {/* Existing Auto Run Docs modal */}
+      {showExistingDocsModal && pendingDirectoryPath && (
+        <ExistingAutoRunDocsModal
+          theme={theme}
+          directoryPath={pendingDirectoryPath}
+          documentCount={state.existingDocsCount}
+          onStartFresh={handleStartFresh}
+          onContinuePlanning={handleContinuePlanning}
+          onCancel={handleCancelExistingDocsModal}
+        />
+      )}
     </div>
   );
 }

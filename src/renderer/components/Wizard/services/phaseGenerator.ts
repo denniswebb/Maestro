@@ -82,6 +82,29 @@ interface ParsedDocument {
 export const AUTO_RUN_FOLDER_NAME = 'Auto Run Docs';
 
 /**
+ * Sanitize a filename to prevent path traversal attacks.
+ * Removes path separators, directory traversal sequences, and other dangerous characters.
+ *
+ * @param filename - The raw filename from AI-generated output
+ * @returns A safe filename with dangerous characters removed
+ */
+export function sanitizeFilename(filename: string): string {
+  return filename
+    // Remove path separators (both Unix and Windows)
+    .replace(/[\/\\]/g, '-')
+    // Remove directory traversal sequences
+    .replace(/\.\./g, '')
+    // Remove null bytes and control characters
+    .replace(/[\x00-\x1f\x7f]/g, '')
+    // Remove leading dots (hidden files / relative paths)
+    .replace(/^\.+/, '')
+    // Remove leading/trailing whitespace
+    .trim()
+    // Ensure we have something left, default to 'document' if empty
+    || 'document';
+}
+
+/**
  * Generation timeout in milliseconds (5 minutes - generation can take a while for complex projects)
  */
 const GENERATION_TIMEOUT = 300000;
@@ -721,10 +744,12 @@ class PhaseGenerator {
     try {
       // Save each document
       for (const doc of documents) {
+        // Sanitize filename to prevent path traversal attacks
+        const sanitized = sanitizeFilename(doc.filename);
         // Ensure filename has .md extension
-        const filename = doc.filename.endsWith('.md')
-          ? doc.filename
-          : `${doc.filename}.md`;
+        const filename = sanitized.endsWith('.md')
+          ? sanitized
+          : `${sanitized}.md`;
 
         console.log('[PhaseGenerator] Saving document:', filename);
 
@@ -781,6 +806,15 @@ class PhaseGenerator {
    */
   isGenerationInProgress(): boolean {
     return this.isGenerating;
+  }
+
+  /**
+   * Abort any in-progress generation and clean up resources.
+   * Call this when the component unmounts to ensure proper cleanup.
+   */
+  abort(): void {
+    this.isGenerating = false;
+    this.cleanup();
   }
 }
 

@@ -4436,6 +4436,48 @@ function setupIpcHandlers() {
     }
   );
 
+  // Delete the entire Auto Run Docs folder (for wizard "start fresh" feature)
+  ipcMain.handle(
+    'autorun:deleteFolder',
+    async (_event, projectPath: string) => {
+      try {
+        // Validate input
+        if (!projectPath || typeof projectPath !== 'string') {
+          return { success: false, error: 'Invalid project path' };
+        }
+
+        // Construct the Auto Run Docs folder path
+        const autoRunFolder = path.join(projectPath, 'Auto Run Docs');
+
+        // Verify the folder exists
+        try {
+          const stat = await fs.stat(autoRunFolder);
+          if (!stat.isDirectory()) {
+            return { success: false, error: 'Auto Run Docs path is not a directory' };
+          }
+        } catch {
+          // Folder doesn't exist, nothing to delete
+          return { success: true };
+        }
+
+        // Safety check: ensure we're only deleting "Auto Run Docs" folder
+        const folderName = path.basename(autoRunFolder);
+        if (folderName !== 'Auto Run Docs') {
+          return { success: false, error: 'Safety check failed: not an Auto Run Docs folder' };
+        }
+
+        // Delete the folder recursively
+        await fs.rm(autoRunFolder, { recursive: true, force: true });
+
+        logger.info(`Deleted Auto Run Docs folder: ${autoRunFolder}`, 'AutoRun');
+        return { success: true };
+      } catch (error) {
+        logger.error('Error deleting Auto Run Docs folder', 'AutoRun', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
   // File watcher for Auto Run folder - detects external changes
   const autoRunWatchers = new Map<string, fsSync.FSWatcher>();
   let autoRunWatchDebounceTimer: NodeJS.Timeout | null = null;

@@ -22,12 +22,14 @@ import {
   getConfidenceColor,
   getInitialQuestion,
   READY_CONFIDENCE_THRESHOLD,
+  type ExistingDocument,
 } from '../services/wizardPrompts';
 import {
   conversationManager,
   createUserMessage,
   createAssistantMessage,
 } from '../services/conversationManager';
+import { AUTO_RUN_FOLDER_NAME } from '../services/phaseGenerator';
 import { getNextFillerPhrase } from '../services/fillerPhrases';
 import { ScreenReaderAnnouncement } from '../ScreenReaderAnnouncement';
 
@@ -374,6 +376,8 @@ export function ConversationScreen({ theme }: ConversationScreenProps): JSX.Elem
   const containerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Immediate send guard to prevent race conditions from rapid clicking
+  const isSendingRef = useRef(false);
 
   // Scroll to bottom when messages change
   const scrollToBottom = useCallback(() => {
@@ -393,16 +397,57 @@ export function ConversationScreen({ theme }: ConversationScreenProps): JSX.Elem
   useEffect(() => {
     let mounted = true;
 
+    async function fetchExistingDocs(): Promise<ExistingDocument[]> {
+      // Only fetch if user chose to continue with existing docs
+      if (state.existingDocsChoice !== 'continue') {
+        return [];
+      }
+
+      try {
+        const autoRunPath = `${state.directoryPath}/${AUTO_RUN_FOLDER_NAME}`;
+        const listResult = await window.maestro.autorun.listDocs(autoRunPath);
+
+        if (!listResult.success || !listResult.files || listResult.files.length === 0) {
+          return [];
+        }
+
+        // Fetch content of each document
+        const docs: ExistingDocument[] = [];
+        for (const filename of listResult.files) {
+          try {
+            const readResult = await window.maestro.autorun.readDoc(autoRunPath, filename);
+            if (readResult.success && readResult.content) {
+              docs.push({
+                filename,
+                content: readResult.content,
+              });
+            }
+          } catch (err) {
+            console.warn(`Failed to read existing doc ${filename}:`, err);
+          }
+        }
+
+        return docs;
+      } catch (error) {
+        console.warn('Failed to fetch existing docs:', error);
+        return [];
+      }
+    }
+
     async function initConversation() {
       if (!state.selectedAgent || !state.directoryPath) {
         return;
       }
 
       try {
+        // Fetch existing docs if continuing from previous session
+        const existingDocs = await fetchExistingDocs();
+
         await conversationManager.startConversation({
           agentType: state.selectedAgent,
           directoryPath: state.directoryPath,
           projectName: state.agentName || 'My Project',
+          existingDocs: existingDocs.length > 0 ? existingDocs : undefined,
         });
 
         if (mounted) {
@@ -436,15 +481,18 @@ export function ConversationScreen({ theme }: ConversationScreenProps): JSX.Elem
     state.directoryPath,
     state.agentName,
     state.conversationHistory.length,
+    state.existingDocsChoice,
     conversationStarted,
     setConversationError,
   ]);
 
-  // Cleanup conversation when unmounting
+  // Cleanup conversation when unmounting (only if wizard is closing, not navigating between steps)
+  // We track if the wizard is still open via the state - if it's closed, we clean up
   useEffect(() => {
     return () => {
-      // Don't end the conversation on unmount - we want to preserve state
-      // conversationManager.endConversation();
+      // Clean up the conversation manager to release resources
+      // This ensures agent processes are properly terminated when leaving the wizard
+      conversationManager.endConversation();
     };
   }, []);
 
@@ -464,12 +512,19 @@ export function ConversationScreen({ theme }: ConversationScreenProps): JSX.Elem
    */
   const handleSendMessage = useCallback(async () => {
     const trimmedInput = inputValue.trim();
-    if (!trimmedInput || state.isConversationLoading) {
+    // Double-check both state and ref to prevent race conditions from rapid clicking
+    if (!trimmedInput || state.isConversationLoading || isSendingRef.current) {
       return;
     }
 
-    // Clear input immediately
+    // Set immediate guard before any async work
+    isSendingRef.current = true;
+
+    // Clear input immediately and reset textarea height
     setInputValue('');
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+    }
     setConversationError(null);
     setStreamingText('');
     setFillerPhrase(getNextFillerPhrase());
@@ -622,6 +677,8 @@ export function ConversationScreen({ theme }: ConversationScreenProps): JSX.Elem
       setErrorRetryCount((prev) => prev + 1);
     } finally {
       setConversationLoading(false);
+      // Reset the immediate send guard
+      isSendingRef.current = false;
       // Refocus input
       inputRef.current?.focus();
     }

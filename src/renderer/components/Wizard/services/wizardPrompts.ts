@@ -34,6 +34,16 @@ export interface ParsedResponse {
 }
 
 /**
+ * Existing document from a previous wizard session
+ */
+export interface ExistingDocument {
+  /** Document filename */
+  filename: string;
+  /** Document content */
+  content: string;
+}
+
+/**
  * Configuration for generating the system prompt
  */
 export interface SystemPromptConfig {
@@ -41,6 +51,8 @@ export interface SystemPromptConfig {
   agentName: string;
   /** Directory path where the agent will work */
   agentPath: string;
+  /** Existing Auto Run documents (when continuing from previous session) */
+  existingDocs?: ExistingDocument[];
 }
 
 /**
@@ -92,8 +104,30 @@ export const READY_CONFIDENCE_THRESHOLD = 80;
  * @returns The complete system prompt for the agent
  */
 export function generateSystemPrompt(config: SystemPromptConfig): string {
-  const { agentName, agentPath } = config;
+  const { agentName, agentPath, existingDocs } = config;
   const projectName = agentName || 'this project';
+
+  // Build existing docs section if continuing from previous session
+  let existingDocsSection = '';
+  if (existingDocs && existingDocs.length > 0) {
+    existingDocsSection = `
+
+## Previous Planning Documents
+
+The user is continuing a previous planning session. Below are the existing Auto Run documents that were created earlier. Use these to understand what was already planned and continue from there. Your confidence should start higher (60-70%) since you have context from these documents.
+
+${existingDocs.map(doc => `### ${doc.filename}
+
+${doc.content}
+`).join('\n---\n\n')}
+
+**Important:** When continuing from existing docs:
+- Start with higher confidence (60-70%) since you already have context
+- Review the existing plans and ask if anything has changed or needs updating
+- Don't re-ask questions that are already answered in the documents
+- Focus on validating the existing plan and filling in any gaps
+`;
+  }
 
   return `You are a friendly project discovery assistant helping to set up "${projectName}".
 
@@ -166,7 +200,7 @@ Ready to proceed (high confidence):
 - Keep confidence scores realistic and progressive
 - Don't set ready=true until confidence >= ${READY_CONFIDENCE_THRESHOLD}
 - If the user is vague, ask specific questions to build clarity
-- Remember: the goal is to gather enough info for a practical action plan`;
+- Remember: the goal is to gather enough info for a practical action plan${existingDocsSection}`;
 }
 
 /**

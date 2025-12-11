@@ -15,6 +15,7 @@ import {
   isReadyToProceed,
   type StructuredAgentResponse,
   type ParsedResponse,
+  type ExistingDocument,
   READY_CONFIDENCE_THRESHOLD,
 } from './wizardPrompts';
 
@@ -28,6 +29,8 @@ export interface ConversationConfig {
   directoryPath: string;
   /** Project name (used in system prompt) */
   projectName: string;
+  /** Existing Auto Run documents (when continuing from previous session) */
+  existingDocs?: ExistingDocument[];
 }
 
 /**
@@ -132,6 +135,7 @@ class ConversationManager {
     const systemPrompt = generateSystemPrompt({
       agentName: config.projectName,
       agentPath: config.directoryPath,
+      existingDocs: config.existingDocs,
     });
 
     this.session = {

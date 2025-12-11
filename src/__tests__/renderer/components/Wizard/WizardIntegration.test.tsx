@@ -174,6 +174,7 @@ vi.mock('../../../../renderer/components/Wizard/services/phaseGenerator', () => 
       paths: ['/test/path/Auto Run Docs/Phase-01-Initial-Setup.md'],
     }),
     isGenerationInProgress: vi.fn().mockReturnValue(false),
+    abort: vi.fn(),
   },
   AUTO_RUN_FOLDER_NAME: 'Auto Run Docs',
 }));

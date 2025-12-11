@@ -104,6 +104,12 @@ export interface WizardState {
   detectedAgentPath: string | null;
   /** Directory selection error (if any) */
   directoryError: string | null;
+  /** Whether an Auto Run Docs folder exists in the selected directory */
+  hasExistingAutoRunDocs: boolean;
+  /** Number of documents in existing Auto Run Docs folder */
+  existingDocsCount: number;
+  /** User's choice for existing docs: 'continue' to read them, 'fresh' to delete them */
+  existingDocsChoice: 'continue' | 'fresh' | null;
 
   // Conversation (Step 3)
   /** Conversation history with the agent */
@@ -157,6 +163,9 @@ const initialState: WizardState = {
   isGitRepo: false,
   detectedAgentPath: null,
   directoryError: null,
+  hasExistingAutoRunDocs: false,
+  existingDocsCount: 0,
+  existingDocsChoice: null,
 
   // Conversation
   conversationHistory: [],
@@ -197,6 +206,8 @@ type WizardAction =
   | { type: 'SET_IS_GIT_REPO'; isGitRepo: boolean }
   | { type: 'SET_DETECTED_AGENT_PATH'; path: string | null }
   | { type: 'SET_DIRECTORY_ERROR'; error: string | null }
+  | { type: 'SET_HAS_EXISTING_AUTORUN_DOCS'; hasExisting: boolean; count: number }
+  | { type: 'SET_EXISTING_DOCS_CHOICE'; choice: 'continue' | 'fresh' | null }
   | { type: 'ADD_MESSAGE'; message: WizardMessage }
   | { type: 'SET_CONVERSATION_HISTORY'; history: WizardMessage[] }
   | { type: 'SET_CONFIDENCE_LEVEL'; level: number }
@@ -277,6 +288,16 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
 
     case 'SET_DIRECTORY_ERROR':
       return { ...state, directoryError: action.error };
+
+    case 'SET_HAS_EXISTING_AUTORUN_DOCS':
+      return {
+        ...state,
+        hasExistingAutoRunDocs: action.hasExisting,
+        existingDocsCount: action.count,
+      };
+
+    case 'SET_EXISTING_DOCS_CHOICE':
+      return { ...state, existingDocsChoice: action.choice };
 
     case 'ADD_MESSAGE':
       return {
@@ -394,6 +415,10 @@ export interface WizardContextAPI {
   setDetectedAgentPath: (path: string | null) => void;
   /** Set directory validation error */
   setDirectoryError: (error: string | null) => void;
+  /** Set whether existing Auto Run Docs folder was found */
+  setHasExistingAutoRunDocs: (hasExisting: boolean, count: number) => void;
+  /** Set user's choice for existing docs */
+  setExistingDocsChoice: (choice: 'continue' | 'fresh' | null) => void;
 
   // Conversation
   /** Add a message to conversation history */
@@ -559,6 +584,14 @@ export function WizardProvider({ children }: WizardProviderProps) {
 
   const setDirectoryError = useCallback((error: string | null) => {
     dispatch({ type: 'SET_DIRECTORY_ERROR', error });
+  }, []);
+
+  const setHasExistingAutoRunDocs = useCallback((hasExisting: boolean, count: number) => {
+    dispatch({ type: 'SET_HAS_EXISTING_AUTORUN_DOCS', hasExisting, count });
+  }, []);
+
+  const setExistingDocsChoice = useCallback((choice: 'continue' | 'fresh' | null) => {
+    dispatch({ type: 'SET_EXISTING_DOCS_CHOICE', choice });
   }, []);
 
   // Conversation
@@ -761,6 +794,8 @@ export function WizardProvider({ children }: WizardProviderProps) {
     setIsGitRepo,
     setDetectedAgentPath,
     setDirectoryError,
+    setHasExistingAutoRunDocs,
+    setExistingDocsChoice,
 
     // Conversation
     addMessage,
@@ -808,6 +843,8 @@ export function WizardProvider({ children }: WizardProviderProps) {
     setIsGitRepo,
     setDetectedAgentPath,
     setDirectoryError,
+    setHasExistingAutoRunDocs,
+    setExistingDocsChoice,
     addMessage,
     setConversationHistory,
     setConfidenceLevel,

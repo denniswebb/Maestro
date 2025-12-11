@@ -69,6 +69,31 @@ interface PhaseReviewScreenProps {
 }
 
 /**
+ * Texas Flag SVG component
+ */
+function TexasFlag({ className, style }: { className?: string; style?: React.CSSProperties }): JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 150 100"
+      className={className}
+      style={style}
+    >
+      {/* Blue vertical stripe */}
+      <rect x="0" y="0" width="50" height="100" fill="#002868" />
+      {/* White horizontal stripe */}
+      <rect x="50" y="0" width="100" height="50" fill="#FFFFFF" />
+      {/* Red horizontal stripe */}
+      <rect x="50" y="50" width="100" height="50" fill="#BF0A30" />
+      {/* White five-pointed star */}
+      <polygon
+        points="25,15 29.5,30 45,30 32.5,40 37,55 25,45 13,55 17.5,40 5,30 20.5,30"
+        fill="#FFFFFF"
+      />
+    </svg>
+  );
+}
+
+/**
  * Austin Fact Typewriter - displays random Austin facts with typing effect
  */
 function AustinFactTypewriter({ theme }: { theme: Theme }): JSX.Element {
@@ -108,24 +133,28 @@ function AustinFactTypewriter({ theme }: { theme: Theme }): JSX.Element {
 
   return (
     <div
-      className="mt-8 mx-auto max-w-lg px-6 py-4 rounded-lg"
+      className="mt-8 mx-auto px-4 py-4 rounded-lg"
       style={{
         backgroundColor: `${theme.colors.accent}10`,
         border: `1px solid ${theme.colors.accent}30`,
+        width: '480px',
       }}
     >
-      <div className="flex items-start gap-3">
-        <span className="text-lg shrink-0">🤠</span>
-        <div>
+      <div className="flex items-center gap-4">
+        <TexasFlag className="w-10 h-7 shrink-0" style={{ opacity: 0.85 }} />
+        <div className="flex-1 min-w-0">
           <p
             className="text-xs font-medium uppercase tracking-wide mb-1"
             style={{ color: theme.colors.accent }}
           >
-            Did you know?
+            Austin Facts
           </p>
           <p
             className="text-sm leading-relaxed"
-            style={{ color: theme.colors.textMain }}
+            style={{
+              color: theme.colors.textMain,
+              minHeight: '3em',
+            }}
           >
             {displayedText}
             {!isTypingComplete && (
@@ -256,7 +285,7 @@ function LoadingIndicator({
           className="text-sm text-center max-w-md"
           style={{ color: theme.colors.textDim }}
         >
-          This may take a minute or two. We're creating detailed task documents
+          This may take a while to get right. We're creating detailed task documents
           based on your project requirements.
         </p>
 
@@ -1554,7 +1583,7 @@ export function PhaseReviewScreen({
     seenFilesRef.current.clear(); // Reset seen files tracking
 
     // Announce generation start
-    setAnnouncement('Creating your action plan. This may take a minute or two.');
+    setAnnouncement('Creating your action plan. This may take a while to get right.');
     setAnnouncementKey((prev) => prev + 1);
 
     /**
@@ -1701,6 +1730,14 @@ export function PhaseReviewScreen({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.generatedDocuments.length]);
+
+  // Cleanup on unmount - abort any in-progress generation
+  useEffect(() => {
+    return () => {
+      // Abort generation and clean up resources when component unmounts
+      phaseGenerator.abort();
+    };
+  }, []);
 
   // Render based on current state
   // Note: We wrap each return to include the screen reader announcement component

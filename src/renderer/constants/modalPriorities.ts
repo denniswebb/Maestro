@@ -44,6 +44,9 @@ export const MODAL_PRIORITIES = {
   /** Wizard exit confirmation dialog - appears above wizard when exiting mid-flow */
   WIZARD_EXIT_CONFIRM: 770,
 
+  /** Existing Auto Run docs detection modal - appears above wizard during directory selection */
+  EXISTING_AUTORUN_DOCS: 768,
+
   /** Wizard resume dialog - appears above wizard to ask about resuming */
   WIZARD_RESUME: 765,
 

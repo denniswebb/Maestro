@@ -580,6 +580,8 @@ contextBridge.exposeInMainWorld('maestro', {
       ipcRenderer.invoke('autorun:deleteImage', folderPath, relativePath),
     listImages: (folderPath: string, docName: string) =>
       ipcRenderer.invoke('autorun:listImages', folderPath, docName),
+    deleteFolder: (projectPath: string) =>
+      ipcRenderer.invoke('autorun:deleteFolder', projectPath),
     // File watching for live updates
     watchFolder: (folderPath: string) =>
       ipcRenderer.invoke('autorun:watchFolder', folderPath),
@@ -1054,6 +1056,9 @@ export interface MaestroAPI {
       images?: { filename: string; relativePath: string }[];
       error?: string;
     }>;
+    deleteFolder: (
+      projectPath: string
+    ) => Promise<{ success: boolean; error?: string }>;
     watchFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
     unwatchFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
     onFileChanged: (handler: (data: { folderPath: string; filename: string; eventType: string }) => void) => () => void;
