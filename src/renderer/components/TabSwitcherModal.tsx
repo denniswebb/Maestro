@@ -379,7 +379,11 @@ export function TabSwitcherModal({
   }, [search, viewMode]);
 
   const toggleViewMode = () => {
-    setViewMode(prev => prev === 'open' ? 'all-named' : 'open');
+    setViewMode(prev => {
+      if (prev === 'open') return 'all-named';
+      if (prev === 'all-named') return 'starred';
+      return 'open';
+    });
   };
 
   const handleItemSelect = (item: ListItem) => {
@@ -437,7 +441,7 @@ export function TabSwitcherModal({
           <input
             ref={inputRef}
             className="flex-1 bg-transparent outline-none text-lg placeholder-opacity-50"
-            placeholder={viewMode === 'open' ? "Search open tabs..." : "Search named sessions..."}
+            placeholder={viewMode === 'open' ? "Search open tabs..." : viewMode === 'starred' ? "Search starred sessions..." : "Search named sessions..."}
             style={{ color: theme.colors.textMain }}
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -671,7 +675,7 @@ export function TabSwitcherModal({
 
           {filteredItems.length === 0 && (
             <div className="px-4 py-4 text-center opacity-50 text-sm" style={{ color: theme.colors.textDim }}>
-              {viewMode === 'open' ? 'No open tabs' : 'No named sessions found'}
+              {viewMode === 'open' ? 'No open tabs' : viewMode === 'starred' ? 'No starred sessions' : 'No named sessions found'}
             </div>
           )}
         </div>
@@ -681,7 +685,7 @@ export function TabSwitcherModal({
           className="px-4 py-2 border-t text-xs flex items-center justify-between"
           style={{ borderColor: theme.colors.border, color: theme.colors.textDim }}
         >
-          <span>{filteredItems.length} {viewMode === 'open' ? 'tabs' : 'sessions'}</span>
+          <span>{filteredItems.length} {viewMode === 'open' ? 'tabs' : viewMode === 'starred' ? 'starred' : 'sessions'}</span>
           <span>↑↓ navigate • Enter select • ⌘1-9 quick select</span>
         </div>
       </div>
