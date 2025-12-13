@@ -15,6 +15,7 @@ import {
   stripMarkdown
 } from '../utils/textProcessing';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { QueuedItemsList } from './QueuedItemsList';
 
 // ============================================================================
 // LogItem - Memoized component for individual log entries
@@ -833,11 +834,6 @@ export const TerminalOutput = forwardRef<HTMLDivElement, TerminalOutputProps>((p
   // Counter to force re-render when delete confirmation changes
   const [deleteConfirmTrigger, setDeleteConfirmTrigger] = useState(0);
 
-  // Queue removal confirmation state
-  const [queueRemoveConfirmId, setQueueRemoveConfirmId] = useState<string | null>(null);
-
-  // Track which queued messages are expanded (for viewing full content)
-  const [expandedQueuedMessages, setExpandedQueuedMessages] = useState<Set<string>>(new Set());
 
   // Copy to clipboard notification state
   const [showCopiedNotification, setShowCopiedNotification] = useState(false);
@@ -1478,183 +1474,16 @@ export const TerminalOutput = forwardRef<HTMLDivElement, TerminalOutputProps>((p
 
         {/* Queued items section - only show in AI mode */}
         {session.inputMode === 'ai' && session.executionQueue && session.executionQueue.length > 0 && (
-          <>
-            {/* QUEUED separator */}
-            <div className="mx-6 my-3 flex items-center gap-3">
-              <div className="flex-1 h-px" style={{ backgroundColor: theme.colors.border }} />
-              <span
-                className="text-xs font-bold tracking-wider"
-                style={{ color: theme.colors.warning }}
-              >
-                QUEUED ({session.executionQueue.length})
-              </span>
-              <div className="flex-1 h-px" style={{ backgroundColor: theme.colors.border }} />
-            </div>
-
-            {/* Queued items */}
-            {session.executionQueue.map((item) => {
-              const displayText = item.type === 'command' ? item.command : item.text || '';
-              const isLongMessage = displayText.length > 200;
-              const isQueuedExpanded = expandedQueuedMessages.has(item.id);
-
-              return (
-                <div
-                  key={item.id}
-                  className="mx-6 mb-2 p-3 rounded-lg opacity-60 relative group"
-                  style={{
-                    backgroundColor: item.type === 'command'
-                      ? theme.colors.success + '20'
-                      : theme.colors.accent + '20',
-                    borderLeft: `3px solid ${item.type === 'command' ? theme.colors.success : theme.colors.accent}`
-                  }}
-                >
-                  {/* Remove button */}
-                  <button
-                    onClick={() => setQueueRemoveConfirmId(item.id)}
-                    className="absolute top-2 right-2 p-1 rounded hover:bg-black/20 transition-colors"
-                    style={{ color: theme.colors.textDim }}
-                    title="Remove from queue"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-
-                  {/* Tab indicator */}
-                  {item.tabName && (
-                    <div
-                      className="text-xs mb-1 font-mono"
-                      style={{ color: theme.colors.textDim }}
-                    >
-                      → {item.tabName}
-                    </div>
-                  )}
-
-                  {/* Item content */}
-                  <div
-                    className="text-sm pr-8 whitespace-pre-wrap break-words"
-                    style={{ color: theme.colors.textMain }}
-                  >
-                    {item.type === 'command' && (
-                      <span style={{ color: theme.colors.success, fontWeight: 600 }}>
-                        {item.command}
-                      </span>
-                    )}
-                    {item.type === 'message' && (
-                      isLongMessage && !isQueuedExpanded
-                        ? displayText.substring(0, 200) + '...'
-                        : displayText
-                    )}
-                  </div>
-
-                  {/* Show more/less toggle for long messages */}
-                  {item.type === 'message' && isLongMessage && (
-                    <button
-                      onClick={() => {
-                        setExpandedQueuedMessages(prev => {
-                          const newSet = new Set(prev);
-                          if (newSet.has(item.id)) {
-                            newSet.delete(item.id);
-                          } else {
-                            newSet.add(item.id);
-                          }
-                          return newSet;
-                        });
-                      }}
-                      className="flex items-center gap-1 mt-2 text-xs px-2 py-1 rounded hover:opacity-70 transition-opacity"
-                      style={{
-                        color: theme.colors.accent,
-                        backgroundColor: theme.colors.bgActivity
-                      }}
-                    >
-                      {isQueuedExpanded ? (
-                        <>
-                          <ChevronUp className="w-3 h-3" />
-                          Show less
-                        </>
-                      ) : (
-                        <>
-                          <ChevronDown className="w-3 h-3" />
-                          Show all ({displayText.split('\n').length} lines)
-                        </>
-                      )}
-                    </button>
-                  )}
-
-                  {/* Images indicator */}
-                  {item.images && item.images.length > 0 && (
-                    <div
-                      className="mt-1 text-xs"
-                      style={{ color: theme.colors.textDim }}
-                    >
-                      {item.images.length} image{item.images.length > 1 ? 's' : ''} attached
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </>
+          <QueuedItemsList
+            executionQueue={session.executionQueue}
+            theme={theme}
+            onRemoveQueuedItem={onRemoveQueuedItem}
+          />
         )}
 
         {/* End ref for scrolling */}
         {session.state !== 'busy' && <div ref={logsEndRef} />}
       </div>
-
-      {/* Queue removal confirmation modal - moved outside scroll container */}
-      {queueRemoveConfirmId && (
-        <div
-          className="fixed inset-0 flex items-center justify-center z-50"
-          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
-          onClick={() => setQueueRemoveConfirmId(null)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              if (onRemoveQueuedItem) {
-                onRemoveQueuedItem(queueRemoveConfirmId);
-              }
-              setQueueRemoveConfirmId(null);
-            } else if (e.key === 'Escape') {
-              e.preventDefault();
-              setQueueRemoveConfirmId(null);
-            }
-          }}
-        >
-          <div
-            className="p-4 rounded-lg shadow-xl max-w-md mx-4"
-            style={{ backgroundColor: theme.colors.bgMain }}
-            onClick={(e) => e.stopPropagation()}
-            tabIndex={-1}
-            ref={(el) => el?.focus()}
-          >
-            <h3 className="text-lg font-semibold mb-2" style={{ color: theme.colors.textMain }}>
-              Remove Queued Message?
-            </h3>
-            <p className="text-sm mb-4" style={{ color: theme.colors.textDim }}>
-              This message will be removed from the queue and will not be sent.
-            </p>
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setQueueRemoveConfirmId(null)}
-                className="px-3 py-1.5 rounded text-sm"
-                style={{ backgroundColor: theme.colors.bgActivity, color: theme.colors.textMain }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (onRemoveQueuedItem) {
-                    onRemoveQueuedItem(queueRemoveConfirmId);
-                  }
-                  setQueueRemoveConfirmId(null);
-                }}
-                className="px-3 py-1.5 rounded text-sm"
-                style={{ backgroundColor: theme.colors.error, color: 'white' }}
-                autoFocus
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* New Message Indicator - floating arrow button (AI mode only, terminal auto-scrolls) */}
       {hasNewMessages && !isAtBottom && session.inputMode === 'ai' && (
