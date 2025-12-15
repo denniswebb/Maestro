@@ -130,6 +130,7 @@ export interface BatchRunState {
 
   // Document-level progress (multi-document support)
   documents: string[];           // Ordered list of document filenames to process
+  lockedDocuments: string[];     // Documents that should be read-only during this run (subset of documents)
   currentDocumentIndex: number;  // Which document we're on (0-based)
 
   // Task-level progress within current document

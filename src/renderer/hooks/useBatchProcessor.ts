@@ -18,6 +18,7 @@ const DEFAULT_BATCH_STATE: BatchRunState = {
   isStopping: false,
   // Multi-document progress (new fields)
   documents: [],
+  lockedDocuments: [],
   currentDocumentIndex: 0,
   currentDocTasksTotal: 0,
   currentDocTasksCompleted: 0,
@@ -499,6 +500,8 @@ ${docList}
     }
 
     // Initialize batch run state
+    // Lock all documents that are part of this batch run
+    const lockedDocuments = documents.map(d => d.filename);
     setBatchRunStates(prev => ({
       ...prev,
       [sessionId]: {
@@ -506,6 +509,7 @@ ${docList}
         isStopping: false,
         // Multi-document progress
         documents: documents.map(d => d.filename),
+        lockedDocuments, // All documents in this run are locked
         currentDocumentIndex: 0,
         currentDocTasksTotal: 0,
         currentDocTasksCompleted: 0,
@@ -1197,6 +1201,7 @@ ${docList}
         isRunning: false,
         isStopping: false,
         documents: [],
+        lockedDocuments: [],
         currentDocumentIndex: 0,
         currentDocTasksTotal: 0,
         currentDocTasksCompleted: 0,

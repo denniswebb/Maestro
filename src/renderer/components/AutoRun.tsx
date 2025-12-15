@@ -410,8 +410,14 @@ const AutoRunInner = forwardRef<AutoRunHandle, AutoRunProps>(function AutoRunInn
   onChange,  // Legacy prop for backwards compatibility
 }, ref) {
   // Only lock the editor when Auto Run is running WITHOUT a worktree (directly on main repo)
-  // When using a worktree, the user can still edit the main repo freely
-  const isLocked = (batchRunState?.isRunning && !batchRunState?.worktreeActive) || false;
+  // AND only for documents that are part of the current Auto Run
+  // Documents not in the Auto Run can still be edited
+  const isLocked = (
+    batchRunState?.isRunning &&
+    !batchRunState?.worktreeActive &&
+    selectedFile !== null &&
+    batchRunState?.lockedDocuments?.includes(selectedFile)
+  ) || false;
   const isAgentBusy = sessionState === 'busy' || sessionState === 'connecting';
   const isStopping = batchRunState?.isStopping || false;
 
