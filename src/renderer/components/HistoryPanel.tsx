@@ -769,9 +769,10 @@ export const HistoryPanel = React.memo(forwardRef<HistoryPanelHandle, HistoryPan
   }, []);
 
   // Delete a history entry
+  // Pass sessionId for efficient lookup in per-session storage
   const handleDeleteEntry = useCallback(async (entryId: string) => {
     try {
-      const success = await window.maestro.history.delete(entryId);
+      const success = await window.maestro.history.delete(entryId, session.id);
       if (success) {
         // Remove from local state
         setHistoryEntries(prev => prev.filter(entry => entry.id !== entryId));
@@ -781,7 +782,7 @@ export const HistoryPanel = React.memo(forwardRef<HistoryPanelHandle, HistoryPan
     } catch (error) {
       console.error('Failed to delete history entry:', error);
     }
-  }, []);
+  }, [session.id]);
 
   // Format timestamp
   const formatTime = (timestamp: number) => {
@@ -1110,7 +1111,8 @@ export const HistoryPanel = React.memo(forwardRef<HistoryPanelHandle, HistoryPan
           onResumeSession={onResumeSession}
           onDelete={handleDeleteEntry}
           onUpdate={async (entryId, updates) => {
-            const success = await window.maestro.history.update(entryId, updates);
+            // Pass sessionId for efficient lookup in per-session storage
+            const success = await window.maestro.history.update(entryId, updates, session.id);
             if (success) {
               // Update local state
               setHistoryEntries(prev => prev.map(e =>
