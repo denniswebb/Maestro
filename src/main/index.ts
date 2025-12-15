@@ -24,7 +24,6 @@ import {
   loadGlobalStatsCache,
   saveGlobalStatsCache,
 } from './utils/statsCache';
-import { HistoryEntry } from '../shared/types';
 
 // Demo mode: use a separate data directory for fresh demos
 if (DEMO_MODE) {
@@ -140,19 +139,9 @@ const windowStateStore = new Store<WindowState>({
   },
 });
 
-// History entries store (per-project history for AUTO and USER entries)
-// HistoryEntry type is imported from ../shared/types
-
-interface HistoryData {
-  entries: HistoryEntry[];
-}
-
-const historyStore = new Store<HistoryData>({
-  name: 'maestro-history',
-  defaults: {
-    entries: [],
-  },
-});
+// Note: History storage is now handled by HistoryManager which uses per-session files
+// in the history/ directory. The legacy maestro-history.json file is migrated automatically.
+// See src/main/history-manager.ts for details.
 
 // Claude session origins store - tracks which Claude sessions were created by Maestro
 // and their origin type (user-initiated vs auto/batch)
@@ -178,9 +167,6 @@ let mainWindow: BrowserWindow | null = null;
 let processManager: ProcessManager | null = null;
 let webServer: WebServer | null = null;
 let agentDetector: AgentDetector | null = null;
-let historyFileWatcherInterval: NodeJS.Timeout | null = null;
-let lastHistoryFileMtime: number = 0;
-let historyNeedsReload: boolean = false;
 let cliActivityWatcher: fsSync.FSWatcher | null = null;
 
 /**
@@ -311,25 +297,28 @@ function createWebServer(): WebServer {
   });
 
   // Set up callback for web server to fetch history entries
+  // Uses HistoryManager for per-session storage
   server.setGetHistoryCallback((projectPath?: string, sessionId?: string) => {
-    const allEntries = historyStore.get('entries', []);
-    let filteredEntries = allEntries;
+    const historyManager = getHistoryManager();
 
-    // Filter by project path if provided
-    if (projectPath) {
-      filteredEntries = filteredEntries.filter(
-        (entry: HistoryEntry) => entry.projectPath === projectPath
-      );
-    }
-
-    // Filter by session ID if provided (excludes entries from other sessions)
     if (sessionId) {
-      filteredEntries = filteredEntries.filter(
-        (entry: HistoryEntry) => !entry.sessionId || entry.sessionId === sessionId
-      );
+      // Get entries for specific session
+      const entries = historyManager.getEntries(sessionId);
+      // Also include orphaned entries (legacy entries without sessionId)
+      const orphanedEntries = historyManager.getEntries('_orphaned');
+      const combined = [...entries, ...orphanedEntries];
+      // Sort by timestamp descending
+      combined.sort((a, b) => b.timestamp - a.timestamp);
+      return combined;
     }
 
-    return filteredEntries;
+    if (projectPath) {
+      // Get all entries for sessions in this project
+      return historyManager.getEntriesByProjectPath(projectPath);
+    }
+
+    // Return all entries (for global view)
+    return historyManager.getAllEntries();
   });
 
   // Set up callback for web server to write commands to sessions
@@ -633,8 +622,8 @@ app.whenReady().then(() => {
   logger.info('Creating main window', 'Startup');
   createWindow();
 
-  // Start history file watcher (polls every 60 seconds for external changes)
-  startHistoryFileWatcher();
+  // Note: History file watching is handled by HistoryManager.startWatching() above
+  // which uses the new per-session file format in the history/ directory
 
   // Start CLI activity watcher (polls every 2 seconds for CLI playbook runs)
   startCliActivityWatcher();
@@ -657,12 +646,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', async () => {
   logger.info('Application shutting down', 'Shutdown');
-  // Stop history file watcher (legacy)
-  if (historyFileWatcherInterval) {
-    clearInterval(historyFileWatcherInterval);
-    historyFileWatcherInterval = null;
-  }
-  // Stop new history manager watcher
+  // Stop history manager watcher
   getHistoryManager().stopWatching();
   // Stop CLI activity watcher
   if (cliActivityWatcher) {
@@ -678,43 +662,6 @@ app.on('before-quit', async () => {
   await webServer?.stop();
   logger.info('Shutdown complete', 'Shutdown');
 });
-
-/**
- * Start watching the history file for external changes (e.g., from CLI).
- * Polls every 60 seconds and notifies renderer if file was modified.
- */
-function startHistoryFileWatcher() {
-  const historyFilePath = historyStore.path;
-
-  // Get initial mtime
-  try {
-    const stats = fsSync.statSync(historyFilePath);
-    lastHistoryFileMtime = stats.mtimeMs;
-  } catch {
-    // File doesn't exist yet, that's fine
-    lastHistoryFileMtime = 0;
-  }
-
-  // Poll every 60 seconds
-  historyFileWatcherInterval = setInterval(() => {
-    try {
-      const stats = fsSync.statSync(historyFilePath);
-      if (stats.mtimeMs > lastHistoryFileMtime) {
-        lastHistoryFileMtime = stats.mtimeMs;
-        // File was modified externally - mark for reload on next getAll
-        historyNeedsReload = true;
-        logger.debug('History file changed externally, notifying renderer', 'HistoryWatcher');
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('history:externalChange');
-        }
-      }
-    } catch {
-      // File might not exist, ignore
-    }
-  }, 60000); // 60 seconds
-
-  logger.info('History file watcher started', 'Startup');
-}
 
 /**
  * Start CLI activity file watcher
@@ -805,11 +752,8 @@ function setupIpcHandlers() {
   });
 
   // History operations - extracted to src/main/ipc/handlers/history.ts
-  registerHistoryHandlers({
-    historyStore,
-    getHistoryNeedsReload: () => historyNeedsReload,
-    setHistoryNeedsReload: (value: boolean) => { historyNeedsReload = value; },
-  });
+  // Uses HistoryManager singleton for per-session storage
+  registerHistoryHandlers();
 
   // Agent management operations - extracted to src/main/ipc/handlers/agents.ts
   registerAgentsHandlers({
