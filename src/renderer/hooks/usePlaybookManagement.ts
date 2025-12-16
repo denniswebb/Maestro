@@ -19,6 +19,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useClickOutside } from './useClickOutside';
 import type {
   Playbook,
   PlaybookDocumentEntry,
@@ -138,21 +139,11 @@ export function usePlaybookManagement(
   }, [sessionId]);
 
   // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (
-        playbackDropdownRef.current &&
-        !playbackDropdownRef.current.contains(e.target as Node)
-      ) {
-        setShowPlaybookDropdown(false);
-      }
-    };
-
-    if (showPlaybookDropdown) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [showPlaybookDropdown]);
+  useClickOutside(
+    playbackDropdownRef,
+    () => setShowPlaybookDropdown(false),
+    showPlaybookDropdown
+  );
 
   // Track if the current configuration differs from the loaded playbook
   const isPlaybookModified = useMemo(() => {
