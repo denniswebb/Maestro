@@ -3,8 +3,24 @@ import fs from 'fs/promises';
 import path from 'path';
 import { execFileNoThrow } from '../../utils/execFile';
 import { logger } from '../../utils/logger';
+import { withIpcErrorLogging, createIpcHandler, CreateHandlerOptions } from '../../utils/ipcHandler';
+import {
+  parseGitBranches,
+  parseGitTags,
+  parseGitBehindAhead,
+  countUncommittedChanges,
+  isImageFile,
+  getImageMimeType,
+} from '../../../shared/gitUtils';
 
 const LOG_CONTEXT = '[Git]';
+
+/** Helper to create handler options with Git context */
+const handlerOpts = (operation: string, logSuccess = false): CreateHandlerOptions => ({
+  context: LOG_CONTEXT,
+  operation,
+  logSuccess,
+});
 
 /**
  * Register all Git-related IPC handlers.
@@ -18,190 +34,203 @@ const LOG_CONTEXT = '[Git]';
  */
 export function registerGitHandlers(): void {
   // Basic Git operations
-  ipcMain.handle('git:status', async (_, cwd: string) => {
-    const result = await execFileNoThrow('git', ['status', '--porcelain'], cwd);
-    return { stdout: result.stdout, stderr: result.stderr };
-  });
+  ipcMain.handle('git:status', withIpcErrorLogging(
+    handlerOpts('status'),
+    async (cwd: string) => {
+      const result = await execFileNoThrow('git', ['status', '--porcelain'], cwd);
+      return { stdout: result.stdout, stderr: result.stderr };
+    }
+  ));
 
-  ipcMain.handle('git:diff', async (_, cwd: string, file?: string) => {
-    const args = file ? ['diff', file] : ['diff'];
-    const result = await execFileNoThrow('git', args, cwd);
-    return { stdout: result.stdout, stderr: result.stderr };
-  });
+  ipcMain.handle('git:diff', withIpcErrorLogging(
+    handlerOpts('diff'),
+    async (cwd: string, file?: string) => {
+      const args = file ? ['diff', file] : ['diff'];
+      const result = await execFileNoThrow('git', args, cwd);
+      return { stdout: result.stdout, stderr: result.stderr };
+    }
+  ));
 
-  ipcMain.handle('git:isRepo', async (_, cwd: string) => {
-    try {
+  ipcMain.handle('git:isRepo', withIpcErrorLogging(
+    handlerOpts('isRepo'),
+    async (cwd: string) => {
       const result = await execFileNoThrow('git', ['rev-parse', '--is-inside-work-tree'], cwd);
       return result.exitCode === 0;
-    } catch {
-      return false;
     }
-  });
+  ));
 
-  ipcMain.handle('git:numstat', async (_, cwd: string) => {
-    const result = await execFileNoThrow('git', ['diff', '--numstat'], cwd);
-    return { stdout: result.stdout, stderr: result.stderr };
-  });
+  ipcMain.handle('git:numstat', withIpcErrorLogging(
+    handlerOpts('numstat'),
+    async (cwd: string) => {
+      const result = await execFileNoThrow('git', ['diff', '--numstat'], cwd);
+      return { stdout: result.stdout, stderr: result.stderr };
+    }
+  ));
 
-  ipcMain.handle('git:branch', async (_, cwd: string) => {
-    const result = await execFileNoThrow('git', ['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
-    return { stdout: result.stdout.trim(), stderr: result.stderr };
-  });
+  ipcMain.handle('git:branch', withIpcErrorLogging(
+    handlerOpts('branch'),
+    async (cwd: string) => {
+      const result = await execFileNoThrow('git', ['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
+      return { stdout: result.stdout.trim(), stderr: result.stderr };
+    }
+  ));
 
-  ipcMain.handle('git:remote', async (_, cwd: string) => {
-    const result = await execFileNoThrow('git', ['remote', 'get-url', 'origin'], cwd);
-    return { stdout: result.stdout.trim(), stderr: result.stderr };
-  });
+  ipcMain.handle('git:remote', withIpcErrorLogging(
+    handlerOpts('remote'),
+    async (cwd: string) => {
+      const result = await execFileNoThrow('git', ['remote', 'get-url', 'origin'], cwd);
+      return { stdout: result.stdout.trim(), stderr: result.stderr };
+    }
+  ));
 
   // Get all local and remote branches
-  ipcMain.handle('git:branches', async (_, cwd: string) => {
-    // Get all branches (local and remote) in a simple format
-    // -a for all branches, --format to get clean names
-    const result = await execFileNoThrow('git', ['branch', '-a', '--format=%(refname:short)'], cwd);
-    if (result.exitCode !== 0) {
-      return { branches: [], stderr: result.stderr };
+  ipcMain.handle('git:branches', withIpcErrorLogging(
+    handlerOpts('branches'),
+    async (cwd: string) => {
+      // Get all branches (local and remote) in a simple format
+      // -a for all branches, --format to get clean names
+      const result = await execFileNoThrow('git', ['branch', '-a', '--format=%(refname:short)'], cwd);
+      if (result.exitCode !== 0) {
+        return { branches: [], stderr: result.stderr };
+      }
+      // Use shared parsing function
+      const branches = parseGitBranches(result.stdout);
+      return { branches };
     }
-    const branches = result.stdout
-      .split('\n')
-      .map(b => b.trim())
-      .filter(b => b.length > 0)
-      // Clean up remote branch names (origin/main -> main for remotes)
-      .map(b => b.replace(/^origin\//, ''))
-      // Remove duplicates (local and remote might have same name)
-      .filter((b, i, arr) => arr.indexOf(b) === i)
-      // Filter out HEAD pointer
-      .filter(b => b !== 'HEAD');
-    return { branches };
-  });
+  ));
 
   // Get all tags
-  ipcMain.handle('git:tags', async (_, cwd: string) => {
-    const result = await execFileNoThrow('git', ['tag', '--list'], cwd);
-    if (result.exitCode !== 0) {
-      return { tags: [], stderr: result.stderr };
-    }
-    const tags = result.stdout
-      .split('\n')
-      .map(t => t.trim())
-      .filter(t => t.length > 0);
-    return { tags };
-  });
-
-  ipcMain.handle('git:info', async (_, cwd: string) => {
-    // Get comprehensive git info in a single call
-    const [branchResult, remoteResult, statusResult, behindAheadResult] = await Promise.all([
-      execFileNoThrow('git', ['rev-parse', '--abbrev-ref', 'HEAD'], cwd),
-      execFileNoThrow('git', ['remote', 'get-url', 'origin'], cwd),
-      execFileNoThrow('git', ['status', '--porcelain'], cwd),
-      execFileNoThrow('git', ['rev-list', '--left-right', '--count', '@{upstream}...HEAD'], cwd)
-    ]);
-
-    // Parse behind/ahead counts
-    let behind = 0;
-    let ahead = 0;
-    if (behindAheadResult.exitCode === 0 && behindAheadResult.stdout.trim()) {
-      const parts = behindAheadResult.stdout.trim().split(/\s+/);
-      behind = parseInt(parts[0], 10) || 0;
-      ahead = parseInt(parts[1], 10) || 0;
-    }
-
-    // Count uncommitted changes
-    const uncommittedChanges = statusResult.stdout.trim()
-      ? statusResult.stdout.trim().split('\n').filter(l => l.length > 0).length
-      : 0;
-
-    return {
-      branch: branchResult.stdout.trim(),
-      remote: remoteResult.stdout.trim(),
-      behind,
-      ahead,
-      uncommittedChanges
-    };
-  });
-
-  ipcMain.handle('git:log', async (_, cwd: string, options?: { limit?: number; search?: string }) => {
-    // Get git log with formatted output for parsing
-    // Format: hash|author|date|refs|subject followed by shortstat
-    // Using a unique separator to split commits
-    const limit = options?.limit || 100;
-    const args = [
-      'log',
-      `--max-count=${limit}`,
-      '--pretty=format:COMMIT_START%H|%an|%ad|%D|%s',
-      '--date=iso-strict',
-      '--shortstat'
-    ];
-
-    // Add search filter if provided
-    if (options?.search) {
-      args.push('--all', `--grep=${options.search}`, '-i');
-    }
-
-    const result = await execFileNoThrow('git', args, cwd);
-
-    if (result.exitCode !== 0) {
-      return { entries: [], error: result.stderr };
-    }
-
-    // Split by COMMIT_START marker and parse each commit
-    const commits = result.stdout.split('COMMIT_START').filter(c => c.trim());
-    const entries = commits.map(commitBlock => {
-      const lines = commitBlock.split('\n').filter(l => l.trim());
-      const mainLine = lines[0];
-      const [hash, author, date, refs, ...subjectParts] = mainLine.split('|');
-
-      // Parse shortstat line (e.g., " 3 files changed, 10 insertions(+), 5 deletions(-)")
-      let additions = 0;
-      let deletions = 0;
-      const statLine = lines.find(l => l.includes('changed'));
-      if (statLine) {
-        const addMatch = statLine.match(/(\d+) insertion/);
-        const delMatch = statLine.match(/(\d+) deletion/);
-        if (addMatch) additions = parseInt(addMatch[1], 10);
-        if (delMatch) deletions = parseInt(delMatch[1], 10);
+  ipcMain.handle('git:tags', withIpcErrorLogging(
+    handlerOpts('tags'),
+    async (cwd: string) => {
+      const result = await execFileNoThrow('git', ['tag', '--list'], cwd);
+      if (result.exitCode !== 0) {
+        return { tags: [], stderr: result.stderr };
       }
+      // Use shared parsing function
+      const tags = parseGitTags(result.stdout);
+      return { tags };
+    }
+  ));
+
+  ipcMain.handle('git:info', withIpcErrorLogging(
+    handlerOpts('info'),
+    async (cwd: string) => {
+      // Get comprehensive git info in a single call
+      const [branchResult, remoteResult, statusResult, behindAheadResult] = await Promise.all([
+        execFileNoThrow('git', ['rev-parse', '--abbrev-ref', 'HEAD'], cwd),
+        execFileNoThrow('git', ['remote', 'get-url', 'origin'], cwd),
+        execFileNoThrow('git', ['status', '--porcelain'], cwd),
+        execFileNoThrow('git', ['rev-list', '--left-right', '--count', '@{upstream}...HEAD'], cwd)
+      ]);
+
+      // Use shared parsing functions for behind/ahead and uncommitted changes
+      const { behind, ahead } = behindAheadResult.exitCode === 0
+        ? parseGitBehindAhead(behindAheadResult.stdout)
+        : { behind: 0, ahead: 0 };
+      const uncommittedChanges = countUncommittedChanges(statusResult.stdout);
 
       return {
-        hash,
-        shortHash: hash?.slice(0, 7),
-        author,
-        date,
-        refs: refs ? refs.split(', ').filter(r => r.trim()) : [],
-        subject: subjectParts.join('|'), // In case subject contains |
-        additions,
-        deletions,
+        branch: branchResult.stdout.trim(),
+        remote: remoteResult.stdout.trim(),
+        behind,
+        ahead,
+        uncommittedChanges
       };
-    });
-
-    return { entries, error: null };
-  });
-
-  ipcMain.handle('git:commitCount', async (_, cwd: string) => {
-    // Get total commit count using rev-list
-    const result = await execFileNoThrow('git', ['rev-list', '--count', 'HEAD'], cwd);
-    if (result.exitCode !== 0) {
-      return { count: 0, error: result.stderr };
     }
-    return { count: parseInt(result.stdout.trim(), 10) || 0, error: null };
-  });
+  ));
 
-  ipcMain.handle('git:show', async (_, cwd: string, hash: string) => {
-    // Get the full diff for a specific commit
-    const result = await execFileNoThrow('git', ['show', '--stat', '--patch', hash], cwd);
-    return { stdout: result.stdout, stderr: result.stderr };
-  });
+  ipcMain.handle('git:log', withIpcErrorLogging(
+    handlerOpts('log'),
+    async (cwd: string, options?: { limit?: number; search?: string }) => {
+      // Get git log with formatted output for parsing
+      // Format: hash|author|date|refs|subject followed by shortstat
+      // Using a unique separator to split commits
+      const limit = options?.limit || 100;
+      const args = [
+        'log',
+        `--max-count=${limit}`,
+        '--pretty=format:COMMIT_START%H|%an|%ad|%D|%s',
+        '--date=iso-strict',
+        '--shortstat'
+      ];
+
+      // Add search filter if provided
+      if (options?.search) {
+        args.push('--all', `--grep=${options.search}`, '-i');
+      }
+
+      const result = await execFileNoThrow('git', args, cwd);
+
+      if (result.exitCode !== 0) {
+        return { entries: [], error: result.stderr };
+      }
+
+      // Split by COMMIT_START marker and parse each commit
+      const commits = result.stdout.split('COMMIT_START').filter(c => c.trim());
+      const entries = commits.map(commitBlock => {
+        const lines = commitBlock.split('\n').filter(l => l.trim());
+        const mainLine = lines[0];
+        const [hash, author, date, refs, ...subjectParts] = mainLine.split('|');
+
+        // Parse shortstat line (e.g., " 3 files changed, 10 insertions(+), 5 deletions(-)")
+        let additions = 0;
+        let deletions = 0;
+        const statLine = lines.find(l => l.includes('changed'));
+        if (statLine) {
+          const addMatch = statLine.match(/(\d+) insertion/);
+          const delMatch = statLine.match(/(\d+) deletion/);
+          if (addMatch) additions = parseInt(addMatch[1], 10);
+          if (delMatch) deletions = parseInt(delMatch[1], 10);
+        }
+
+        return {
+          hash,
+          shortHash: hash?.slice(0, 7),
+          author,
+          date,
+          refs: refs ? refs.split(', ').filter(r => r.trim()) : [],
+          subject: subjectParts.join('|'), // In case subject contains |
+          additions,
+          deletions,
+        };
+      });
+
+      return { entries, error: null };
+    }
+  ));
+
+  ipcMain.handle('git:commitCount', withIpcErrorLogging(
+    handlerOpts('commitCount'),
+    async (cwd: string) => {
+      // Get total commit count using rev-list
+      const result = await execFileNoThrow('git', ['rev-list', '--count', 'HEAD'], cwd);
+      if (result.exitCode !== 0) {
+        return { count: 0, error: result.stderr };
+      }
+      return { count: parseInt(result.stdout.trim(), 10) || 0, error: null };
+    }
+  ));
+
+  ipcMain.handle('git:show', withIpcErrorLogging(
+    handlerOpts('show'),
+    async (cwd: string, hash: string) => {
+      // Get the full diff for a specific commit
+      const result = await execFileNoThrow('git', ['show', '--stat', '--patch', hash], cwd);
+      return { stdout: result.stdout, stderr: result.stderr };
+    }
+  ));
 
   // Read file content at a specific git ref (e.g., HEAD:path/to/file.png)
   // Returns base64 data URL for images, raw content for text files
-  ipcMain.handle('git:showFile', async (_, cwd: string, ref: string, filePath: string) => {
-    try {
+  ipcMain.handle('git:showFile', withIpcErrorLogging(
+    handlerOpts('showFile'),
+    async (cwd: string, ref: string, filePath: string) => {
       // Use git show to get file content at specific ref
       // We need to handle binary files differently
       const ext = filePath.split('.').pop()?.toLowerCase() || '';
-      const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg', 'ico'];
-      const isImage = imageExtensions.includes(ext);
 
-      if (isImage) {
+      if (isImageFile(filePath)) {
         // For images, we need to get raw binary content
         // Use spawnSync to capture raw binary output
         const { spawnSync } = require('child_process');
@@ -216,7 +245,7 @@ export function registerGitHandlers(): void {
         }
 
         const base64 = result.stdout.toString('base64');
-        const mimeType = ext === 'svg' ? 'image/svg+xml' : `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+        const mimeType = getImageMimeType(ext);
         return { content: `data:${mimeType};base64,${base64}` };
       } else {
         // For text files, use regular exec
@@ -226,33 +255,32 @@ export function registerGitHandlers(): void {
         }
         return { content: result.stdout };
       }
-    } catch (error) {
-      return { error: error instanceof Error ? error.message : 'Unknown error' };
     }
-  });
+  ));
 
   // Git worktree operations for Auto Run parallelization
 
   // Get information about a worktree at a given path
-  ipcMain.handle('git:worktreeInfo', async (_, worktreePath: string) => {
-    try {
+  ipcMain.handle('git:worktreeInfo', createIpcHandler(
+    handlerOpts('worktreeInfo'),
+    async (worktreePath: string) => {
       // Check if the path exists
       try {
         await fs.access(worktreePath);
       } catch {
-        return { success: true, exists: false, isWorktree: false };
+        return { exists: false, isWorktree: false };
       }
 
       // Check if it's a git directory (could be main repo or worktree)
       const isInsideWorkTree = await execFileNoThrow('git', ['rev-parse', '--is-inside-work-tree'], worktreePath);
       if (isInsideWorkTree.exitCode !== 0) {
-        return { success: true, exists: true, isWorktree: false };
+        return { exists: true, isWorktree: false };
       }
 
       // Get the git directory path
       const gitDirResult = await execFileNoThrow('git', ['rev-parse', '--git-dir'], worktreePath);
       if (gitDirResult.exitCode !== 0) {
-        return { success: false, error: 'Failed to get git directory' };
+        throw new Error('Failed to get git directory');
       }
       const gitDir = gitDirResult.stdout.trim();
 
@@ -285,38 +313,36 @@ export function registerGitHandlers(): void {
       }
 
       return {
-        success: true,
         exists: true,
         isWorktree,
         currentBranch,
         repoRoot
       };
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
-  });
+  ));
 
   // Get the root directory of the git repository
-  ipcMain.handle('git:getRepoRoot', async (_, cwd: string) => {
-    try {
+  ipcMain.handle('git:getRepoRoot', createIpcHandler(
+    handlerOpts('getRepoRoot'),
+    async (cwd: string) => {
       const result = await execFileNoThrow('git', ['rev-parse', '--show-toplevel'], cwd);
       if (result.exitCode !== 0) {
-        return { success: false, error: result.stderr || 'Not a git repository' };
+        throw new Error(result.stderr || 'Not a git repository');
       }
-      return { success: true, root: result.stdout.trim() };
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      return { root: result.stdout.trim() };
     }
-  });
+  ));
 
   // Create or reuse a worktree
-  ipcMain.handle('git:worktreeSetup', async (_, mainRepoCwd: string, worktreePath: string, branchName: string) => {
-    console.log('[git:worktreeSetup] Called with:', { mainRepoCwd, worktreePath, branchName });
-    try {
+  ipcMain.handle('git:worktreeSetup', withIpcErrorLogging(
+    handlerOpts('worktreeSetup'),
+    async (mainRepoCwd: string, worktreePath: string, branchName: string) => {
+      logger.debug(`worktreeSetup called with: ${JSON.stringify({ mainRepoCwd, worktreePath, branchName })}`, LOG_CONTEXT);
+
       // Resolve paths to absolute for proper comparison
       const resolvedMainRepo = path.resolve(mainRepoCwd);
       const resolvedWorktree = path.resolve(worktreePath);
-      console.log('[git:worktreeSetup] Resolved paths:', { resolvedMainRepo, resolvedWorktree });
+      logger.debug(`Resolved paths: ${JSON.stringify({ resolvedMainRepo, resolvedWorktree })}`, LOG_CONTEXT);
 
       // Check if worktree path is inside the main repo (nested worktree)
       // This can cause issues because git and Claude Code search upward for .git
@@ -332,34 +358,33 @@ export function registerGitHandlers(): void {
       let pathExists = true;
       try {
         await fs.access(resolvedWorktree);
-        console.log('[git:worktreeSetup] Path exists:', resolvedWorktree);
+        logger.debug(`Path exists: ${resolvedWorktree}`, LOG_CONTEXT);
       } catch {
         pathExists = false;
-        console.log('[git:worktreeSetup] Path does not exist:', resolvedWorktree);
+        logger.debug(`Path does not exist: ${resolvedWorktree}`, LOG_CONTEXT);
       }
 
       if (pathExists) {
         // Check if it's already a worktree of this repo
         const worktreeInfoResult = await execFileNoThrow('git', ['rev-parse', '--is-inside-work-tree'], resolvedWorktree);
-        console.log('[git:worktreeSetup] is-inside-work-tree result:', worktreeInfoResult);
+        logger.debug(`is-inside-work-tree result: ${JSON.stringify(worktreeInfoResult)}`, LOG_CONTEXT);
         if (worktreeInfoResult.exitCode !== 0) {
           // Path exists but isn't a git repo - check if it's empty and can be removed
           const dirContents = await fs.readdir(resolvedWorktree);
-          console.log('[git:worktreeSetup] Directory contents:', dirContents);
+          logger.debug(`Directory contents: ${JSON.stringify(dirContents)}`, LOG_CONTEXT);
           if (dirContents.length === 0) {
             // Empty directory - remove it so we can create the worktree
-            console.log('[git:worktreeSetup] Removing empty directory');
+            logger.debug(`Removing empty directory`, LOG_CONTEXT);
             await fs.rmdir(resolvedWorktree);
             pathExists = false;
           } else {
-            console.log('[git:worktreeSetup] Directory not empty, returning error');
+            logger.debug(`Directory not empty, returning error`, LOG_CONTEXT);
             return { success: false, error: 'Path exists but is not a git worktree or repository (and is not empty)' };
           }
         }
       }
 
       if (pathExists) {
-
         // Get the common dir to check if it's the same repo
         const gitCommonDirResult = await execFileNoThrow('git', ['rev-parse', '--git-common-dir'], worktreePath);
         const mainGitDirResult = await execFileNoThrow('git', ['rev-parse', '--git-dir'], mainRepoCwd);
@@ -415,22 +440,21 @@ export function registerGitHandlers(): void {
         requestedBranch: branchName,
         branchMismatch: false
       };
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
-  });
+  ));
 
   // Checkout a branch in a worktree (with uncommitted changes check)
-  ipcMain.handle('git:worktreeCheckout', async (_, worktreePath: string, branchName: string, createIfMissing: boolean) => {
-    try {
+  ipcMain.handle('git:worktreeCheckout', withIpcErrorLogging(
+    handlerOpts('worktreeCheckout'),
+    async (worktreePath: string, branchName: string, createIfMissing: boolean) => {
       // Check for uncommitted changes
       const statusResult = await execFileNoThrow('git', ['status', '--porcelain'], worktreePath);
       if (statusResult.exitCode !== 0) {
         return { success: false, hasUncommittedChanges: false, error: 'Failed to check git status' };
       }
 
-      const hasUncommittedChanges = statusResult.stdout.trim().length > 0;
-      if (hasUncommittedChanges) {
+      const uncommittedChanges = statusResult.stdout.trim().length > 0;
+      if (uncommittedChanges) {
         return {
           success: false,
           hasUncommittedChanges: true,
@@ -456,15 +480,14 @@ export function registerGitHandlers(): void {
       }
 
       return { success: true, hasUncommittedChanges: false };
-    } catch (error) {
-      return { success: false, hasUncommittedChanges: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
-  });
+  ));
 
   // Create a PR from the worktree branch to a base branch
   // ghPath parameter allows specifying custom path to gh binary
-  ipcMain.handle('git:createPR', async (_, worktreePath: string, baseBranch: string, title: string, body: string, ghPath?: string) => {
-    try {
+  ipcMain.handle('git:createPR', withIpcErrorLogging(
+    handlerOpts('createPR'),
+    async (worktreePath: string, baseBranch: string, title: string, body: string, ghPath?: string) => {
       // Use custom path if provided, otherwise fall back to 'gh' (expects it in PATH)
       const ghCommand = ghPath || 'gh';
 
@@ -493,15 +516,14 @@ export function registerGitHandlers(): void {
       // The PR URL is typically in stdout
       const prUrl = prResult.stdout.trim();
       return { success: true, prUrl };
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
-  });
+  ));
 
   // Check if GitHub CLI (gh) is installed and authenticated
   // ghPath parameter allows specifying custom path to gh binary (e.g., /opt/homebrew/bin/gh)
-  ipcMain.handle('git:checkGhCli', async (_, ghPath?: string) => {
-    try {
+  ipcMain.handle('git:checkGhCli', withIpcErrorLogging(
+    handlerOpts('checkGhCli'),
+    async (ghPath?: string) => {
       // Use custom path if provided, otherwise fall back to 'gh' (expects it in PATH)
       const ghCommand = ghPath || 'gh';
 
@@ -516,40 +538,37 @@ export function registerGitHandlers(): void {
       const authenticated = authResult.exitCode === 0;
 
       return { installed: true, authenticated };
-    } catch {
-      return { installed: false, authenticated: false };
     }
-  });
+  ));
 
   // Get the default branch name (main or master)
-  ipcMain.handle('git:getDefaultBranch', async (_, cwd: string) => {
-    try {
+  ipcMain.handle('git:getDefaultBranch', createIpcHandler(
+    handlerOpts('getDefaultBranch'),
+    async (cwd: string) => {
       // First try to get the default branch from remote
       const remoteResult = await execFileNoThrow('git', ['remote', 'show', 'origin'], cwd);
       if (remoteResult.exitCode === 0) {
         // Parse "HEAD branch: main" from the output
         const match = remoteResult.stdout.match(/HEAD branch:\s*(\S+)/);
         if (match) {
-          return { success: true, branch: match[1] };
+          return { branch: match[1] };
         }
       }
 
       // Fallback: check if main or master exists locally
       const mainResult = await execFileNoThrow('git', ['rev-parse', '--verify', 'main'], cwd);
       if (mainResult.exitCode === 0) {
-        return { success: true, branch: 'main' };
+        return { branch: 'main' };
       }
 
       const masterResult = await execFileNoThrow('git', ['rev-parse', '--verify', 'master'], cwd);
       if (masterResult.exitCode === 0) {
-        return { success: true, branch: 'master' };
+        return { branch: 'master' };
       }
 
-      return { success: false, error: 'Could not determine default branch' };
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      throw new Error('Could not determine default branch');
     }
-  });
+  ));
 
   logger.debug(`${LOG_CONTEXT} Git IPC handlers registered`);
 }
