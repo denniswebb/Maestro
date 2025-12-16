@@ -605,8 +605,14 @@ ${docList}
 
     // Track consecutive runs where document content didn't change to detect stalling
     // If the document hash is identical before/after a run (and no tasks checked), the LLM is stuck
+    // Note: This counter is reset per-document, so stalling one document doesn't affect others
     let consecutiveNoChangeCount = 0;
-    const MAX_CONSECUTIVE_NO_CHANGES = 2; // Exit after 2 consecutive runs with no document changes
+    const MAX_CONSECUTIVE_NO_CHANGES = 2; // Skip document after 2 consecutive runs with no changes
+
+    // Track stalled documents (document filename -> stall reason)
+    const stalledDocuments: Map<string, string> = new Map();
+
+    // Legacy flag for backwards compatibility - true if ANY document stalled
     let stalledDueToNoProgress = false;
 
     // Helper to add final loop summary (defined here so it has access to tracking vars)
@@ -691,6 +697,9 @@ ${docList}
           console.log(`[BatchProcessor] Skipping document ${docEntry.filename} - no unchecked tasks`);
           continue;
         }
+
+        // Reset stall detection counter for each new document
+        consecutiveNoChangeCount = 0;
 
         console.log(`[BatchProcessor] Processing document ${docEntry.filename} with ${remainingTasks} tasks`);
 
@@ -873,12 +882,61 @@ ${docList}
               });
             }
 
-            // Check if we've hit the stalling threshold
+            // Check if we've hit the stalling threshold for this document
             if (consecutiveNoChangeCount >= MAX_CONSECUTIVE_NO_CHANGES) {
-              console.warn(`[BatchProcessor] Detected stalling: ${consecutiveNoChangeCount} consecutive runs with no document changes`);
+              const stallReason = `${consecutiveNoChangeCount} consecutive runs with no progress`;
+              console.warn(`[BatchProcessor] Document "${docEntry.filename}" stalled: ${stallReason}`);
+
+              // Track this document as stalled
+              stalledDocuments.set(docEntry.filename, stallReason);
               stalledDueToNoProgress = true;
-              addFinalLoopSummary(`Document has unchecked tasks but appears complete (${consecutiveNoChangeCount} consecutive runs with no changes)`);
-              break;
+
+              // AUTORUN LOG: Document stalled
+              window.maestro.logger.autorun(
+                `Document stalled: ${docEntry.filename}`,
+                session.name,
+                {
+                  document: docEntry.filename,
+                  reason: stallReason,
+                  remainingTasks: newRemainingTasks,
+                  loopNumber: loopIteration + 1
+                }
+              );
+
+              // Add a history entry specifically for this stalled document
+              const stallExplanation = [
+                `**Document Stalled: ${docEntry.filename}**`,
+                '',
+                `The AI agent ran ${consecutiveNoChangeCount} times on this document but made no progress:`,
+                `- No tasks were checked off`,
+                `- No changes were made to the document content`,
+                '',
+                `**What this means:**`,
+                `The remaining tasks in this document may be:`,
+                `- Already complete (but not checked off)`,
+                `- Unclear or ambiguous for the AI to act on`,
+                `- Dependent on external factors or manual intervention`,
+                `- Outside the scope of what the AI can accomplish`,
+                '',
+                `**Remaining unchecked tasks:** ${newRemainingTasks}`,
+                '',
+                documents.length > 1
+                  ? `Skipping to the next document in the playbook...`
+                  : `No more documents to process.`
+              ].join('\n');
+
+              onAddHistoryEntry({
+                type: 'AUTO',
+                timestamp: Date.now(),
+                summary: `Document stalled: ${docEntry.filename} (${newRemainingTasks} tasks remaining)`,
+                fullResponse: stallExplanation,
+                projectPath: effectiveCwd,
+                sessionId: sessionId,
+                success: false,  // Mark as unsuccessful since we couldn't complete
+              });
+
+              // Skip to the next document instead of breaking the entire batch
+              break; // Break out of the inner while loop for this document
             }
 
             remainingTasks = newRemainingTasks;
@@ -891,9 +949,16 @@ ${docList}
           }
         }
 
-        // Check for stop or stalling before doing reset
-        if (stopRequestedRefs.current[sessionId] || stalledDueToNoProgress) {
+        // Check for stop request before doing reset (stalled documents are skipped, not stopped)
+        if (stopRequestedRefs.current[sessionId]) {
           break;
+        }
+
+        // Skip document reset if this document stalled (it didn't complete normally)
+        if (stalledDocuments.has(docEntry.filename)) {
+          // Reset consecutive no-change counter for next document
+          consecutiveNoChangeCount = 0;
+          continue;
         }
 
         // Document complete - handle reset-on-completion if enabled
@@ -950,10 +1015,9 @@ ${docList}
         }
       }
 
-      // Check if we stalled due to no progress
-      if (stalledDueToNoProgress) {
-        break;
-      }
+      // Note: We no longer break immediately when a document stalls.
+      // Individual documents that stall are skipped, and we continue processing other documents.
+      // The stalledDocuments map tracks which documents stalled for the final summary.
 
       // Check if we should continue looping
       if (!loopEnabled) {
@@ -1167,7 +1231,18 @@ ${docList}
       ? finalAccumulatedTime + (Date.now() - finalLastActive)
       : finalAccumulatedTime;
     const loopsCompleted = loopEnabled ? loopIteration + 1 : 1;
-    const statusText = stalledDueToNoProgress ? 'stalled' : wasStopped ? 'stopped' : 'completed';
+
+    // Determine status based on stalled documents and completion
+    const stalledCount = stalledDocuments.size;
+    const allDocsStalled = stalledCount === documents.length;
+    const someDocsStalled = stalledCount > 0 && stalledCount < documents.length;
+    const statusText = wasStopped
+      ? 'stopped'
+      : allDocsStalled
+        ? 'stalled'
+        : someDocsStalled
+          ? 'completed with stalls'
+          : 'completed';
 
     // Calculate achievement progress for the summary
     // Note: We use the stats BEFORE this run is recorded (the parent will call recordAutoRunComplete after)
@@ -1181,12 +1256,40 @@ ${docList}
         ? `Level ${currentBadge.level} (${currentBadge.name}) - Maximum level achieved!`
         : 'Level 0 → 1: ' + formatTimeRemaining(0, getBadgeForTime(0) || undefined);
 
-    const finalSummary = `Auto Run ${statusText}: ${totalCompletedTasks} task${totalCompletedTasks !== 1 ? 's' : ''} in ${formatLoopDuration(totalElapsedMs)}`;
+    // Build summary with stall info if applicable
+    const stalledSuffix = stalledCount > 0 ? ` (${stalledCount} stalled)` : '';
+    const finalSummary = `Auto Run ${statusText}: ${totalCompletedTasks} task${totalCompletedTasks !== 1 ? 's' : ''} in ${formatLoopDuration(totalElapsedMs)}${stalledSuffix}`;
+
+    // Build status message with detailed info
+    let statusMessage: string;
+    if (wasStopped) {
+      statusMessage = 'Stopped by user';
+    } else if (allDocsStalled) {
+      statusMessage = `Stalled - All ${stalledCount} document(s) stopped making progress`;
+    } else if (someDocsStalled) {
+      statusMessage = `Completed with ${stalledCount} stalled document(s)`;
+    } else {
+      statusMessage = 'Completed';
+    }
+
+    // Build stalled documents section if any documents stalled
+    const stalledDocsSection: string[] = [];
+    if (stalledCount > 0) {
+      stalledDocsSection.push('');
+      stalledDocsSection.push('**Stalled Documents**');
+      stalledDocsSection.push('');
+      stalledDocsSection.push('The following documents stopped making progress after multiple attempts:');
+      for (const [docName, reason] of stalledDocuments) {
+        stalledDocsSection.push(`- **${docName}**: ${reason}`);
+      }
+      stalledDocsSection.push('');
+      stalledDocsSection.push('*Tasks in stalled documents may need manual review or clarification.*');
+    }
 
     const finalDetails = [
       `**Auto Run Summary**`,
       '',
-      `- **Status:** ${stalledDueToNoProgress ? 'Stalled (no progress detected)' : wasStopped ? 'Stopped by user' : 'Completed'}`,
+      `- **Status:** ${statusMessage}`,
       `- **Tasks Completed:** ${totalCompletedTasks}`,
       `- **Total Duration:** ${formatLoopDuration(totalElapsedMs)}`,
       loopEnabled ? `- **Loops Completed:** ${loopsCompleted}` : '',
@@ -1196,12 +1299,15 @@ ${docList}
       totalCost > 0 ? `- **Total Cost:** $${totalCost.toFixed(4)}` : '',
       '',
       `- **Documents:** ${documents.map(d => d.filename).join(', ')}`,
+      ...stalledDocsSection,
       '',
       `**Achievement Progress**`,
       `- ${levelProgressText}`,
     ].filter(line => line !== '').join('\n');
 
     // This entry has no sessionId - it's a standalone Auto Run synopsis
+    // Success is true if not stopped and at least some documents completed without stalling
+    const isSuccess = !wasStopped && !allDocsStalled;
     onAddHistoryEntry({
       type: 'AUTO',
       timestamp: Date.now(),
@@ -1209,7 +1315,7 @@ ${docList}
       fullResponse: finalDetails,
       projectPath: session.cwd,
       // No sessionId - this is a standalone synopsis entry
-      success: !wasStopped,
+      success: isSuccess,
       elapsedTimeMs: totalElapsedMs,
       usageStats: totalInputTokens > 0 || totalOutputTokens > 0 ? {
         inputTokens: totalInputTokens,
