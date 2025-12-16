@@ -358,7 +358,8 @@ describe('RenameTabModal', () => {
         </TestWrapper>
       );
 
-      const modalBox = container.querySelector('.w-\\[400px\\]');
+      // Modal component uses inline style for width instead of Tailwind class
+      const modalBox = container.querySelector('[style*="width: 400px"]');
       expect(modalBox).toHaveStyle({
         backgroundColor: mockTheme.colors.bgSidebar,
         borderColor: mockTheme.colors.border,
@@ -457,7 +458,7 @@ describe('RenameTabModal', () => {
       expect(dialog).toHaveClass('fixed', 'inset-0');
     });
 
-    it('has proper width class', () => {
+    it('has proper width style', () => {
       const { container } = render(
         <TestWrapper>
           <RenameTabModal
@@ -469,7 +470,8 @@ describe('RenameTabModal', () => {
         </TestWrapper>
       );
 
-      const modalBox = container.querySelector('.w-\\[400px\\]');
+      // Modal component uses inline style for width instead of Tailwind class
+      const modalBox = container.querySelector('[style*="width: 400px"]');
       expect(modalBox).toBeInTheDocument();
     });
   });
