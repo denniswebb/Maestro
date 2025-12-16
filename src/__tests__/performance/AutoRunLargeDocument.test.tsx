@@ -12,7 +12,25 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import React from 'react';
 import { AutoRun, AutoRunHandle } from '../../renderer/components/AutoRun';
+import { LayerStackProvider } from '../../renderer/contexts/LayerStackContext';
 import type { Theme, BatchRunState, SessionState } from '../../renderer/types';
+
+// Helper to render with LayerStackProvider (required by AutoRunSearchBar)
+const renderWithProvider = (ui: React.ReactElement) => {
+  const result = render(
+    <LayerStackProvider>
+      {ui}
+    </LayerStackProvider>
+  );
+  return {
+    ...result,
+    rerender: (newUi: React.ReactElement) => result.rerender(
+      <LayerStackProvider>
+        {newUi}
+      </LayerStackProvider>
+    ),
+  };
+};
 
 // Mock dependencies
 vi.mock('react-markdown', () => ({
@@ -228,7 +246,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateLargeDocument(10000);
       const props = createDefaultProps({ content: largeContent, mode: 'edit' });
 
-      const { container } = render(<AutoRun {...props} />);
+      const { container } = renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       expect(textarea).toBeInTheDocument();
@@ -239,7 +257,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateLargeDocument(25000);
       const props = createDefaultProps({ content: largeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       expect(textarea).toBeInTheDocument();
@@ -250,7 +268,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateLargeDocument(10000);
       const props = createDefaultProps({ content: largeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
 
@@ -266,7 +284,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateLargeDocument(10000);
       const props = createDefaultProps({ content: largeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
 
@@ -287,7 +305,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateLargeDocument(10000);
       const props = createDefaultProps({ content: largeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
 
@@ -306,7 +324,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateLargeDocument(10000);
       const props = createDefaultProps({ content: largeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
 
@@ -322,7 +340,7 @@ describe('AutoRun Large Document Performance', () => {
       const veryLargeContent = 'A'.repeat(100000) + '\n' + 'B'.repeat(50000);
       const props = createDefaultProps({ content: veryLargeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       expect(textarea).toHaveValue(veryLargeContent);
@@ -333,7 +351,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateLargeDocument(10000);
       const props = createDefaultProps({ content: largeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Initially no Save/Revert buttons
       expect(screen.queryByText('Save')).not.toBeInTheDocument();
@@ -350,7 +368,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateLargeDocument(10000);
       const props = createDefaultProps({ content: largeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       const modifiedContent = largeContent + '\n# Added Section';
@@ -372,7 +390,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateLargeDocument(10000);
       const props = createDefaultProps({ content: largeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       fireEvent.change(textarea, { target: { value: 'Completely different content' } });
@@ -390,7 +408,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateLargeDocument(10000);
       const props = createDefaultProps({ content: largeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
 
@@ -412,7 +430,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateSearchableDocument(10000, 50);
       const props = createDefaultProps({ content: largeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
 
@@ -438,7 +456,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateSearchableDocument(5000, 100);
       const props = createDefaultProps({ content: largeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
 
@@ -476,7 +494,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateLargeDocument(10000);
       const props = createDefaultProps({ content: largeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
 
@@ -498,7 +516,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateSearchableDocument(1000, 100); // 10 matches
       const props = createDefaultProps({ content: largeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
 
@@ -538,7 +556,7 @@ describe('AutoRun Large Document Performance', () => {
         '\nSpecial chars: [test] (test) {test} $test^ .test* +test?';
       const props = createDefaultProps({ content: contentWithSpecialChars, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
 
@@ -563,7 +581,7 @@ describe('AutoRun Large Document Performance', () => {
       const content = 'XYZABC xyzabc XyzAbc xYzAbC';
       const props = createDefaultProps({ content, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
 
@@ -586,7 +604,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateLargeDocument(5000);
       const props = createDefaultProps({ content: largeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
 
@@ -608,7 +626,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateSearchableDocument(5000, 100);
       const props = createDefaultProps({ content: largeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
 
@@ -651,7 +669,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateLargeDocument(10000);
       const props = createDefaultProps({ content: largeContent, mode: 'preview' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByTestId('react-markdown')).toBeInTheDocument();
     });
@@ -660,7 +678,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateLargeDocument(25000);
       const props = createDefaultProps({ content: largeContent, mode: 'preview' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByTestId('react-markdown')).toBeInTheDocument();
     });
@@ -674,7 +692,7 @@ describe('AutoRun Large Document Performance', () => {
         onModeChange
       });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Initially in edit mode
       expect(screen.getByRole('textbox')).toBeInTheDocument();
@@ -694,7 +712,7 @@ describe('AutoRun Large Document Performance', () => {
         onStateChange
       });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
 
@@ -714,7 +732,7 @@ describe('AutoRun Large Document Performance', () => {
         onModeChange
       });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
 
@@ -734,7 +752,7 @@ describe('AutoRun Large Document Performance', () => {
 
       const props = createDefaultProps({ content: taskContent, mode: 'preview' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByTestId('react-markdown')).toBeInTheDocument();
     });
@@ -753,7 +771,7 @@ describe('AutoRun Large Document Performance', () => {
 
       const props = createDefaultProps({ content: codeContent, mode: 'preview' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByTestId('react-markdown')).toBeInTheDocument();
     });
@@ -773,7 +791,7 @@ describe('AutoRun Large Document Performance', () => {
 
       const props = createDefaultProps({ content: headerContent, mode: 'preview' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByTestId('react-markdown')).toBeInTheDocument();
     });
@@ -786,7 +804,7 @@ describe('AutoRun Large Document Performance', () => {
         initialPreviewScrollPos: 500
       });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByTestId('react-markdown')).toBeInTheDocument();
     });
@@ -802,7 +820,7 @@ describe('AutoRun Large Document Performance', () => {
         onModeChange
       });
 
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Rapid mode switches
       for (let i = 0; i < 10; i++) {
@@ -824,7 +842,7 @@ describe('AutoRun Large Document Performance', () => {
         onModeChange
       });
 
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Edit the content
       const textarea = screen.getByRole('textbox');
@@ -847,7 +865,7 @@ describe('AutoRun Large Document Performance', () => {
       const whitespaceContent = '\n'.repeat(10000) + ' '.repeat(5000);
       const props = createDefaultProps({ content: whitespaceContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       expect(textarea).toHaveValue(whitespaceContent);
@@ -859,7 +877,7 @@ describe('AutoRun Large Document Performance', () => {
       const content = Array(1000).fill(longLine).join('\n');
       const props = createDefaultProps({ content, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       expect(textarea).toBeInTheDocument();
@@ -874,7 +892,7 @@ describe('AutoRun Large Document Performance', () => {
 
       const props = createDefaultProps({ content: unicodeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       expect(textarea).toHaveValue(unicodeContent);
@@ -884,7 +902,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateLargeDocument(10000);
       const props = createDefaultProps({ content: largeContent, mode: 'edit' });
 
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Rerender with empty content
       rerender(<AutoRun {...props} content="" contentVersion={1} />);
@@ -901,7 +919,7 @@ describe('AutoRun Large Document Performance', () => {
         contentVersion: 0
       });
 
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Make local edit
       const textarea = screen.getByRole('textbox');
@@ -923,7 +941,7 @@ describe('AutoRun Large Document Performance', () => {
       const largeContent = generateLargeDocument(5000);
       const props = createDefaultProps({ content: largeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
 
@@ -945,7 +963,7 @@ describe('AutoRun Large Document Performance', () => {
         sessionId: 'session-1'
       });
 
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Edit the content
       const textarea = screen.getByRole('textbox');
@@ -970,7 +988,7 @@ describe('AutoRun Large Document Performance', () => {
         selectedFile: 'doc1'
       });
 
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Edit the content
       const textarea = screen.getByRole('textbox');
@@ -996,7 +1014,7 @@ describe('AutoRun Large Document Performance', () => {
       const veryLargeContent = generateLargeDocument(50000);
       const props = createDefaultProps({ content: veryLargeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       expect(textarea).toBeInTheDocument();
@@ -1006,7 +1024,7 @@ describe('AutoRun Large Document Performance', () => {
       const veryLargeContent = generateSearchableDocument(50000, 100);
       const props = createDefaultProps({ content: veryLargeContent, mode: 'edit' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
 
@@ -1029,7 +1047,7 @@ describe('AutoRun Large Document Performance', () => {
       const veryLargeContent = generateLargeDocument(50000);
       const props = createDefaultProps({ content: veryLargeContent, mode: 'preview' });
 
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByTestId('react-markdown')).toBeInTheDocument();
     });

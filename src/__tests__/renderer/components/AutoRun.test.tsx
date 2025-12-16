@@ -7,7 +7,27 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import React from 'react';
 import { AutoRun, AutoRunHandle } from '../../../renderer/components/AutoRun';
+import { LayerStackProvider } from '../../../renderer/contexts/LayerStackContext';
 import type { Theme, BatchRunState, SessionState } from '../../../renderer/types';
+
+// Helper to render with LayerStackProvider (required by AutoRunSearchBar)
+const renderWithProvider = (ui: React.ReactElement) => {
+  const result = render(
+    <LayerStackProvider>
+      {ui}
+    </LayerStackProvider>
+  );
+  // Return a rerender function that wraps in provider
+  return {
+    ...result,
+    rerender: (newUi: React.ReactElement) => result.rerender(
+      <LayerStackProvider>
+        {newUi}
+      </LayerStackProvider>
+    ),
+  };
+};
+
 
 // Mock the external dependencies
 vi.mock('react-markdown', () => ({
@@ -193,7 +213,7 @@ describe('AutoRun', () => {
   describe('Basic Rendering', () => {
     it('renders in edit mode by default', () => {
       const props = createDefaultProps();
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByRole('textbox')).toBeInTheDocument();
       expect(screen.getByRole('textbox')).toHaveValue(props.content);
@@ -201,14 +221,14 @@ describe('AutoRun', () => {
 
     it('renders in preview mode when mode prop is preview', () => {
       const props = createDefaultProps({ mode: 'preview' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByTestId('react-markdown')).toBeInTheDocument();
     });
 
     it('shows "Select Auto Run Folder" button when no folder is configured', () => {
       const props = createDefaultProps({ folderPath: null });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByText('Select Auto Run Folder')).toBeInTheDocument();
       // Other controls should be hidden when no folder is selected
@@ -220,14 +240,14 @@ describe('AutoRun', () => {
 
     it('shows document selector when folder is configured', () => {
       const props = createDefaultProps();
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByTestId('document-selector')).toBeInTheDocument();
     });
 
     it('displays Edit and Preview toggle buttons', () => {
       const props = createDefaultProps();
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByText('Edit')).toBeInTheDocument();
       expect(screen.getByText('Preview')).toBeInTheDocument();
@@ -235,7 +255,7 @@ describe('AutoRun', () => {
 
     it('displays Run button when not locked', () => {
       const props = createDefaultProps();
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByText('Run')).toBeInTheDocument();
     });
@@ -243,7 +263,7 @@ describe('AutoRun', () => {
     it('displays Stop button when batch run is active', () => {
       const batchRunState = createBatchRunState();
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByText('Stop')).toBeInTheDocument();
     });
@@ -252,7 +272,7 @@ describe('AutoRun', () => {
   describe('Mode Toggling', () => {
     it('calls onModeChange when clicking Edit button', async () => {
       const props = createDefaultProps({ mode: 'preview' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       fireEvent.click(screen.getByText('Edit'));
       expect(props.onModeChange).toHaveBeenCalledWith('edit');
@@ -260,7 +280,7 @@ describe('AutoRun', () => {
 
     it('calls onModeChange when clicking Preview button', async () => {
       const props = createDefaultProps({ mode: 'edit' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       fireEvent.click(screen.getByText('Preview'));
       expect(props.onModeChange).toHaveBeenCalledWith('preview');
@@ -269,7 +289,7 @@ describe('AutoRun', () => {
     it('disables Edit button when batch run is active', () => {
       const batchRunState = createBatchRunState();
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByText('Edit').closest('button')).toBeDisabled();
     });
@@ -278,7 +298,7 @@ describe('AutoRun', () => {
   describe('Content Editing', () => {
     it('updates local content when typing', async () => {
       const props = createDefaultProps({ content: '' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       fireEvent.change(textarea, { target: { value: 'New content' } });
@@ -288,7 +308,7 @@ describe('AutoRun', () => {
 
     it('shows Save/Revert buttons when content is dirty', async () => {
       const props = createDefaultProps({ content: 'Initial' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Initially no Save/Revert buttons
       expect(screen.queryByText('Save')).not.toBeInTheDocument();
@@ -305,7 +325,7 @@ describe('AutoRun', () => {
     it('does not allow editing when locked', () => {
       const batchRunState = createBatchRunState();
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       expect(textarea).toHaveAttribute('readonly');
@@ -315,7 +335,7 @@ describe('AutoRun', () => {
   describe('Manual Save Functionality', () => {
     it('saves content when clicking Save button', async () => {
       const props = createDefaultProps({ content: 'Initial' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       fireEvent.change(textarea, { target: { value: 'Updated content' } });
@@ -332,7 +352,7 @@ describe('AutoRun', () => {
 
     it('reverts content when clicking Revert button', async () => {
       const props = createDefaultProps({ content: 'Initial' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       fireEvent.change(textarea, { target: { value: 'Changed content' } });
@@ -352,7 +372,7 @@ describe('AutoRun', () => {
 
     it('does not show Save button if no folder is selected', async () => {
       const props = createDefaultProps({ folderPath: null, content: 'Initial' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Save button shouldn't be visible without a folder
       expect(screen.queryByText('Save')).not.toBeInTheDocument();
@@ -363,7 +383,7 @@ describe('AutoRun', () => {
     it('inserts tab character on Tab key', async () => {
       // Use "HelloWorld" without space so tab insertion is clearer
       const props = createDefaultProps({ content: 'HelloWorld' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
       fireEvent.focus(textarea);
@@ -381,7 +401,7 @@ describe('AutoRun', () => {
 
     it('toggles mode on Cmd+E', async () => {
       const props = createDefaultProps({ mode: 'edit' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       fireEvent.keyDown(textarea, { key: 'e', metaKey: true });
@@ -391,7 +411,7 @@ describe('AutoRun', () => {
 
     it('inserts checkbox on Cmd+L at start of line', async () => {
       const props = createDefaultProps({ content: '' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
       fireEvent.focus(textarea);
@@ -410,7 +430,7 @@ describe('AutoRun', () => {
 
     it('inserts checkbox on new line with Cmd+L in middle of text', async () => {
       const props = createDefaultProps({ content: 'Some text' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
       fireEvent.focus(textarea);
@@ -430,7 +450,7 @@ describe('AutoRun', () => {
   describe('List Continuation', () => {
     it('continues task list on Enter', async () => {
       const props = createDefaultProps({ content: '- [ ] First task' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
       fireEvent.focus(textarea);
@@ -448,7 +468,7 @@ describe('AutoRun', () => {
 
     it('continues unordered list with dash on Enter', async () => {
       const props = createDefaultProps({ content: '- Item one' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
       fireEvent.focus(textarea);
@@ -466,7 +486,7 @@ describe('AutoRun', () => {
 
     it('continues ordered list and increments number on Enter', async () => {
       const props = createDefaultProps({ content: '1. First item' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
       fireEvent.focus(textarea);
@@ -484,7 +504,7 @@ describe('AutoRun', () => {
 
     it('preserves indentation in nested lists', async () => {
       const props = createDefaultProps({ content: '  - Nested item' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
       fireEvent.focus(textarea);
@@ -504,7 +524,7 @@ describe('AutoRun', () => {
   describe('Search Functionality', () => {
     it('opens search on Cmd+F in edit mode', async () => {
       const props = createDefaultProps({ mode: 'edit' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       fireEvent.keyDown(textarea, { key: 'f', metaKey: true });
@@ -516,7 +536,7 @@ describe('AutoRun', () => {
 
     it('closes search on Escape', async () => {
       const props = createDefaultProps({ mode: 'edit' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Open search first
       const textarea = screen.getByRole('textbox');
@@ -537,7 +557,7 @@ describe('AutoRun', () => {
 
     it('displays match count when searching', async () => {
       const props = createDefaultProps({ content: 'test one test two test three' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Open search
       const textarea = screen.getByRole('textbox');
@@ -553,7 +573,7 @@ describe('AutoRun', () => {
 
     it('navigates to next match on Enter', async () => {
       const props = createDefaultProps({ content: 'test one test two test three' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Open search
       const textarea = screen.getByRole('textbox');
@@ -575,7 +595,7 @@ describe('AutoRun', () => {
 
     it('navigates to previous match on Shift+Enter', async () => {
       const props = createDefaultProps({ content: 'test one test two test three' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Open search and set query
       const textarea = screen.getByRole('textbox');
@@ -598,7 +618,7 @@ describe('AutoRun', () => {
 
     it('shows No matches when search has no results', async () => {
       const props = createDefaultProps({ content: 'some content' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Open search
       const textarea = screen.getByRole('textbox');
@@ -617,7 +637,7 @@ describe('AutoRun', () => {
     it('calls onOpenBatchRunner and saves if dirty when clicking Run', async () => {
       const onOpenBatchRunner = vi.fn();
       const props = createDefaultProps({ onOpenBatchRunner, content: 'test' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Change content first
       const textarea = screen.getByRole('textbox');
@@ -636,14 +656,14 @@ describe('AutoRun', () => {
 
     it('disables Run button when agent is busy', () => {
       const props = createDefaultProps({ sessionState: 'busy' as SessionState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByText('Run').closest('button')).toBeDisabled();
     });
 
     it('disables Run button when agent is connecting', () => {
       const props = createDefaultProps({ sessionState: 'connecting' as SessionState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByText('Run').closest('button')).toBeDisabled();
     });
@@ -652,7 +672,7 @@ describe('AutoRun', () => {
       const onStopBatchRun = vi.fn();
       const batchRunState = createBatchRunState();
       const props = createDefaultProps({ batchRunState, onStopBatchRun });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       fireEvent.click(screen.getByText('Stop'));
 
@@ -662,7 +682,7 @@ describe('AutoRun', () => {
     it('shows Stopping... when isStopping is true', () => {
       const batchRunState = createBatchRunState({ isStopping: true });
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByText('Stopping...')).toBeInTheDocument();
     });
@@ -671,7 +691,7 @@ describe('AutoRun', () => {
   describe('Help Modal', () => {
     it('opens help modal when clicking help button', async () => {
       const props = createDefaultProps();
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const helpButton = screen.getByTitle('Learn about Auto Runner');
       fireEvent.click(helpButton);
@@ -681,7 +701,7 @@ describe('AutoRun', () => {
 
     it('closes help modal when onClose is called', async () => {
       const props = createDefaultProps();
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const helpButton = screen.getByTitle('Learn about Auto Runner');
       fireEvent.click(helpButton);
@@ -699,7 +719,7 @@ describe('AutoRun', () => {
   describe('Empty Folder State', () => {
     it('shows empty state when folder has no documents', () => {
       const props = createDefaultProps({ documentList: [], selectedFile: null });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByText('No Documents Found')).toBeInTheDocument();
       expect(screen.getByText(/The selected folder doesn't contain any markdown/)).toBeInTheDocument();
@@ -707,7 +727,7 @@ describe('AutoRun', () => {
 
     it('shows Refresh and Change Folder buttons in empty state', () => {
       const props = createDefaultProps({ documentList: [], selectedFile: null });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Use getAllByText since the refresh button exists in both document selector and empty state
       expect(screen.getAllByText('Refresh').length).toBeGreaterThanOrEqual(1);
@@ -716,7 +736,7 @@ describe('AutoRun', () => {
 
     it('calls onRefresh when clicking Refresh in empty state', async () => {
       const props = createDefaultProps({ documentList: [], selectedFile: null });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Get the Refresh button in the empty state (not in document selector)
       const refreshButtons = screen.getAllByText('Refresh');
@@ -730,7 +750,7 @@ describe('AutoRun', () => {
 
     it('calls onOpenSetup when clicking Change Folder in empty state', async () => {
       const props = createDefaultProps({ documentList: [], selectedFile: null });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Get the Change Auto-run Folder button in the empty state
       fireEvent.click(screen.getByText('Change Auto-run Folder'));
@@ -742,7 +762,7 @@ describe('AutoRun', () => {
 
     it('shows loading indicator during refresh', async () => {
       const props = createDefaultProps({ documentList: [], selectedFile: null, isLoadingDocuments: true });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Loading state should not show empty state message
       expect(screen.queryByText('No Documents Found')).not.toBeInTheDocument();
@@ -759,7 +779,7 @@ describe('AutoRun', () => {
       });
 
       const props = createDefaultProps();
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       await waitFor(() => {
         expect(mockMaestro.autorun.listImages).toHaveBeenCalledWith('/test/folder', 'test-doc');
@@ -775,7 +795,7 @@ describe('AutoRun', () => {
       });
 
       const props = createDefaultProps({ mode: 'edit' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       await waitFor(() => {
         expect(screen.getByText(/Attached Images/)).toBeInTheDocument();
@@ -784,14 +804,14 @@ describe('AutoRun', () => {
 
     it('shows image upload button in edit mode', () => {
       const props = createDefaultProps({ mode: 'edit' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByTitle('Add image (or paste from clipboard)')).toBeInTheDocument();
     });
 
     it('hides image upload button in preview mode', () => {
       const props = createDefaultProps({ mode: 'preview' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.queryByTitle('Add image (or paste from clipboard)')).not.toBeInTheDocument();
     });
@@ -799,7 +819,7 @@ describe('AutoRun', () => {
     it('hides image upload button when locked', () => {
       const batchRunState = createBatchRunState();
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.queryByTitle('Add image (or paste from clipboard)')).not.toBeInTheDocument();
     });
@@ -815,7 +835,7 @@ describe('AutoRun', () => {
     it('does not handle paste when locked', async () => {
       const batchRunState = createBatchRunState();
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
 
@@ -838,7 +858,7 @@ describe('AutoRun', () => {
     it('exposes focus method via ref', () => {
       const ref = React.createRef<AutoRunHandle>();
       const props = createDefaultProps({ mode: 'edit' });
-      render(<AutoRun {...props} ref={ref} />);
+      renderWithProvider(<AutoRun {...props} ref={ref} />);
 
       expect(ref.current).not.toBeNull();
       expect(typeof ref.current?.focus).toBe('function');
@@ -847,7 +867,7 @@ describe('AutoRun', () => {
     it('focuses textarea when calling focus in edit mode', () => {
       const ref = React.createRef<AutoRunHandle>();
       const props = createDefaultProps({ mode: 'edit' });
-      render(<AutoRun {...props} ref={ref} />);
+      renderWithProvider(<AutoRun {...props} ref={ref} />);
 
       const textarea = screen.getByRole('textbox');
       ref.current?.focus();
@@ -859,7 +879,7 @@ describe('AutoRun', () => {
   describe('Session Switching', () => {
     it('resets local content when session changes', () => {
       const props = createDefaultProps({ content: 'Session 1 content' });
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       expect(textarea).toHaveValue('Session 1 content');
@@ -872,7 +892,7 @@ describe('AutoRun', () => {
 
     it('syncs content when switching documents', () => {
       const props = createDefaultProps({ content: 'Doc 1 content', selectedFile: 'doc1' });
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       expect(textarea).toHaveValue('Doc 1 content');
@@ -893,13 +913,13 @@ describe('AutoRun', () => {
       });
 
       // This should not throw
-      expect(() => render(<AutoRun {...props} />)).not.toThrow();
+      expect(() => renderWithProvider(<AutoRun {...props} />)).not.toThrow();
     });
 
     it('calls onStateChange when mode toggles via keyboard', async () => {
       const onStateChange = vi.fn();
       const props = createDefaultProps({ mode: 'edit', onStateChange });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // toggleMode is called via Cmd+E, which does call onStateChange
       const textarea = screen.getByRole('textbox');
@@ -914,7 +934,7 @@ describe('AutoRun', () => {
   describe('Memoization', () => {
     it('does not re-render when irrelevant props change', () => {
       const props = createDefaultProps();
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Re-render with same essential props but different callback references
       // The memo comparison should prevent unnecessary re-renders
@@ -928,7 +948,7 @@ describe('AutoRun', () => {
   describe('Preview Mode Features', () => {
     it('opens search with Cmd+F in preview mode', async () => {
       const props = createDefaultProps({ mode: 'preview' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Find the preview container and trigger keydown
       const previewContainer = screen.getByTestId('react-markdown').parentElement!;
@@ -943,7 +963,7 @@ describe('AutoRun', () => {
   describe('Document Selector Integration', () => {
     it('calls onSelectDocument when document is selected', async () => {
       const props = createDefaultProps();
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const select = screen.getByTestId('doc-select');
       fireEvent.change(select, { target: { value: 'another-doc' } });
@@ -953,7 +973,7 @@ describe('AutoRun', () => {
 
     it('calls onRefresh when refresh button is clicked', async () => {
       const props = createDefaultProps();
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       fireEvent.click(screen.getByTestId('refresh-btn'));
 
@@ -962,7 +982,7 @@ describe('AutoRun', () => {
 
     it('calls onOpenSetup when change folder button is clicked', async () => {
       const props = createDefaultProps();
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       fireEvent.click(screen.getByTestId('change-folder-btn'));
 
@@ -971,7 +991,7 @@ describe('AutoRun', () => {
 
     it('passes isLoading to document selector', () => {
       const props = createDefaultProps({ isLoadingDocuments: true });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByTestId('loading-indicator')).toBeInTheDocument();
     });
@@ -980,7 +1000,7 @@ describe('AutoRun', () => {
   describe('Auto-switch Mode on Batch Run', () => {
     it('switches to preview mode when batch run starts', () => {
       const props = createDefaultProps({ mode: 'edit' });
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Start batch run
       const batchRunState = createBatchRunState();
@@ -1003,7 +1023,7 @@ describe('AutoRun', () => {
   describe('Textarea Placeholder', () => {
     it('shows placeholder text in edit mode', () => {
       const props = createDefaultProps({ content: '' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByPlaceholderText(/Capture notes, images, and tasks/);
       expect(textarea).toBeInTheDocument();
@@ -1013,7 +1033,7 @@ describe('AutoRun', () => {
   describe('Container Keyboard Handling', () => {
     it('handles Cmd+E on container level', async () => {
       const props = createDefaultProps({ mode: 'edit' });
-      const { container } = render(<AutoRun {...props} />);
+      const { container } = renderWithProvider(<AutoRun {...props} />);
 
       const outerContainer = container.firstChild as HTMLElement;
       fireEvent.keyDown(outerContainer, { key: 'e', metaKey: true });
@@ -1023,7 +1043,7 @@ describe('AutoRun', () => {
 
     it('handles Cmd+F on container level', async () => {
       const props = createDefaultProps({ mode: 'edit' });
-      const { container } = render(<AutoRun {...props} />);
+      const { container } = renderWithProvider(<AutoRun {...props} />);
 
       const outerContainer = container.firstChild as HTMLElement;
       fireEvent.keyDown(outerContainer, { key: 'f', metaKey: true });
@@ -1037,7 +1057,7 @@ describe('AutoRun', () => {
   describe('Preview Mode Content', () => {
     it('shows default message when content is empty in preview mode', () => {
       const props = createDefaultProps({ mode: 'preview', content: '' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByTestId('react-markdown')).toHaveTextContent('No content yet');
     });
@@ -1057,7 +1077,7 @@ describe('AutoRun.imageCache', () => {
     });
 
     const props = createDefaultProps();
-    expect(() => render(<AutoRun {...props} />)).not.toThrow();
+    expect(() => renderWithProvider(<AutoRun {...props} />)).not.toThrow();
 
     await waitFor(() => {
       expect(mockMaestro.autorun.listImages).toHaveBeenCalled();
@@ -1080,7 +1100,7 @@ describe('Undo/Redo Functionality', () => {
 
   it('handles Cmd+Z keyboard shortcut', async () => {
     const props = createDefaultProps({ content: 'Initial content' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
     fireEvent.focus(textarea);
@@ -1099,7 +1119,7 @@ describe('Undo/Redo Functionality', () => {
 
   it('handles Cmd+Shift+Z keyboard shortcut', async () => {
     const props = createDefaultProps({ content: 'Original' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
     fireEvent.focus(textarea);
@@ -1113,7 +1133,7 @@ describe('Undo/Redo Functionality', () => {
 
   it('does not change content when undo stack is empty', async () => {
     const props = createDefaultProps({ content: 'Initial' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
     fireEvent.focus(textarea);
@@ -1147,7 +1167,7 @@ describe('Lightbox Functionality', () => {
     mockMaestro.fs.readFile.mockResolvedValue('data:image/png;base64,abc123');
 
     const props = createDefaultProps({ mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Wait for attachments to load
     await waitFor(() => {
@@ -1179,7 +1199,7 @@ describe('Lightbox Functionality', () => {
     mockMaestro.fs.readFile.mockResolvedValue('data:image/png;base64,abc123');
 
     const props = createDefaultProps({ mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Wait for attachments and open lightbox
     await waitFor(() => {
@@ -1217,7 +1237,7 @@ describe('Lightbox Functionality', () => {
     mockMaestro.fs.readFile.mockResolvedValue('data:image/png;base64,abc123');
 
     const props = createDefaultProps({ mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Wait for attachments
     await waitFor(() => {
@@ -1254,7 +1274,7 @@ describe('Lightbox Functionality', () => {
     mockMaestro.fs.readFile.mockResolvedValue('data:image/png;base64,abc123');
 
     const props = createDefaultProps({ mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Wait for attachments
     await waitFor(() => {
@@ -1294,7 +1314,7 @@ describe('Lightbox Functionality', () => {
     mockMaestro.fs.readFile.mockResolvedValue('data:image/png;base64,abc123');
 
     const props = createDefaultProps({ mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Wait for attachments
     await waitFor(() => {
@@ -1334,7 +1354,7 @@ describe('Lightbox Functionality', () => {
     mockMaestro.fs.readFile.mockResolvedValue('data:image/png;base64,abc123');
 
     const props = createDefaultProps({ mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Wait for attachments
     await waitFor(() => {
@@ -1373,7 +1393,7 @@ describe('Lightbox Functionality', () => {
     mockMaestro.fs.readFile.mockResolvedValue('data:image/png;base64,abc123');
 
     const props = createDefaultProps({ mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Wait for attachments
     await waitFor(() => {
@@ -1409,7 +1429,7 @@ describe('Lightbox Functionality', () => {
     mockMaestro.fs.readFile.mockResolvedValue('data:image/png;base64,abc123');
 
     const props = createDefaultProps({ mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Wait for attachments
     await waitFor(() => {
@@ -1448,7 +1468,7 @@ describe('Lightbox Functionality', () => {
 
     const content = '# Test\n![test.png](images/test.png)\n';
     const props = createDefaultProps({ content, mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Wait for attachments
     await waitFor(() => {
@@ -1493,7 +1513,7 @@ describe('Lightbox Functionality', () => {
 
     const content = '# Test\n![test.png](images/test.png)\n';
     const props = createDefaultProps({ content, mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Wait for attachments
     await waitFor(() => {
@@ -1530,7 +1550,7 @@ describe('Lightbox Functionality', () => {
     mockMaestro.fs.readFile.mockResolvedValue('data:image/png;base64,abc123');
 
     const props = createDefaultProps({ mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Wait for attachments
     await waitFor(() => {
@@ -1569,7 +1589,7 @@ describe('Lightbox Functionality', () => {
     mockMaestro.fs.readFile.mockResolvedValue('data:image/png;base64,abc123');
 
     const props = createDefaultProps({ mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Wait for attachments
     await waitFor(() => {
@@ -1609,7 +1629,7 @@ describe('Lightbox Functionality', () => {
     mockMaestro.fs.readFile.mockResolvedValue('data:image/png;base64,abc123');
 
     const props = createDefaultProps({ mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Wait for attachments
     await waitFor(() => {
@@ -1655,7 +1675,7 @@ describe('Lightbox Functionality', () => {
 
     const content = '# Test\n![img1.png](images/img1.png)\n![img2.png](images/img2.png)\n![img3.png](images/img3.png)\n';
     const props = createDefaultProps({ content, mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Wait for attachments
     await waitFor(() => {
@@ -1709,7 +1729,7 @@ describe('Attachment Management', () => {
 
     const content = '# Test\n![test.png](images/test.png)\n';
     const props = createDefaultProps({ content, mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Wait for attachments
     await waitFor(() => {
@@ -1733,7 +1753,7 @@ describe('Attachment Management', () => {
 
   it('clears attachments when no document is selected', async () => {
     const props = createDefaultProps({ selectedFile: null });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Should not show attachments section
     expect(screen.queryByText(/Attached Images/)).not.toBeInTheDocument();
@@ -1755,7 +1775,7 @@ describe('Attachment Management', () => {
     mockMaestro.fs.readFile.mockResolvedValue('data:image/png;base64,abc123');
 
     const props = createDefaultProps({ mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Wait for attachments
     await waitFor(() => {
@@ -1793,7 +1813,7 @@ describe('Mode Restoration After Batch Run', () => {
   it('restores previous mode when batch run ends', async () => {
     const onModeChange = vi.fn();
     const props = createDefaultProps({ mode: 'edit', onModeChange });
-    const { rerender } = render(<AutoRun {...props} />);
+    const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
     // Start batch run (this switches to preview mode)
     const batchRunState = createBatchRunState();
@@ -1833,7 +1853,7 @@ describe('Empty State Refresh', () => {
       selectedFile: null,
       onRefresh
     });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Find and click the Refresh button
     const refreshButtons = screen.getAllByText('Refresh');
@@ -1860,7 +1880,7 @@ describe('Search Bar Navigation Buttons', () => {
 
   it('navigates with chevron up and down buttons', async () => {
     const props = createDefaultProps({ content: 'test test test test' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
     fireEvent.keyDown(textarea, { key: 'f', metaKey: true });
@@ -1891,7 +1911,7 @@ describe('Search Bar Navigation Buttons', () => {
 
   it('closes search when clicking close button', async () => {
     const props = createDefaultProps({ mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
     fireEvent.keyDown(textarea, { key: 'f', metaKey: true });
@@ -1926,7 +1946,7 @@ describe('Scroll Position Persistence', () => {
   it('calls onStateChange when scrolling in preview mode', async () => {
     const onStateChange = vi.fn();
     const props = createDefaultProps({ mode: 'preview', onStateChange, content: 'Line\n'.repeat(100) });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const preview = screen.getByTestId('react-markdown').parentElement!;
     fireEvent.scroll(preview);
@@ -1940,7 +1960,7 @@ describe('Focus via Imperative Handle', () => {
   it('focuses preview container when calling focus in preview mode', () => {
     const ref = React.createRef<AutoRunHandle>();
     const props = createDefaultProps({ mode: 'preview' });
-    render(<AutoRun {...props} ref={ref} />);
+    renderWithProvider(<AutoRun {...props} ref={ref} />);
 
     const preview = screen.getByTestId('react-markdown').parentElement!;
     ref.current?.focus();
@@ -1964,7 +1984,7 @@ describe('Control Key Support (Windows/Linux)', () => {
 
   it('toggles mode on Ctrl+E (Windows/Linux)', async () => {
     const props = createDefaultProps({ mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
     fireEvent.keyDown(textarea, { key: 'e', ctrlKey: true });
@@ -1974,7 +1994,7 @@ describe('Control Key Support (Windows/Linux)', () => {
 
   it('opens search on Ctrl+F (Windows/Linux)', async () => {
     const props = createDefaultProps({ mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
     fireEvent.keyDown(textarea, { key: 'f', ctrlKey: true });
@@ -1986,7 +2006,7 @@ describe('Control Key Support (Windows/Linux)', () => {
 
   it('inserts checkbox on Ctrl+L (Windows/Linux)', async () => {
     const props = createDefaultProps({ content: '' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
     fireEvent.focus(textarea);
@@ -2016,7 +2036,7 @@ describe('Preview Mode with Search', () => {
 
   it('shows SearchHighlightedContent when searching in preview mode', async () => {
     const props = createDefaultProps({ mode: 'preview', content: 'Find this text' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const preview = screen.getByTestId('react-markdown').parentElement!;
     fireEvent.keyDown(preview, { key: 'f', metaKey: true });
@@ -2031,7 +2051,7 @@ describe('Preview Mode with Search', () => {
 
   it('toggles mode with Cmd+E from preview', async () => {
     const props = createDefaultProps({ mode: 'preview' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const preview = screen.getByTestId('react-markdown').parentElement!;
     fireEvent.keyDown(preview, { key: 'e', metaKey: true });
@@ -2056,7 +2076,7 @@ describe('Batch Run State UI', () => {
   it('shows task progress in batch run state', () => {
     const batchRunState = createBatchRunState();
     const props = createDefaultProps({ batchRunState });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Stop button should be visible
     expect(screen.getByText('Stop')).toBeInTheDocument();
@@ -2067,7 +2087,7 @@ describe('Batch Run State UI', () => {
   it('shows textarea as readonly when locked', () => {
     const batchRunState = createBatchRunState();
     const props = createDefaultProps({ batchRunState, mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
     expect(textarea).toHaveAttribute('readonly');
@@ -2090,7 +2110,7 @@ describe('Content Sync Edge Cases', () => {
 
   it('syncs content from prop when switching documents', () => {
     const props = createDefaultProps({ content: 'Doc 1 content', selectedFile: 'doc1' });
-    const { rerender } = render(<AutoRun {...props} />);
+    const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
     expect(textarea).toHaveValue('Doc 1 content');
@@ -2103,7 +2123,7 @@ describe('Content Sync Edge Cases', () => {
 
   it('does not overwrite local changes when content prop changes during editing', async () => {
     const props = createDefaultProps({ content: 'Initial' });
-    const { rerender } = render(<AutoRun {...props} />);
+    const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
     fireEvent.focus(textarea);
@@ -2136,7 +2156,7 @@ describe('Document Tree Support', () => {
       { name: 'folder', type: 'folder' as const, path: 'folder', children: [] },
     ];
     const props = createDefaultProps({ documentTree });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Document selector should be rendered
     expect(screen.getByTestId('document-selector')).toBeInTheDocument();
@@ -2160,7 +2180,7 @@ describe('Document Switching', () => {
     // With manual save model, unsaved changes are discarded when switching documents
     // Users must explicitly save before switching to preserve changes
     const props = createDefaultProps({ content: 'Initial', selectedFile: 'doc1' });
-    const { rerender } = render(<AutoRun {...props} />);
+    const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
     fireEvent.change(textarea, { target: { value: 'Changed content' } });
@@ -2180,7 +2200,7 @@ describe('Document Switching', () => {
     // A previous bug had the memo comparator missing hideTopControls
     // hideTopControls affects the top control bar visibility when folderPath is set
     const props = createDefaultProps({ hideTopControls: false, folderPath: '/test/folder' });
-    const { rerender, container } = render(<AutoRun {...props} />);
+    const { rerender, container } = renderWithProvider(<AutoRun {...props} />);
 
     await act(async () => {
       vi.advanceTimersByTime(100);
@@ -2215,7 +2235,7 @@ describe('Document Switching', () => {
       onContentChange,
     });
 
-    const { rerender } = render(<AutoRun {...props} />);
+    const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
     await act(async () => {
       vi.advanceTimersByTime(100);
@@ -2266,14 +2286,14 @@ describe('Document Tree Prop Rendering', () => {
       { name: 'Notes', type: 'file' as const, path: 'Notes.md' },
     ];
     const props = createDefaultProps({ documentTree, documentList: ['Phase-1', 'Roadmap', 'Timeline', 'Notes'] });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByTestId('document-selector')).toBeInTheDocument();
   });
 
   it('falls back to flat document list when documentTree is undefined', () => {
     const props = createDefaultProps({ documentTree: undefined, documentList: ['doc1', 'doc2', 'doc3'] });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByTestId('document-selector')).toBeInTheDocument();
     // Documents should still be available
@@ -2284,7 +2304,7 @@ describe('Document Tree Prop Rendering', () => {
   it('passes empty tree array correctly', () => {
     const documentTree: Array<{ name: string; type: 'file' | 'folder'; path: string; children?: unknown[] }> = [];
     const props = createDefaultProps({ documentTree, documentList: [] });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByTestId('document-selector')).toBeInTheDocument();
   });
@@ -2315,7 +2335,7 @@ describe('Document Tree Prop Rendering', () => {
       }
     ];
     const props = createDefaultProps({ documentTree, documentList: ['DeepDoc'] });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByTestId('document-selector')).toBeInTheDocument();
   });
@@ -2334,14 +2354,14 @@ describe('Document Tree Prop Rendering', () => {
       { name: 'AnotherRoot', type: 'file' as const, path: 'AnotherRoot.md' },
     ];
     const props = createDefaultProps({ documentTree, documentList: ['RootDoc', 'NestedDoc', 'AnotherRoot'] });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByTestId('document-selector')).toBeInTheDocument();
   });
 
   it('uses documentList when documentTree is not provided', () => {
     const props = createDefaultProps({ documentList: ['alpha', 'beta', 'gamma'] });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const select = screen.getByTestId('doc-select');
     expect(select).toContainHTML('alpha');
@@ -2365,7 +2385,7 @@ describe('hideTopControls Prop Behavior', () => {
 
   it('shows all top controls when hideTopControls is false', () => {
     const props = createDefaultProps({ hideTopControls: false });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // All control buttons should be visible
     expect(screen.getByText('Edit')).toBeInTheDocument();
@@ -2376,7 +2396,7 @@ describe('hideTopControls Prop Behavior', () => {
 
   it('hides top control buttons when hideTopControls is true', () => {
     const props = createDefaultProps({ hideTopControls: true });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Top control bar buttons should be hidden
     expect(screen.queryByText('Edit')).not.toBeInTheDocument();
@@ -2387,7 +2407,7 @@ describe('hideTopControls Prop Behavior', () => {
 
   it('still shows document selector when hideTopControls is true', () => {
     const props = createDefaultProps({ hideTopControls: true });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Document selector should still be visible
     expect(screen.getByTestId('document-selector')).toBeInTheDocument();
@@ -2395,7 +2415,7 @@ describe('hideTopControls Prop Behavior', () => {
 
   it('still shows content area when hideTopControls is true', () => {
     const props = createDefaultProps({ hideTopControls: true, content: 'Test content' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Content should still be visible
     expect(screen.getByRole('textbox')).toBeInTheDocument();
@@ -2405,7 +2425,7 @@ describe('hideTopControls Prop Behavior', () => {
   it('hides expand button when hideTopControls is true', () => {
     const onExpand = vi.fn();
     const props = createDefaultProps({ hideTopControls: true, onExpand });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Expand button should not be visible when hideTopControls is true
     expect(screen.queryByTitle(/Expand to full screen/)).not.toBeInTheDocument();
@@ -2414,7 +2434,7 @@ describe('hideTopControls Prop Behavior', () => {
   it('shows expand button when hideTopControls is false and onExpand is provided', () => {
     const onExpand = vi.fn();
     const props = createDefaultProps({ hideTopControls: false, onExpand });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Expand button should be visible
     expect(screen.getByTitle(/Expand to full screen/)).toBeInTheDocument();
@@ -2422,7 +2442,7 @@ describe('hideTopControls Prop Behavior', () => {
 
   it('hides image upload button when hideTopControls is true', () => {
     const props = createDefaultProps({ hideTopControls: true, mode: 'edit' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Image upload button should not be visible
     expect(screen.queryByTitle('Add image (or paste from clipboard)')).not.toBeInTheDocument();
@@ -2431,7 +2451,7 @@ describe('hideTopControls Prop Behavior', () => {
   it('keyboard shortcuts still work when hideTopControls is true', async () => {
     const onModeChange = vi.fn();
     const props = createDefaultProps({ hideTopControls: true, mode: 'edit', onModeChange });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Cmd+E should still toggle mode
     const textarea = screen.getByRole('textbox');
@@ -2442,7 +2462,7 @@ describe('hideTopControls Prop Behavior', () => {
 
   it('editing still works when hideTopControls is true', async () => {
     const props = createDefaultProps({ hideTopControls: true, content: '' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
     fireEvent.change(textarea, { target: { value: 'New content typed' } });
@@ -2452,7 +2472,7 @@ describe('hideTopControls Prop Behavior', () => {
 
   it('Save/Revert buttons still appear when dirty with hideTopControls true', async () => {
     const props = createDefaultProps({ hideTopControls: true, content: 'Initial' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
     fireEvent.change(textarea, { target: { value: 'Modified content' } });
@@ -2464,7 +2484,7 @@ describe('hideTopControls Prop Behavior', () => {
 
   it('hideTopControls has no effect when folderPath is null', () => {
     const props = createDefaultProps({ hideTopControls: true, folderPath: null });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Only the "Select Auto Run Folder" button should be visible
     expect(screen.getByText('Select Auto Run Folder')).toBeInTheDocument();
@@ -2488,7 +2508,7 @@ describe('Template Autocomplete Integration', () => {
 
   it('updates content when typing in textarea via autocomplete handler', async () => {
     const props = createDefaultProps({ content: '' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
     fireEvent.change(textarea, { target: { value: 'Hello world' } });
@@ -2498,7 +2518,7 @@ describe('Template Autocomplete Integration', () => {
 
   it('handles typing template variable trigger {{', async () => {
     const props = createDefaultProps({ content: '' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
     fireEvent.change(textarea, { target: { value: '{{' } });
@@ -2509,14 +2529,14 @@ describe('Template Autocomplete Integration', () => {
 
   it('shows placeholder text mentioning template variables', () => {
     const props = createDefaultProps({ content: '' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByPlaceholderText(/type \{\{ for variables/)).toBeInTheDocument();
   });
 
   it('maintains cursor position after content change', async () => {
     const props = createDefaultProps({ content: 'Hello World' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
     fireEvent.focus(textarea);
@@ -2533,7 +2553,7 @@ describe('Template Autocomplete Integration', () => {
 
   it('content changes are not blocked by autocomplete', async () => {
     const props = createDefaultProps({ content: 'Initial' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
 
@@ -2550,7 +2570,7 @@ describe('Template Autocomplete Integration', () => {
 
   it('handles partial template variable typing', async () => {
     const props = createDefaultProps({ content: '' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
 
@@ -2567,7 +2587,7 @@ describe('Template Autocomplete Integration', () => {
 
   it('handles complete template variable syntax', async () => {
     const props = createDefaultProps({ content: '' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
 
@@ -2577,7 +2597,7 @@ describe('Template Autocomplete Integration', () => {
 
   it('autocomplete does not interfere with normal text input', async () => {
     const props = createDefaultProps({ content: '' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
 
@@ -2588,7 +2608,7 @@ describe('Template Autocomplete Integration', () => {
 
   it('handles Tab key insertion (not autocomplete selection)', async () => {
     const props = createDefaultProps({ content: 'Line1' });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
     fireEvent.focus(textarea);
@@ -2623,7 +2643,7 @@ describe('Mermaid Diagram Rendering in Preview', () => {
   it('displays mermaid code block content in preview mode', () => {
     const mermaidContent = '```mermaid\ngraph TD\nA --> B\n```';
     const props = createDefaultProps({ mode: 'preview', content: mermaidContent });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // Content is displayed via mocked ReactMarkdown
     expect(screen.getByTestId('react-markdown')).toBeInTheDocument();
@@ -2634,7 +2654,7 @@ describe('Mermaid Diagram Rendering in Preview', () => {
   it('displays flowchart mermaid content in preview', () => {
     const mermaidContent = '```mermaid\nflowchart LR\n  A[Start] --> B{Decision}\n```';
     const props = createDefaultProps({ mode: 'preview', content: mermaidContent });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByTestId('react-markdown')).toHaveTextContent('flowchart LR');
   });
@@ -2642,7 +2662,7 @@ describe('Mermaid Diagram Rendering in Preview', () => {
   it('displays sequence diagram mermaid content in preview', () => {
     const mermaidContent = '```mermaid\nsequenceDiagram\n  Alice->>Bob: Hello\n```';
     const props = createDefaultProps({ mode: 'preview', content: mermaidContent });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByTestId('react-markdown')).toHaveTextContent('sequenceDiagram');
   });
@@ -2650,7 +2670,7 @@ describe('Mermaid Diagram Rendering in Preview', () => {
   it('displays class diagram mermaid content in preview', () => {
     const mermaidContent = '```mermaid\nclassDiagram\n  class Animal\n```';
     const props = createDefaultProps({ mode: 'preview', content: mermaidContent });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByTestId('react-markdown')).toHaveTextContent('classDiagram');
   });
@@ -2658,7 +2678,7 @@ describe('Mermaid Diagram Rendering in Preview', () => {
   it('displays state diagram mermaid content in preview', () => {
     const mermaidContent = '```mermaid\nstateDiagram-v2\n  [*] --> Still\n```';
     const props = createDefaultProps({ mode: 'preview', content: mermaidContent });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByTestId('react-markdown')).toHaveTextContent('stateDiagram-v2');
   });
@@ -2666,7 +2686,7 @@ describe('Mermaid Diagram Rendering in Preview', () => {
   it('displays gantt chart mermaid content in preview', () => {
     const mermaidContent = '```mermaid\ngantt\n  title A Gantt Diagram\n```';
     const props = createDefaultProps({ mode: 'preview', content: mermaidContent });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByTestId('react-markdown')).toHaveTextContent('gantt');
   });
@@ -2674,7 +2694,7 @@ describe('Mermaid Diagram Rendering in Preview', () => {
   it('displays pie chart mermaid content in preview', () => {
     const mermaidContent = '```mermaid\npie title Pets\n  "Dogs" : 386\n```';
     const props = createDefaultProps({ mode: 'preview', content: mermaidContent });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByTestId('react-markdown')).toHaveTextContent('pie');
   });
@@ -2682,7 +2702,7 @@ describe('Mermaid Diagram Rendering in Preview', () => {
   it('shows mermaid content in textarea in edit mode', () => {
     const mermaidContent = '```mermaid\ngraph TD\nA --> B\n```';
     const props = createDefaultProps({ mode: 'edit', content: mermaidContent });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // In edit mode, raw text is shown in textarea
     expect(screen.getByRole('textbox')).toHaveValue(mermaidContent);
@@ -2706,7 +2726,7 @@ Alice->>Bob: Hi
 \`\`\`
 `;
     const props = createDefaultProps({ mode: 'preview', content });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const markdown = screen.getByTestId('react-markdown');
     expect(markdown).toHaveTextContent('graph TD');
@@ -2716,7 +2736,7 @@ Alice->>Bob: Hi
   it('displays javascript code block content in preview', () => {
     const content = '```javascript\nconst x = 1;\n```';
     const props = createDefaultProps({ mode: 'preview', content });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByTestId('react-markdown')).toHaveTextContent('const x = 1');
   });
@@ -2724,7 +2744,7 @@ Alice->>Bob: Hi
   it('displays mermaid block with extra whitespace', () => {
     const mermaidContent = '```mermaid   \n  graph TD  \n  A --> B  \n```';
     const props = createDefaultProps({ mode: 'preview', content: mermaidContent });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByTestId('react-markdown')).toHaveTextContent('graph TD');
   });
@@ -2742,7 +2762,7 @@ A --> B
 - List item
 `;
     const props = createDefaultProps({ mode: 'preview', content });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByTestId('react-markdown')).toHaveTextContent('Title');
     expect(screen.getByTestId('react-markdown')).toHaveTextContent('Some text');
@@ -2755,7 +2775,7 @@ A --> B
     const props = createDefaultProps({ mode: 'preview', content: mermaidContent });
 
     // Should render without crashing
-    expect(() => render(<AutoRun {...props} />)).not.toThrow();
+    expect(() => renderWithProvider(<AutoRun {...props} />)).not.toThrow();
     expect(screen.getByTestId('react-markdown')).toBeInTheDocument();
   });
 
@@ -2765,7 +2785,7 @@ A --> B
     // The mock was configured to render: <div data-testid="mermaid-renderer">{chart}</div>
     const mermaidContent = '```mermaid\ngraph TD\n```';
     const props = createDefaultProps({ mode: 'preview', content: mermaidContent });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // The mocked ReactMarkdown just renders children as text
     // The actual MermaidRenderer integration is tested via the component's
@@ -2789,7 +2809,7 @@ describe('Content Versioning and External Changes', () => {
 
   it('force-syncs content when contentVersion increments', async () => {
     const props = createDefaultProps({ content: 'Original', contentVersion: 1 });
-    const { rerender } = render(<AutoRun {...props} />);
+    const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
     expect(textarea).toHaveValue('Original');
@@ -2811,7 +2831,7 @@ describe('Content Versioning and External Changes', () => {
 
   it('preserves local content when only content prop changes (no version change)', async () => {
     const props = createDefaultProps({ content: 'Original', contentVersion: 1 });
-    const { rerender } = render(<AutoRun {...props} />);
+    const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
     fireEvent.change(textarea, { target: { value: 'User local edits' } });
@@ -2830,14 +2850,14 @@ describe('Content Versioning and External Changes', () => {
 
   it('handles contentVersion of 0 correctly', () => {
     const props = createDefaultProps({ content: 'Test', contentVersion: 0 });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByRole('textbox')).toHaveValue('Test');
   });
 
   it('handles large contentVersion increments', async () => {
     const props = createDefaultProps({ content: 'V1', contentVersion: 1 });
-    const { rerender } = render(<AutoRun {...props} />);
+    const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByRole('textbox')).toHaveValue('V1');
 
@@ -2853,7 +2873,7 @@ describe('Content Versioning and External Changes', () => {
 
   it('resets dirty state when external change arrives', async () => {
     const props = createDefaultProps({ content: 'Original', contentVersion: 1 });
-    const { rerender } = render(<AutoRun {...props} />);
+    const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
     const textarea = screen.getByRole('textbox');
     fireEvent.change(textarea, { target: { value: 'Dirty content' } });
@@ -2889,7 +2909,7 @@ describe('Task Count Display', () => {
   it('displays task count when content has unchecked tasks', () => {
     const content = '- [ ] Task 1\n- [ ] Task 2\n- [ ] Task 3';
     const props = createDefaultProps({ content });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByText(/0 of 3 tasks completed/)).toBeInTheDocument();
   });
@@ -2897,7 +2917,7 @@ describe('Task Count Display', () => {
   it('displays task count with completed tasks', () => {
     const content = '- [x] Done\n- [ ] Not done\n- [x] Also done';
     const props = createDefaultProps({ content });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByText(/2 of 3 tasks completed/)).toBeInTheDocument();
   });
@@ -2905,7 +2925,7 @@ describe('Task Count Display', () => {
   it('displays singular task text for single task', () => {
     const content = '- [ ] Single task';
     const props = createDefaultProps({ content });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByText(/0 of 1 task completed/)).toBeInTheDocument();
   });
@@ -2913,7 +2933,7 @@ describe('Task Count Display', () => {
   it('shows success color when all tasks completed', () => {
     const content = '- [x] Done 1\n- [x] Done 2';
     const props = createDefaultProps({ content });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     const taskCountEl = screen.getByText(/2 of 2 tasks completed/);
     expect(taskCountEl).toHaveStyle({ color: createMockTheme().colors.success });
@@ -2922,7 +2942,7 @@ describe('Task Count Display', () => {
   it('does not show task count when no tasks in content', () => {
     const content = 'Just some regular text without any tasks.';
     const props = createDefaultProps({ content });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.queryByText(/tasks completed/)).not.toBeInTheDocument();
   });
@@ -2930,7 +2950,7 @@ describe('Task Count Display', () => {
   it('handles nested task lists', () => {
     const content = '- [ ] Task 1\n  - [x] Subtask 1\n  - [ ] Subtask 2\n- [x] Task 2';
     const props = createDefaultProps({ content });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByText(/2 of 4 tasks completed/)).toBeInTheDocument();
   });
@@ -2938,14 +2958,14 @@ describe('Task Count Display', () => {
   it('handles mixed markdown with tasks', () => {
     const content = '# Title\n\nSome text\n\n- [x] Task\n- [ ] Another task\n\nMore text';
     const props = createDefaultProps({ content });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByText(/1 of 2 tasks completed/)).toBeInTheDocument();
   });
 
   it('updates task count as content changes', async () => {
     const props = createDefaultProps({ content: '- [ ] Task 1\n- [ ] Task 2' });
-    const { rerender } = render(<AutoRun {...props} />);
+    const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByText(/0 of 2 tasks completed/)).toBeInTheDocument();
 
@@ -2960,7 +2980,7 @@ describe('Task Count Display', () => {
   it('handles asterisk-based task lists', () => {
     const content = '* [ ] Task with asterisk\n* [x] Done with asterisk';
     const props = createDefaultProps({ content });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByText(/1 of 2 tasks completed/)).toBeInTheDocument();
   });
@@ -2982,14 +3002,14 @@ describe('Expand Button Behavior', () => {
   it('shows expand button when onExpand is provided', () => {
     const onExpand = vi.fn();
     const props = createDefaultProps({ onExpand });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.getByTitle(/Expand to full screen/)).toBeInTheDocument();
   });
 
   it('does not show expand button when onExpand is not provided', () => {
     const props = createDefaultProps({ onExpand: undefined });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     expect(screen.queryByTitle(/Expand to full screen/)).not.toBeInTheDocument();
   });
@@ -2997,7 +3017,7 @@ describe('Expand Button Behavior', () => {
   it('calls onExpand when expand button is clicked', () => {
     const onExpand = vi.fn();
     const props = createDefaultProps({ onExpand });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     fireEvent.click(screen.getByTitle(/Expand to full screen/));
     expect(onExpand).toHaveBeenCalledTimes(1);
@@ -3009,7 +3029,7 @@ describe('Expand Button Behavior', () => {
       toggleAutoRunExpanded: { keys: ['Meta', 'Shift', 'e'], description: 'Toggle expanded' }
     };
     const props = createDefaultProps({ onExpand, shortcuts });
-    render(<AutoRun {...props} />);
+    renderWithProvider(<AutoRun {...props} />);
 
     // The title should include the shortcut. formatShortcutKeys converts keys to display format.
     // In test environment (non-Mac), it formats as 'Ctrl+Shift+E'

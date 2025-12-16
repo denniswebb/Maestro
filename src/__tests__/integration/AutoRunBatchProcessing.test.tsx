@@ -14,7 +14,25 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import React, { createRef } from 'react';
 import { AutoRun, AutoRunHandle } from '../../renderer/components/AutoRun';
+import { LayerStackProvider } from '../../renderer/contexts/LayerStackContext';
 import type { Theme, BatchRunState, SessionState } from '../../renderer/types';
+
+// Helper to render with LayerStackProvider (required by AutoRunSearchBar)
+const renderWithProvider = (ui: React.ReactElement) => {
+  const result = render(
+    <LayerStackProvider>
+      {ui}
+    </LayerStackProvider>
+  );
+  return {
+    ...result,
+    rerender: (newUi: React.ReactElement) => result.rerender(
+      <LayerStackProvider>
+        {newUi}
+      </LayerStackProvider>
+    ),
+  };
+};
 
 // Mock external dependencies
 vi.mock('react-markdown', () => ({
@@ -205,7 +223,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('disables textarea when batch run is active', () => {
       const batchRunState = createBatchRunState({ isRunning: true });
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       expect(textarea).toHaveAttribute('readonly');
@@ -214,7 +232,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('shows locked styling on textarea during batch run', () => {
       const batchRunState = createBatchRunState({ isRunning: true });
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       expect(textarea).toHaveClass('cursor-not-allowed');
@@ -224,7 +242,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('prevents keyboard shortcuts like Cmd+L from working during batch run', () => {
       const batchRunState = createBatchRunState({ isRunning: true });
       const props = createDefaultProps({ batchRunState, content: 'Test content' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       fireEvent.keyDown(textarea, { key: 'l', metaKey: true });
@@ -236,7 +254,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('disables the Edit button during batch run', () => {
       const batchRunState = createBatchRunState({ isRunning: true });
       const props = createDefaultProps({ batchRunState, mode: 'preview' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const editButton = screen.getByTitle(/Editing disabled while Auto Run active/i);
       expect(editButton).toBeDisabled();
@@ -245,7 +263,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('shows Stop button instead of Run button during batch run', () => {
       const batchRunState = createBatchRunState({ isRunning: true });
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByRole('button', { name: /stop/i })).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /^run$/i })).not.toBeInTheDocument();
@@ -253,7 +271,7 @@ describe('AutoRun + Batch Processing Integration', () => {
 
     it('allows editing when batch run is not active', () => {
       const props = createDefaultProps();
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       expect(textarea).not.toHaveAttribute('readonly');
@@ -262,7 +280,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('does not lock editing when batchRunState.isRunning is false', () => {
       const batchRunState = createBatchRunState({ isRunning: false });
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       expect(textarea).not.toHaveAttribute('readonly');
@@ -274,7 +292,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('automatically switches to preview mode when batch run starts', async () => {
       const onModeChange = vi.fn();
       const props = createDefaultProps({ mode: 'edit', onModeChange });
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Verify initially in edit mode
       expect(screen.getByRole('textbox')).toBeInTheDocument();
@@ -294,7 +312,7 @@ describe('AutoRun + Batch Processing Integration', () => {
       // Note: Component switches to preview internally, but we test that textarea is readonly
       // which is the locked state indicator
       const props = createDefaultProps({ batchRunState, mode: 'edit' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Textarea should be locked (readonly)
       const textarea = screen.getByRole('textbox');
@@ -304,7 +322,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('shows preview-selected styling during batch run', () => {
       const batchRunState = createBatchRunState({ isRunning: true });
       const props = createDefaultProps({ batchRunState, mode: 'preview' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Preview button should be styled as selected when locked (has font-semibold class)
       const previewButton = screen.getByRole('button', { name: /preview/i });
@@ -318,7 +336,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('restores edit mode after batch run ends if it was in edit mode before', async () => {
       const onModeChange = vi.fn();
       const props = createDefaultProps({ mode: 'edit', onModeChange });
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Start batch run
       const batchRunStateRunning = createBatchRunState({ isRunning: true });
@@ -342,7 +360,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('keeps preview mode after batch run ends if it was in preview mode before', async () => {
       const onModeChange = vi.fn();
       const props = createDefaultProps({ mode: 'preview', onModeChange });
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Start batch run
       const batchRunStateRunning = createBatchRunState({ isRunning: true });
@@ -360,7 +378,7 @@ describe('AutoRun + Batch Processing Integration', () => {
 
     it('unlocks textarea after batch run ends', async () => {
       const props = createDefaultProps();
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Start batch run
       const batchRunStateRunning = createBatchRunState({ isRunning: true });
@@ -379,7 +397,7 @@ describe('AutoRun + Batch Processing Integration', () => {
 
     it('re-enables Edit button after batch run ends', async () => {
       const props = createDefaultProps({ mode: 'preview' });
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Start batch run
       const batchRunStateRunning = createBatchRunState({ isRunning: true });
@@ -406,7 +424,7 @@ describe('AutoRun + Batch Processing Integration', () => {
 - [ ] Task 2
 - [ ] Task 3`;
       const props = createDefaultProps({ batchRunState, content: initialContent, mode: 'preview' });
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Verify initial task count (3 tasks, 0 completed)
       expect(screen.getByText(/0 of 3 tasks completed/i)).toBeInTheDocument();
@@ -432,7 +450,7 @@ describe('AutoRun + Batch Processing Integration', () => {
 - [ ] Task 3`,
         mode: 'preview'
       });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByText(/2 of 3 tasks completed/i)).toBeInTheDocument();
     });
@@ -446,7 +464,7 @@ describe('AutoRun + Batch Processing Integration', () => {
 - [x] Task 3`,
         mode: 'preview'
       });
-      const { container } = render(<AutoRun {...props} />);
+      const { container } = renderWithProvider(<AutoRun {...props} />);
 
       // Find the task count element and verify it has success color
       const taskCountElement = screen.getByText(/3 of 3 tasks completed/i);
@@ -461,7 +479,7 @@ describe('AutoRun + Batch Processing Integration', () => {
         contentVersion: 0,
         mode: 'preview'
       });
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Update with new version
       rerender(<AutoRun {...props} content="- [x] Initial task" contentVersion={1} />);
@@ -478,7 +496,7 @@ describe('AutoRun + Batch Processing Integration', () => {
         content: '# Notes\n\nJust some text, no tasks.',
         mode: 'preview'
       });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Should not display task count when there are no tasks
       expect(screen.queryByText(/tasks? completed/i)).not.toBeInTheDocument();
@@ -489,7 +507,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('shows Stop button when batch run is active', () => {
       const batchRunState = createBatchRunState({ isRunning: true });
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByRole('button', { name: /stop/i })).toBeInTheDocument();
     });
@@ -498,7 +516,7 @@ describe('AutoRun + Batch Processing Integration', () => {
       const onStopBatchRun = vi.fn();
       const batchRunState = createBatchRunState({ isRunning: true });
       const props = createDefaultProps({ batchRunState, onStopBatchRun });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       fireEvent.click(screen.getByRole('button', { name: /stop/i }));
 
@@ -508,7 +526,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('shows "Stopping..." state when isStopping is true', () => {
       const batchRunState = createBatchRunState({ isRunning: true, isStopping: true });
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByRole('button', { name: /stopping/i })).toBeInTheDocument();
     });
@@ -516,7 +534,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('disables Stop button while stopping', () => {
       const batchRunState = createBatchRunState({ isRunning: true, isStopping: true });
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const stopButton = screen.getByRole('button', { name: /stopping/i });
       expect(stopButton).toBeDisabled();
@@ -525,7 +543,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('shows loading spinner while stopping', () => {
       const batchRunState = createBatchRunState({ isRunning: true, isStopping: true });
       const props = createDefaultProps({ batchRunState });
-      const { container } = render(<AutoRun {...props} />);
+      const { container } = renderWithProvider(<AutoRun {...props} />);
 
       // Look for the animate-spin class which indicates the loading spinner
       const spinner = container.querySelector('.animate-spin');
@@ -535,7 +553,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('shows Run button after batch run is stopped', () => {
       const batchRunState = createBatchRunState({ isRunning: false });
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       expect(screen.getByRole('button', { name: /^run$/i })).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /stop/i })).not.toBeInTheDocument();
@@ -543,7 +561,7 @@ describe('AutoRun + Batch Processing Integration', () => {
 
     it('Run button is disabled when agent is busy', () => {
       const props = createDefaultProps({ sessionState: 'busy' as SessionState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Use title to get specific Run button (avoids matching "Auto Run" in other text)
       const runButton = screen.getByTitle(/Cannot run while agent is thinking/i);
@@ -552,7 +570,7 @@ describe('AutoRun + Batch Processing Integration', () => {
 
     it('Run button is disabled when agent is connecting', () => {
       const props = createDefaultProps({ sessionState: 'connecting' as SessionState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Use title to get specific Run button (avoids matching "Auto Run" in other text)
       const runButton = screen.getByTitle(/Cannot run while agent is thinking/i);
@@ -564,7 +582,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('disables image upload button during batch run', () => {
       const batchRunState = createBatchRunState({ isRunning: true });
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Image button should be disabled/ghosted
       const imageButton = screen.getByTitle(/Switch to Edit mode to add images/i);
@@ -573,7 +591,7 @@ describe('AutoRun + Batch Processing Integration', () => {
 
     it('enables image upload button when batch run ends', () => {
       const props = createDefaultProps();
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const imageButton = screen.getByTitle(/Add image \(or paste from clipboard\)/i);
       expect(imageButton).not.toBeDisabled();
@@ -582,7 +600,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('shows correct tooltip for image button during batch run', () => {
       const batchRunState = createBatchRunState({ isRunning: true });
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const imageButton = screen.getByTitle(/Switch to Edit mode to add images/i);
       expect(imageButton).toBeInTheDocument();
@@ -594,7 +612,7 @@ describe('AutoRun + Batch Processing Integration', () => {
       const ref = createRef<AutoRunHandle>();
       const batchRunState = createBatchRunState({ isRunning: true });
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} ref={ref} />);
+      renderWithProvider(<AutoRun {...props} ref={ref} />);
 
       // Since editing is locked, there should be no dirty state
       expect(ref.current?.isDirty()).toBe(false);
@@ -605,7 +623,7 @@ describe('AutoRun + Batch Processing Integration', () => {
       const onModeChange = vi.fn();
       const batchRunState = createBatchRunState({ isRunning: true });
       const props = createDefaultProps({ batchRunState, onModeChange, mode: 'edit' });
-      render(<AutoRun {...props} ref={ref} />);
+      renderWithProvider(<AutoRun {...props} ref={ref} />);
 
       // Call switchMode via ref
       act(() => {
@@ -619,7 +637,7 @@ describe('AutoRun + Batch Processing Integration', () => {
       const ref = createRef<AutoRunHandle>();
       const batchRunState = createBatchRunState({ isRunning: true });
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} ref={ref} />);
+      renderWithProvider(<AutoRun {...props} ref={ref} />);
 
       // Should not throw
       act(() => {
@@ -635,7 +653,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('handles transition from idle to running', async () => {
       const onModeChange = vi.fn();
       const props = createDefaultProps({ mode: 'edit', onModeChange });
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Initial state - editing enabled
       expect(screen.getByRole('textbox')).not.toHaveAttribute('readonly');
@@ -651,7 +669,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('handles transition from running to stopping', async () => {
       const runningState = createBatchRunState({ isRunning: true });
       const props = createDefaultProps({ batchRunState: runningState });
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Verify Stop button
       expect(screen.getByRole('button', { name: /stop/i })).toBeInTheDocument();
@@ -667,7 +685,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('handles transition from stopping to stopped', async () => {
       const stoppingState = createBatchRunState({ isRunning: true, isStopping: true });
       const props = createDefaultProps({ batchRunState: stoppingState });
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Verify Stopping... button
       expect(screen.getByRole('button', { name: /stopping/i })).toBeInTheDocument();
@@ -682,7 +700,7 @@ describe('AutoRun + Batch Processing Integration', () => {
 
     it('handles undefined batchRunState gracefully', () => {
       const props = createDefaultProps({ batchRunState: undefined });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Should render normally with Run button
       expect(screen.getByRole('button', { name: /^run$/i })).toBeInTheDocument();
@@ -694,7 +712,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('calls onOpenBatchRunner when Run button is clicked', () => {
       const onOpenBatchRunner = vi.fn();
       const props = createDefaultProps({ onOpenBatchRunner });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       fireEvent.click(screen.getByRole('button', { name: /^run$/i }));
 
@@ -704,7 +722,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('saves dirty content before opening batch runner', async () => {
       const onOpenBatchRunner = vi.fn();
       const props = createDefaultProps({ onOpenBatchRunner, content: 'Initial' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Make content dirty
       const textarea = screen.getByRole('textbox');
@@ -724,7 +742,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('does not save clean content before opening batch runner', async () => {
       const onOpenBatchRunner = vi.fn();
       const props = createDefaultProps({ onOpenBatchRunner });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Click Run without modifying content
       fireEvent.click(screen.getByRole('button', { name: /^run$/i }));
@@ -736,7 +754,7 @@ describe('AutoRun + Batch Processing Integration', () => {
 
     it('shows tooltip explaining why Run is disabled when agent is busy', () => {
       const props = createDefaultProps({ sessionState: 'busy' as SessionState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Use title to get specific Run button (avoids matching "Auto Run" in other text)
       const runButton = screen.getByTitle('Cannot run while agent is thinking');
@@ -748,7 +766,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('Cmd+S does not trigger save during batch run (locked)', () => {
       const batchRunState = createBatchRunState({ isRunning: true });
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       fireEvent.keyDown(textarea, { key: 's', metaKey: true });
@@ -761,7 +779,7 @@ describe('AutoRun + Batch Processing Integration', () => {
       const onModeChange = vi.fn();
       const batchRunState = createBatchRunState({ isRunning: true });
       const props = createDefaultProps({ batchRunState, mode: 'edit', onModeChange });
-      const { container } = render(<AutoRun {...props} />);
+      const { container } = renderWithProvider(<AutoRun {...props} />);
 
       // Find the container div
       const containerDiv = container.querySelector('[tabIndex="-1"]');
@@ -773,7 +791,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('Cmd+F opens search during batch run', () => {
       const batchRunState = createBatchRunState({ isRunning: true });
       const props = createDefaultProps({ batchRunState, mode: 'preview' });
-      const { container } = render(<AutoRun {...props} />);
+      const { container } = renderWithProvider(<AutoRun {...props} />);
 
       // Find the container div
       const containerDiv = container.querySelector('[tabIndex="-1"]');
@@ -788,7 +806,7 @@ describe('AutoRun + Batch Processing Integration', () => {
     it('shows warning border color on textarea during batch run', () => {
       const batchRunState = createBatchRunState({ isRunning: true });
       const props = createDefaultProps({ batchRunState });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox');
       expect(textarea).toHaveStyle({ borderColor: createMockTheme().colors.warning });
@@ -801,7 +819,7 @@ describe('AutoRun + Batch Processing Integration', () => {
         currentDocumentIndex: 0
       });
       const props = createDefaultProps({ batchRunState, selectedFile: 'Phase 1' });
-      render(<AutoRun {...props} />);
+      renderWithProvider(<AutoRun {...props} />);
 
       // Document selector should show current document
       expect(screen.getByTestId('doc-select')).toHaveValue('Phase 1');

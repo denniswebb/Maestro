@@ -13,9 +13,27 @@ import { render, screen, fireEvent, cleanup, act } from '@testing-library/react'
 import React from 'react';
 import { renderHook } from '@testing-library/react';
 import { AutoRun } from '../../renderer/components/AutoRun';
+import { LayerStackProvider } from '../../renderer/contexts/LayerStackContext';
 import { imageCache, useAutoRunImageHandling } from '../../renderer/hooks/useAutoRunImageHandling';
 import { useAutoRunUndo } from '../../renderer/hooks/useAutoRunUndo';
 import type { Theme, BatchRunState, SessionState } from '../../renderer/types';
+
+// Helper to render with LayerStackProvider (required by AutoRunSearchBar)
+const renderWithProvider = (ui: React.ReactElement) => {
+  const result = render(
+    <LayerStackProvider>
+      {ui}
+    </LayerStackProvider>
+  );
+  return {
+    ...result,
+    rerender: (newUi: React.ReactElement) => result.rerender(
+      <LayerStackProvider>
+        {newUi}
+      </LayerStackProvider>
+    ),
+  };
+};
 
 // Mock dependencies
 vi.mock('react-markdown', () => ({
@@ -193,13 +211,13 @@ describe('AutoRun Memory Leak Detection', () => {
       const props = createDefaultProps();
 
       for (let i = 0; i < 50; i++) {
-        const { unmount } = render(<AutoRun {...props} />);
+        const { unmount } = renderWithProvider(<AutoRun {...props} />);
         expect(screen.getByRole('textbox')).toBeInTheDocument();
         unmount();
       }
 
       // Final mount should work correctly
-      const { unmount } = render(<AutoRun {...props} />);
+      const { unmount } = renderWithProvider(<AutoRun {...props} />);
       expect(screen.getByRole('textbox')).toBeInTheDocument();
       unmount();
     });
@@ -208,12 +226,12 @@ describe('AutoRun Memory Leak Detection', () => {
       const props = createDefaultProps();
 
       for (let i = 0; i < 100; i++) {
-        const { unmount } = render(<AutoRun {...props} />);
+        const { unmount } = renderWithProvider(<AutoRun {...props} />);
         unmount();
       }
 
       // Final mount works
-      const { unmount } = render(<AutoRun {...props} />);
+      const { unmount } = renderWithProvider(<AutoRun {...props} />);
       expect(screen.getByRole('textbox')).toBeInTheDocument();
       unmount();
     });
@@ -221,7 +239,7 @@ describe('AutoRun Memory Leak Detection', () => {
     it('cleans up event listeners on unmount', () => {
       const props = createDefaultProps();
 
-      const { unmount } = render(<AutoRun {...props} />);
+      const { unmount } = renderWithProvider(<AutoRun {...props} />);
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
 
@@ -249,7 +267,7 @@ describe('AutoRun Memory Leak Detection', () => {
     it('cleans up timers on unmount', async () => {
       const props = createDefaultProps();
 
-      const { unmount } = render(<AutoRun {...props} />);
+      const { unmount } = renderWithProvider(<AutoRun {...props} />);
 
       // Trigger timer-based operations (undo snapshot scheduling)
       const textarea = screen.getByRole('textbox');
@@ -271,7 +289,7 @@ describe('AutoRun Memory Leak Detection', () => {
 
       // Rapid mount/unmount with async operations
       for (let i = 0; i < 20; i++) {
-        const { unmount } = render(<AutoRun {...props} sessionId={`session-${i}`} />);
+        const { unmount } = renderWithProvider(<AutoRun {...props} sessionId={`session-${i}`} />);
 
         // Trigger some async operations
         const textarea = screen.getByRole('textbox');
@@ -291,7 +309,7 @@ describe('AutoRun Memory Leak Detection', () => {
 
       for (let i = 0; i < 30; i++) {
         const mode = i % 2 === 0 ? 'edit' : 'preview';
-        const { unmount } = render(<AutoRun {...props} mode={mode as 'edit' | 'preview'} />);
+        const { unmount } = renderWithProvider(<AutoRun {...props} mode={mode as 'edit' | 'preview'} />);
 
         if (mode === 'edit') {
           expect(screen.getByRole('textbox')).toBeInTheDocument();
@@ -310,7 +328,7 @@ describe('AutoRun Memory Leak Detection', () => {
         const content = generateLargeContent(size);
         const props = createDefaultProps({ content });
 
-        const { unmount } = render(<AutoRun {...props} />);
+        const { unmount } = renderWithProvider(<AutoRun {...props} />);
         expect(screen.getByRole('textbox')).toBeInTheDocument();
         unmount();
       }
@@ -328,7 +346,7 @@ describe('AutoRun Memory Leak Detection', () => {
       const props = createDefaultProps();
 
       for (let i = 0; i < 10; i++) {
-        const { unmount } = render(<AutoRun {...props} />);
+        const { unmount } = renderWithProvider(<AutoRun {...props} />);
 
         // Wait for async image loading
         await act(async () => {
@@ -352,7 +370,7 @@ describe('AutoRun Memory Leak Detection', () => {
       const props = createDefaultProps({ batchRunState, mode: 'preview' });
 
       for (let i = 0; i < 20; i++) {
-        const { unmount } = render(<AutoRun {...props} />);
+        const { unmount } = renderWithProvider(<AutoRun {...props} />);
         unmount();
       }
     });
@@ -361,7 +379,7 @@ describe('AutoRun Memory Leak Detection', () => {
       const props = createDefaultProps();
 
       for (let i = 0; i < 10; i++) {
-        const { unmount } = render(<AutoRun {...props} />);
+        const { unmount } = renderWithProvider(<AutoRun {...props} />);
 
         // Open search
         const textarea = screen.getByRole('textbox');
@@ -837,7 +855,7 @@ describe('AutoRun Memory Leak Detection', () => {
       const props = createDefaultProps({ content: largeContent });
 
       for (let i = 0; i < 50; i++) {
-        const { unmount } = render(<AutoRun {...props} />);
+        const { unmount } = renderWithProvider(<AutoRun {...props} />);
         expect(screen.getByRole('textbox')).toBeInTheDocument();
         unmount();
       }
@@ -854,7 +872,7 @@ describe('AutoRun Memory Leak Detection', () => {
             content: `# ${sessionId} Content cycle ${cycle}`,
           });
 
-          const { unmount } = render(<AutoRun {...props} />);
+          const { unmount } = renderWithProvider(<AutoRun {...props} />);
 
           // Make some edits to build undo history
           const textarea = screen.getByRole('textbox');
@@ -869,7 +887,7 @@ describe('AutoRun Memory Leak Detection', () => {
 
       // Verify component still works after all cycles
       const props = createDefaultProps();
-      const { unmount } = render(<AutoRun {...props} />);
+      const { unmount } = renderWithProvider(<AutoRun {...props} />);
       expect(screen.getByRole('textbox')).toBeInTheDocument();
       unmount();
 
@@ -879,7 +897,7 @@ describe('AutoRun Memory Leak Detection', () => {
 
     it('handles rapid content changes with undo stack', async () => {
       const props = createDefaultProps();
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Simulate rapid content changes
       for (let i = 0; i < 100; i++) {
@@ -905,7 +923,7 @@ describe('AutoRun Memory Leak Detection', () => {
           content: `# Session ${session} Content`,
         });
 
-        const { unmount } = render(<AutoRun {...props} />);
+        const { unmount } = renderWithProvider(<AutoRun {...props} />);
 
         // Build up state
         const textarea = screen.getByRole('textbox');
@@ -919,7 +937,7 @@ describe('AutoRun Memory Leak Detection', () => {
 
       // After many sessions, everything should still work
       const finalProps = createDefaultProps();
-      const { unmount } = render(<AutoRun {...finalProps} />);
+      const { unmount } = renderWithProvider(<AutoRun {...finalProps} />);
       expect(screen.getByRole('textbox')).toBeInTheDocument();
       unmount();
     });
@@ -930,7 +948,7 @@ describe('AutoRun Memory Leak Detection', () => {
       const props = createDefaultProps();
       const ref = React.createRef<any>();
 
-      const { unmount } = render(<AutoRun {...props} ref={ref} />);
+      const { unmount } = renderWithProvider(<AutoRun {...props} ref={ref} />);
 
       expect(ref.current).not.toBeNull();
 
@@ -951,7 +969,7 @@ describe('AutoRun Memory Leak Detection', () => {
       );
 
       const props = createDefaultProps();
-      const { unmount } = render(<AutoRun {...props} />);
+      const { unmount } = renderWithProvider(<AutoRun {...props} />);
 
       // Unmount before async operation completes
       unmount();
@@ -979,7 +997,7 @@ describe('AutoRun Memory Leak Detection', () => {
       );
 
       const props = createDefaultProps();
-      const { unmount } = render(<AutoRun {...props} />);
+      const { unmount } = renderWithProvider(<AutoRun {...props} />);
 
       // Unmount immediately
       unmount();
@@ -1003,7 +1021,7 @@ describe('AutoRun Memory Leak Detection', () => {
 
     it('interval timers (if any) are cleaned up', async () => {
       const props = createDefaultProps();
-      const { unmount } = render(<AutoRun {...props} />);
+      const { unmount } = renderWithProvider(<AutoRun {...props} />);
 
       // Unmount
       unmount();
@@ -1022,7 +1040,7 @@ describe('AutoRun Memory Leak Detection', () => {
       const props = createDefaultProps({ folderPath: null });
 
       for (let i = 0; i < 20; i++) {
-        const { unmount } = render(<AutoRun {...props} />);
+        const { unmount } = renderWithProvider(<AutoRun {...props} />);
         unmount();
       }
     });
@@ -1031,7 +1049,7 @@ describe('AutoRun Memory Leak Detection', () => {
       const props = createDefaultProps({ selectedFile: null });
 
       for (let i = 0; i < 20; i++) {
-        const { unmount } = render(<AutoRun {...props} />);
+        const { unmount } = renderWithProvider(<AutoRun {...props} />);
         unmount();
       }
     });
@@ -1040,7 +1058,7 @@ describe('AutoRun Memory Leak Detection', () => {
       const props = createDefaultProps({ content: '' });
 
       for (let i = 0; i < 20; i++) {
-        const { unmount } = render(<AutoRun {...props} />);
+        const { unmount } = renderWithProvider(<AutoRun {...props} />);
         expect(screen.getByRole('textbox')).toHaveValue('');
         unmount();
       }
@@ -1050,14 +1068,14 @@ describe('AutoRun Memory Leak Detection', () => {
       const veryLongContent = generateLargeContent(1000); // 1MB
       const props = createDefaultProps({ content: veryLongContent });
 
-      const { unmount } = render(<AutoRun {...props} />);
+      const { unmount } = renderWithProvider(<AutoRun {...props} />);
       expect(screen.getByRole('textbox')).toBeInTheDocument();
       unmount();
     });
 
     it('handles rapid prop changes without memory accumulation', () => {
       const props = createDefaultProps();
-      const { rerender } = render(<AutoRun {...props} />);
+      const { rerender } = renderWithProvider(<AutoRun {...props} />);
 
       // Rapidly change multiple props
       for (let i = 0; i < 100; i++) {

@@ -14,7 +14,17 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { AutoRunSearchBar, type AutoRunSearchBarProps } from '../../../renderer/components/AutoRunSearchBar';
+import { LayerStackProvider } from '../../../renderer/contexts/LayerStackContext';
 import type { Theme } from '../../../renderer/types';
+
+// Helper to render with LayerStackProvider
+const renderWithProvider = (ui: React.ReactElement) => {
+  return render(
+    <LayerStackProvider>
+      {ui}
+    </LayerStackProvider>
+  );
+};
 
 // Mock Lucide icons
 vi.mock('lucide-react', () => ({
@@ -79,7 +89,7 @@ describe('AutoRunSearchBar', () => {
   describe('Basic Rendering', () => {
     it('should render the search input', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       expect(input).toBeInTheDocument();
@@ -87,14 +97,14 @@ describe('AutoRunSearchBar', () => {
 
     it('should render the search icon', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       expect(screen.getByTestId('search-icon')).toBeInTheDocument();
     });
 
     it('should render the close button', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       expect(screen.getByTitle('Close search (Esc)')).toBeInTheDocument();
       expect(screen.getByTestId('x-icon')).toBeInTheDocument();
@@ -102,7 +112,7 @@ describe('AutoRunSearchBar', () => {
 
     it('should display the current search query value', () => {
       const props = createDefaultProps({ searchQuery: 'test search' });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...') as HTMLInputElement;
       expect(input.value).toBe('test search');
@@ -110,7 +120,7 @@ describe('AutoRunSearchBar', () => {
 
     it('should apply theme background color to container', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const container = screen.getByPlaceholderText('Search...').closest('div');
       expect(container).toHaveStyle({ backgroundColor: '#333333' });
@@ -118,7 +128,7 @@ describe('AutoRunSearchBar', () => {
 
     it('should apply theme accent color to border', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const container = screen.getByPlaceholderText('Search...').closest('div');
       // Check that the border style includes the accent color (converted to RGB by browser)
@@ -130,7 +140,7 @@ describe('AutoRunSearchBar', () => {
 
     it('should apply theme text color to input', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       expect(input).toHaveStyle({ color: '#ffffff' });
@@ -138,7 +148,7 @@ describe('AutoRunSearchBar', () => {
 
     it('should apply theme accent color to search icon', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const searchIcon = screen.getByTestId('search-icon');
       expect(searchIcon).toHaveStyle({ color: '#0066ff' });
@@ -149,7 +159,7 @@ describe('AutoRunSearchBar', () => {
     it('should call onSearchQueryChange when typing in input', () => {
       const onSearchQueryChange = vi.fn();
       const props = createDefaultProps({ onSearchQueryChange });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       fireEvent.change(input, { target: { value: 'new search' } });
@@ -163,7 +173,7 @@ describe('AutoRunSearchBar', () => {
         searchQuery: 'existing',
         onSearchQueryChange,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       fireEvent.change(input, { target: { value: '' } });
@@ -174,7 +184,7 @@ describe('AutoRunSearchBar', () => {
     it('should update on every keystroke', () => {
       const onSearchQueryChange = vi.fn();
       const props = createDefaultProps({ onSearchQueryChange });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       fireEvent.change(input, { target: { value: 'a' } });
@@ -190,7 +200,7 @@ describe('AutoRunSearchBar', () => {
     it('should handle special characters in search query', () => {
       const onSearchQueryChange = vi.fn();
       const props = createDefaultProps({ onSearchQueryChange });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       fireEvent.change(input, { target: { value: '(regex.*) [special]' } });
@@ -201,7 +211,7 @@ describe('AutoRunSearchBar', () => {
     it('should handle unicode characters in search query', () => {
       const onSearchQueryChange = vi.fn();
       const props = createDefaultProps({ onSearchQueryChange });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       fireEvent.change(input, { target: { value: '中文 日本語 한국어 🎉' } });
@@ -213,7 +223,7 @@ describe('AutoRunSearchBar', () => {
   describe('Auto-Focus', () => {
     it('should auto-focus the search input on mount', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       // The component has autoFocus prop and also uses useEffect to call focus()
@@ -223,7 +233,7 @@ describe('AutoRunSearchBar', () => {
 
     it('should focus the input via ref.focus() in useEffect', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       // The useEffect hook calls searchInputRef.current?.focus() on mount
@@ -239,7 +249,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 5,
         currentMatchIndex: 0,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       expect(screen.queryByText('1/5')).not.toBeInTheDocument();
       expect(screen.queryByText('No matches')).not.toBeInTheDocument();
@@ -251,7 +261,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 5,
         currentMatchIndex: 0,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       expect(screen.queryByText('1/5')).not.toBeInTheDocument();
       expect(screen.queryByText('No matches')).not.toBeInTheDocument();
@@ -263,7 +273,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 0,
         currentMatchIndex: 0,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       expect(screen.getByText('No matches')).toBeInTheDocument();
     });
@@ -274,7 +284,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 5,
         currentMatchIndex: 0,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       // currentMatchIndex is 0-based, display is 1-based
       expect(screen.getByText('1/5')).toBeInTheDocument();
@@ -286,7 +296,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 10,
         currentMatchIndex: 4,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       expect(screen.getByText('5/10')).toBeInTheDocument();
     });
@@ -297,7 +307,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 3,
         currentMatchIndex: 2,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       expect(screen.getByText('3/3')).toBeInTheDocument();
     });
@@ -308,7 +318,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 5,
         currentMatchIndex: 0,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const matchCount = screen.getByText('1/5');
       expect(matchCount).toHaveStyle({ color: '#888888' });
@@ -318,7 +328,7 @@ describe('AutoRunSearchBar', () => {
   describe('Navigation Buttons', () => {
     it('should not show navigation buttons when search query is empty', () => {
       const props = createDefaultProps({ searchQuery: '' });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       expect(screen.queryByTitle('Previous match (Shift+Enter)')).not.toBeInTheDocument();
       expect(screen.queryByTitle('Next match (Enter)')).not.toBeInTheDocument();
@@ -326,7 +336,7 @@ describe('AutoRunSearchBar', () => {
 
     it('should not show navigation buttons when search query is only whitespace', () => {
       const props = createDefaultProps({ searchQuery: '   ' });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       expect(screen.queryByTitle('Previous match (Shift+Enter)')).not.toBeInTheDocument();
       expect(screen.queryByTitle('Next match (Enter)')).not.toBeInTheDocument();
@@ -337,7 +347,7 @@ describe('AutoRunSearchBar', () => {
         searchQuery: 'test',
         totalMatches: 5,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       expect(screen.getByTitle('Previous match (Shift+Enter)')).toBeInTheDocument();
       expect(screen.getByTitle('Next match (Enter)')).toBeInTheDocument();
@@ -348,7 +358,7 @@ describe('AutoRunSearchBar', () => {
         searchQuery: 'test',
         totalMatches: 5,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       expect(screen.getByTestId('chevron-up-icon')).toBeInTheDocument();
     });
@@ -358,7 +368,7 @@ describe('AutoRunSearchBar', () => {
         searchQuery: 'test',
         totalMatches: 5,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       expect(screen.getByTestId('chevron-down-icon')).toBeInTheDocument();
     });
@@ -370,7 +380,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 5,
         onPrevMatch,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const prevButton = screen.getByTitle('Previous match (Shift+Enter)');
       fireEvent.click(prevButton);
@@ -385,7 +395,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 5,
         onNextMatch,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const nextButton = screen.getByTitle('Next match (Enter)');
       fireEvent.click(nextButton);
@@ -398,7 +408,7 @@ describe('AutoRunSearchBar', () => {
         searchQuery: 'test',
         totalMatches: 0,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const prevButton = screen.getByTitle('Previous match (Shift+Enter)');
       const nextButton = screen.getByTitle('Next match (Enter)');
@@ -412,7 +422,7 @@ describe('AutoRunSearchBar', () => {
         searchQuery: 'test',
         totalMatches: 1,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const prevButton = screen.getByTitle('Previous match (Shift+Enter)');
       const nextButton = screen.getByTitle('Next match (Enter)');
@@ -426,7 +436,7 @@ describe('AutoRunSearchBar', () => {
         searchQuery: 'test',
         totalMatches: 5,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const prevButton = screen.getByTitle('Previous match (Shift+Enter)');
       const nextButton = screen.getByTitle('Next match (Enter)');
@@ -444,7 +454,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 5,
         onNextMatch,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       fireEvent.keyDown(input, { key: 'Enter', shiftKey: false });
@@ -459,7 +469,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 5,
         onPrevMatch,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
@@ -474,7 +484,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 5,
         onNextMatch,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       const event = fireEvent.keyDown(input, { key: 'Enter', shiftKey: false });
@@ -490,7 +500,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 5,
         onPrevMatch,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
@@ -505,7 +515,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 5,
         onNextMatch,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       fireEvent.keyDown(input, { key: 'Tab' });
@@ -524,7 +534,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 0,
         onNextMatch,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       fireEvent.keyDown(input, { key: 'Enter', shiftKey: false });
@@ -537,7 +547,7 @@ describe('AutoRunSearchBar', () => {
     it('should call onClose when Escape is pressed', () => {
       const onClose = vi.fn();
       const props = createDefaultProps({ onClose });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       fireEvent.keyDown(input, { key: 'Escape' });
@@ -548,7 +558,7 @@ describe('AutoRunSearchBar', () => {
     it('should prevent default behavior on Escape', () => {
       const onClose = vi.fn();
       const props = createDefaultProps({ onClose });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       const event = new KeyboardEvent('keydown', {
@@ -569,9 +579,11 @@ describe('AutoRunSearchBar', () => {
       const props = createDefaultProps({ onClose });
 
       render(
-        <div onKeyDown={parentHandler}>
-          <AutoRunSearchBar {...props} />
-        </div>
+        <LayerStackProvider>
+          <div onKeyDown={parentHandler}>
+            <AutoRunSearchBar {...props} />
+          </div>
+        </LayerStackProvider>
       );
 
       const input = screen.getByPlaceholderText('Search...');
@@ -588,7 +600,7 @@ describe('AutoRunSearchBar', () => {
         searchQuery: 'some search text',
         onClose,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       fireEvent.keyDown(input, { key: 'Escape' });
@@ -601,7 +613,7 @@ describe('AutoRunSearchBar', () => {
     it('should call onClose when close button is clicked', () => {
       const onClose = vi.fn();
       const props = createDefaultProps({ onClose });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const closeButton = screen.getByTitle('Close search (Esc)');
       fireEvent.click(closeButton);
@@ -611,7 +623,7 @@ describe('AutoRunSearchBar', () => {
 
     it('should render X icon in close button', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const closeButton = screen.getByTitle('Close search (Esc)');
       const xIcon = closeButton.querySelector('[data-testid="x-icon"]');
@@ -620,7 +632,7 @@ describe('AutoRunSearchBar', () => {
 
     it('should apply theme dim text color to close button', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const closeButton = screen.getByTitle('Close search (Esc)');
       expect(closeButton).toHaveStyle({ color: '#888888' });
@@ -629,13 +641,13 @@ describe('AutoRunSearchBar', () => {
     it('should always be visible regardless of search query', () => {
       // With empty query
       const props1 = createDefaultProps({ searchQuery: '' });
-      const { unmount } = render(<AutoRunSearchBar {...props1} />);
+      const { unmount } = renderWithProvider(<AutoRunSearchBar {...props1} />);
       expect(screen.getByTitle('Close search (Esc)')).toBeInTheDocument();
       unmount();
 
       // With non-empty query
       const props2 = createDefaultProps({ searchQuery: 'test' });
-      render(<AutoRunSearchBar {...props2} />);
+      renderWithProvider(<AutoRunSearchBar {...props2} />);
       expect(screen.getByTitle('Close search (Esc)')).toBeInTheDocument();
     });
   });
@@ -643,7 +655,7 @@ describe('AutoRunSearchBar', () => {
   describe('Component Layout and Structure', () => {
     it('should have proper flex layout', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const container = screen.getByPlaceholderText('Search...').closest('div');
       expect(container).toHaveClass('flex');
@@ -653,7 +665,7 @@ describe('AutoRunSearchBar', () => {
 
     it('should have proper padding and margin', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const container = screen.getByPlaceholderText('Search...').closest('div');
       expect(container).toHaveClass('px-3');
@@ -664,7 +676,7 @@ describe('AutoRunSearchBar', () => {
 
     it('should have rounded corners', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const container = screen.getByPlaceholderText('Search...').closest('div');
       expect(container).toHaveClass('rounded');
@@ -672,7 +684,7 @@ describe('AutoRunSearchBar', () => {
 
     it('should have flex-1 on input for proper width', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       expect(input).toHaveClass('flex-1');
@@ -680,7 +692,7 @@ describe('AutoRunSearchBar', () => {
 
     it('should have shrink-0 on search icon', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const searchIcon = screen.getByTestId('search-icon');
       expect(searchIcon).toHaveClass('shrink-0');
@@ -692,7 +704,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 100,
         currentMatchIndex: 50,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const matchCount = screen.getByText('51/100');
       expect(matchCount).toHaveClass('whitespace-nowrap');
@@ -702,7 +714,7 @@ describe('AutoRunSearchBar', () => {
   describe('Input Styling', () => {
     it('should have transparent background', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       expect(input).toHaveClass('bg-transparent');
@@ -710,7 +722,7 @@ describe('AutoRunSearchBar', () => {
 
     it('should have no outline', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       expect(input).toHaveClass('outline-none');
@@ -718,7 +730,7 @@ describe('AutoRunSearchBar', () => {
 
     it('should have text-sm font size', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       expect(input).toHaveClass('text-sm');
@@ -731,7 +743,7 @@ describe('AutoRunSearchBar', () => {
         searchQuery: 'test',
         totalMatches: 5,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const prevButton = screen.getByTitle('Previous match (Shift+Enter)');
       const nextButton = screen.getByTitle('Next match (Enter)');
@@ -745,7 +757,7 @@ describe('AutoRunSearchBar', () => {
         searchQuery: 'test',
         totalMatches: 5,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const prevButton = screen.getByTitle('Previous match (Shift+Enter)');
       const nextButton = screen.getByTitle('Next match (Enter)');
@@ -759,7 +771,7 @@ describe('AutoRunSearchBar', () => {
         searchQuery: 'test',
         totalMatches: 0,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const prevButton = screen.getByTitle('Previous match (Shift+Enter)');
       const nextButton = screen.getByTitle('Next match (Enter)');
@@ -770,7 +782,7 @@ describe('AutoRunSearchBar', () => {
 
     it('should have hover styles on close button', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const closeButton = screen.getByTitle('Close search (Esc)');
       expect(closeButton).toHaveClass('hover:bg-white/10');
@@ -781,7 +793,7 @@ describe('AutoRunSearchBar', () => {
         searchQuery: 'test',
         totalMatches: 5,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const prevButton = screen.getByTitle('Previous match (Shift+Enter)');
       const nextButton = screen.getByTitle('Next match (Enter)');
@@ -797,7 +809,7 @@ describe('AutoRunSearchBar', () => {
         searchQuery: 'test',
         totalMatches: 5,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const prevButton = screen.getByTitle('Previous match (Shift+Enter)');
       const nextButton = screen.getByTitle('Next match (Enter)');
@@ -812,7 +824,7 @@ describe('AutoRunSearchBar', () => {
   describe('Icon Sizes', () => {
     it('should have w-4 h-4 on search icon', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const searchIcon = screen.getByTestId('search-icon');
       expect(searchIcon).toHaveClass('w-4');
@@ -824,7 +836,7 @@ describe('AutoRunSearchBar', () => {
         searchQuery: 'test',
         totalMatches: 5,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const chevronUp = screen.getByTestId('chevron-up-icon');
       const chevronDown = screen.getByTestId('chevron-down-icon');
@@ -840,7 +852,7 @@ describe('AutoRunSearchBar', () => {
     it('should handle very long search query', () => {
       const longQuery = 'a'.repeat(1000);
       const props = createDefaultProps({ searchQuery: longQuery });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...') as HTMLInputElement;
       expect(input.value).toBe(longQuery);
@@ -852,7 +864,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 999999,
         currentMatchIndex: 500000,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       expect(screen.getByText('500001/999999')).toBeInTheDocument();
     });
@@ -863,7 +875,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 5,
         currentMatchIndex: 4, // Last index (0-based)
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       expect(screen.getByText('5/5')).toBeInTheDocument();
     });
@@ -874,7 +886,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 1,
         currentMatchIndex: 0,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       expect(screen.getByText('1/1')).toBeInTheDocument();
     });
@@ -884,7 +896,7 @@ describe('AutoRunSearchBar', () => {
         searchQuery: '     ',
         totalMatches: 0,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       // Spaces-only should be treated as empty (no match display)
       expect(screen.queryByText('No matches')).not.toBeInTheDocument();
@@ -896,7 +908,7 @@ describe('AutoRunSearchBar', () => {
         searchQuery: 'line1\nline2',
         onSearchQueryChange,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...') as HTMLInputElement;
       // Text inputs normalize newlines (this is expected browser behavior)
@@ -915,7 +927,7 @@ describe('AutoRunSearchBar', () => {
         onPrevMatch,
         onClose,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
 
@@ -940,14 +952,18 @@ describe('AutoRunSearchBar', () => {
         onNextMatch,
       });
 
-      const { rerender } = render(<AutoRunSearchBar {...props} />);
+      const { rerender } = renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       fireEvent.keyDown(input, { key: 'Enter' });
       expect(onNextMatch).toHaveBeenCalledTimes(1);
 
-      // Re-render with same props
-      rerender(<AutoRunSearchBar {...props} />);
+      // Re-render with same props (need to wrap in provider)
+      rerender(
+        <LayerStackProvider>
+          <AutoRunSearchBar {...props} />
+        </LayerStackProvider>
+      );
 
       fireEvent.keyDown(input, { key: 'Enter' });
       expect(onNextMatch).toHaveBeenCalledTimes(2);
@@ -958,16 +974,20 @@ describe('AutoRunSearchBar', () => {
       const onClose2 = vi.fn();
       const props1 = createDefaultProps({ onClose: onClose1 });
 
-      const { rerender } = render(<AutoRunSearchBar {...props1} />);
+      const { rerender } = renderWithProvider(<AutoRunSearchBar {...props1} />);
 
       const input = screen.getByPlaceholderText('Search...');
       fireEvent.keyDown(input, { key: 'Escape' });
       expect(onClose1).toHaveBeenCalledTimes(1);
       expect(onClose2).not.toHaveBeenCalled();
 
-      // Re-render with new callback
+      // Re-render with new callback (need to wrap in provider)
       const props2 = createDefaultProps({ onClose: onClose2 });
-      rerender(<AutoRunSearchBar {...props2} />);
+      rerender(
+        <LayerStackProvider>
+          <AutoRunSearchBar {...props2} />
+        </LayerStackProvider>
+      );
 
       fireEvent.keyDown(input, { key: 'Escape' });
       expect(onClose1).toHaveBeenCalledTimes(1);
@@ -978,7 +998,7 @@ describe('AutoRunSearchBar', () => {
   describe('Accessibility', () => {
     it('should have type="text" on input', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       expect(input).toHaveAttribute('type', 'text');
@@ -989,7 +1009,7 @@ describe('AutoRunSearchBar', () => {
         searchQuery: 'test',
         totalMatches: 5,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const prevButton = screen.getByTitle('Previous match (Shift+Enter)');
       expect(prevButton).toBeInTheDocument();
@@ -1000,7 +1020,7 @@ describe('AutoRunSearchBar', () => {
         searchQuery: 'test',
         totalMatches: 5,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const nextButton = screen.getByTitle('Next match (Enter)');
       expect(nextButton).toBeInTheDocument();
@@ -1008,7 +1028,7 @@ describe('AutoRunSearchBar', () => {
 
     it('should have descriptive title on close button', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const closeButton = screen.getByTitle('Close search (Esc)');
       expect(closeButton).toBeInTheDocument();
@@ -1016,7 +1036,7 @@ describe('AutoRunSearchBar', () => {
 
     it('should have placeholder text on input', () => {
       const props = createDefaultProps();
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const input = screen.getByPlaceholderText('Search...');
       expect(input).toBeInTheDocument();
@@ -1033,7 +1053,7 @@ describe('AutoRunSearchBar', () => {
       lightTheme.colors.accent = '#0066ff';
 
       const props = createDefaultProps({ theme: lightTheme });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const container = screen.getByPlaceholderText('Search...').closest('div');
       const input = screen.getByPlaceholderText('Search...');
@@ -1049,7 +1069,7 @@ describe('AutoRunSearchBar', () => {
       customTheme.colors.accent = '#ff00ff';
 
       const props = createDefaultProps({ theme: customTheme });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const container = screen.getByPlaceholderText('Search...').closest('div');
       // Check that the border style includes the custom accent color (converted to RGB)
@@ -1067,7 +1087,7 @@ describe('AutoRunSearchBar', () => {
         totalMatches: 5,
         currentMatchIndex: 2,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const matchCount = screen.getByText('3/5');
       expect(matchCount).toHaveClass('text-xs');
@@ -1078,7 +1098,7 @@ describe('AutoRunSearchBar', () => {
         searchQuery: 'test',
         totalMatches: 0,
       });
-      render(<AutoRunSearchBar {...props} />);
+      renderWithProvider(<AutoRunSearchBar {...props} />);
 
       const noMatches = screen.getByText('No matches');
       expect(noMatches).toHaveClass('text-xs');
