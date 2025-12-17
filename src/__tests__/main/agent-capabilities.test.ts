@@ -249,6 +249,7 @@ describe('agent-capabilities', () => {
         'supportsStreaming',
         'supportsResultMessages',
         'supportsModelSelection',
+        'requiresPromptToStart',
       ];
 
       const defaultKeys = Object.keys(DEFAULT_CAPABILITIES);

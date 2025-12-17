@@ -344,7 +344,7 @@ export function NewInstanceModal({ isOpen, onClose, onCreate, theme, defaultAgen
                               className="text-xs font-mono px-3 py-2 rounded"
                               style={{ backgroundColor: theme.colors.bgActivity, color: theme.colors.textDim }}
                             >
-                              {agent.path}
+                              <span className="opacity-60">Detected:</span> {agent.path}
                             </div>
                           )}
                           {/* Custom path input */}

@@ -244,7 +244,7 @@ export function useMainKeyboardHandler(): UseMainKeyboardHandlerReturn {
       else if (ctx.isShortcut(e, 'agentSessions')) {
         e.preventDefault();
         if (ctx.activeSession?.toolType === 'claude-code') {
-          ctx.setActiveClaudeSessionId(null);
+          ctx.setActiveAgentSessionId(null);
           ctx.setAgentSessionsOpen(true);
         }
       }

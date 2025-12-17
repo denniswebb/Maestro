@@ -152,7 +152,7 @@ let projectStatsCallback: ((stats: unknown) => void) | null = null;
 const createDefaultProps = (overrides: Partial<Parameters<typeof AgentSessionsBrowser>[0]> = {}) => ({
   theme: defaultTheme,
   activeSession: createMockActiveSession(),
-  activeClaudeSessionId: null as string | null,
+  activeAgentSessionId: null as string | null,
   onClose: vi.fn(),
   onResumeSession: vi.fn(),
   onNewSession: vi.fn(),
@@ -491,7 +491,7 @@ describe('AgentSessionsBrowser', () => {
 
     it('shows active Claude session ID badge when provided', async () => {
       const props = createDefaultProps({
-        activeClaudeSessionId: 'abc12345-def6-7890',
+        activeAgentSessionId: 'abc12345-def6-7890',
       });
 
       await act(async () => {
@@ -2351,7 +2351,7 @@ describe('AgentSessionsBrowser', () => {
       });
 
       const props = createDefaultProps({
-        activeClaudeSessionId: 'active-session-123',
+        activeAgentSessionId: 'active-session-123',
       });
 
       await act(async () => {
@@ -2359,7 +2359,7 @@ describe('AgentSessionsBrowser', () => {
         await vi.runAllTimersAsync();
       });
 
-      // When activeClaudeSessionId is provided, the component auto-jumps to detail view
+      // When activeAgentSessionId is provided, the component auto-jumps to detail view
       // Go back to list view first
       const backButton = screen.getByTestId('icon-chevron-left').closest('button');
       await act(async () => {
@@ -2378,7 +2378,7 @@ describe('AgentSessionsBrowser', () => {
   // ============================================================================
 
   describe('auto-jump to session', () => {
-    it('auto-opens session detail when activeClaudeSessionId provided', async () => {
+    it('auto-opens session detail when activeAgentSessionId provided', async () => {
       const session = createMockClaudeSession({ sessionId: 'target-session' });
       vi.mocked(window.maestro.agentSessions.listPaginated).mockResolvedValue({
         sessions: [session],
@@ -2393,7 +2393,7 @@ describe('AgentSessionsBrowser', () => {
       });
 
       const props = createDefaultProps({
-        activeClaudeSessionId: 'target-session',
+        activeAgentSessionId: 'target-session',
       });
 
       await act(async () => {

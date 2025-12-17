@@ -32,7 +32,7 @@ interface MainPanelProps {
   // State
   logViewerOpen: boolean;
   agentSessionsOpen: boolean;
-  activeClaudeSessionId: string | null;
+  activeAgentSessionId: string | null;
   activeSession: Session | null;
   sessions: Session[]; // All sessions for InputArea's ThinkingStatusPill
   theme: Theme;
@@ -77,9 +77,9 @@ interface MainPanelProps {
   setGitDiffPreview: (preview: string | null) => void;
   setLogViewerOpen: (open: boolean) => void;
   setAgentSessionsOpen: (open: boolean) => void;
-  setActiveClaudeSessionId: (id: string | null) => void;
-  onResumeClaudeSession: (agentSessionId: string, messages: import('../types').LogEntry[], sessionName?: string, starred?: boolean) => void;
-  onNewClaudeSession: () => void;
+  setActiveAgentSessionId: (id: string | null) => void;
+  onResumeAgentSession: (agentSessionId: string, messages: import('../types').LogEntry[], sessionName?: string, starred?: boolean) => void;
+  onNewAgentSession: () => void;
   setActiveFocus: (focus: FocusArea) => void;
   setOutputSearchOpen: (open: boolean) => void;
   setOutputSearchQuery: (query: string) => void;
@@ -184,7 +184,7 @@ interface MainPanelProps {
 
 export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function MainPanel(props, ref) {
   const {
-    logViewerOpen, agentSessionsOpen, activeClaudeSessionId, activeSession, sessions, theme, activeFocus, outputSearchOpen, outputSearchQuery,
+    logViewerOpen, agentSessionsOpen, activeAgentSessionId, activeSession, sessions, theme, activeFocus, outputSearchOpen, outputSearchQuery,
     inputValue, enterToSendAI, enterToSendTerminal, stagedImages, commandHistoryOpen, commandHistoryFilter,
     commandHistorySelectedIndex, slashCommandOpen, slashCommands, selectedSlashCommandIndex,
     tabCompletionOpen, tabCompletionSuggestions, selectedTabCompletionIndex, tabCompletionFilter,
@@ -192,8 +192,8 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
     atMentionOpen, atMentionFilter, atMentionStartIndex, atMentionSuggestions, selectedAtMentionIndex,
     setAtMentionOpen, setAtMentionFilter, setAtMentionStartIndex, setSelectedAtMentionIndex,
     previewFile, markdownEditMode, shortcuts, rightPanelOpen, maxOutputLines, gitDiffPreview,
-    fileTreeFilterOpen, logLevel, setGitDiffPreview, setLogViewerOpen, setAgentSessionsOpen, setActiveClaudeSessionId,
-    onResumeClaudeSession, onNewClaudeSession, setActiveFocus, setOutputSearchOpen, setOutputSearchQuery,
+    fileTreeFilterOpen, logLevel, setGitDiffPreview, setLogViewerOpen, setAgentSessionsOpen, setActiveAgentSessionId,
+    onResumeAgentSession, onNewAgentSession, setActiveFocus, setOutputSearchOpen, setOutputSearchQuery,
     setInputValue, setEnterToSendAI, setEnterToSendTerminal, setStagedImages, setLightboxImage, setCommandHistoryOpen,
     setCommandHistoryFilter, setCommandHistorySelectedIndex, setSlashCommandOpen,
     setSelectedSlashCommandIndex, setPreviewFile, setMarkdownEditMode,
@@ -377,10 +377,10 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
         <AgentSessionsBrowser
           theme={theme}
           activeSession={activeSession || undefined}
-          activeClaudeSessionId={activeClaudeSessionId}
+          activeAgentSessionId={activeAgentSessionId}
           onClose={() => setAgentSessionsOpen(false)}
-          onResumeSession={onResumeClaudeSession}
-          onNewSession={onNewClaudeSession}
+          onResumeSession={onResumeAgentSession}
+          onNewSession={onNewAgentSession}
           onUpdateTab={props.onUpdateTabByClaudeSessionId}
         />
       </div>
@@ -782,7 +782,7 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
               {hasCapability('supportsSessionStorage') && (
                 <button
                   onClick={() => {
-                    setActiveClaudeSessionId(null);
+                    setActiveAgentSessionId(null);
                     setAgentSessionsOpen(true);
                   }}
                   className="p-2 rounded hover:bg-white/5"

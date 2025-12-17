@@ -25,7 +25,7 @@ export { useKeyboardShortcutHelpers } from './useKeyboardShortcutHelpers';
 export { useKeyboardNavigation } from './useKeyboardNavigation';
 export { useMainKeyboardHandler } from './useMainKeyboardHandler';
 export { useRemoteIntegration } from './useRemoteIntegration';
-export { useClaudeSessionManagement } from './useClaudeSessionManagement';
+export { useAgentSessionManagement } from './useAgentSessionManagement';
 export { useAgentExecution } from './useAgentExecution';
 export { useFileTreeManagement } from './useFileTreeManagement';
 export { useGroupManagement } from './useGroupManagement';
@@ -80,10 +80,10 @@ export type {
   UseRemoteIntegrationReturn,
 } from './useRemoteIntegration';
 export type {
-  UseClaudeSessionManagementDeps,
-  UseClaudeSessionManagementReturn,
+  UseAgentSessionManagementDeps,
+  UseAgentSessionManagementReturn,
   HistoryEntryInput,
-} from './useClaudeSessionManagement';
+} from './useAgentSessionManagement';
 export type {
   UseAgentExecutionDeps,
   UseAgentExecutionReturn,

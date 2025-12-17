@@ -46,7 +46,7 @@ import { useKeyboardShortcutHelpers } from './hooks/useKeyboardShortcutHelpers';
 import { useKeyboardNavigation } from './hooks/useKeyboardNavigation';
 import { useMainKeyboardHandler } from './hooks/useMainKeyboardHandler';
 import { useRemoteIntegration } from './hooks/useRemoteIntegration';
-import { useClaudeSessionManagement } from './hooks/useClaudeSessionManagement';
+import { useAgentSessionManagement } from './hooks/useAgentSessionManagement';
 import { useAgentExecution } from './hooks/useAgentExecution';
 import { useFileTreeManagement } from './hooks/useFileTreeManagement';
 import { useGroupManagement } from './hooks/useGroupManagement';
@@ -315,7 +315,7 @@ export default function MaestroConsole() {
 
   // Agent Sessions Browser State (main panel view)
   const [agentSessionsOpen, setAgentSessionsOpen] = useState(false);
-  const [activeClaudeSessionId, setActiveClaudeSessionId] = useState<string | null>(null);
+  const [activeAgentSessionId, setActiveAgentSessionId] = useState<string | null>(null);
 
   // NOTE: showSessionJumpNumbers state is now provided by useMainKeyboardHandler hook
 
@@ -1513,7 +1513,7 @@ export default function MaestroConsole() {
   activeSessionIdRef.current = activeSessionId;
 
   // Note: spawnBackgroundSynopsisRef and spawnAgentWithPromptRef are now provided by useAgentExecution hook
-  // Note: addHistoryEntryRef and startNewClaudeSessionRef are now provided by useClaudeSessionManagement hook
+  // Note: addHistoryEntryRef and startNewAgentSessionRef are now provided by useAgentSessionManagement hook
   // Ref for processQueuedMessage - allows batch exit handler to process queued messages
   const processQueuedItemRef = useRef<((sessionId: string, item: QueuedItem) => Promise<void>) | null>(null);
 
@@ -1994,14 +1994,14 @@ export default function MaestroConsole() {
   const {
     addHistoryEntry,
     addHistoryEntryRef,
-    startNewClaudeSession,
-    startNewClaudeSessionRef,
+    startNewAgentSession,
+    startNewAgentSessionRef,
     handleJumpToAgentSession,
     handleResumeSession,
-  } = useClaudeSessionManagement({
+  } = useAgentSessionManagement({
     activeSession,
     setSessions,
-    setActiveClaudeSessionId,
+    setActiveAgentSessionId,
     setAgentSessionsOpen,
     addLogToActiveTab,
     rightPanelRef,
@@ -3412,10 +3412,10 @@ export default function MaestroConsole() {
           return;
         }
 
-        // Build spawn args with resume if we have a Claude session ID
+        // Build spawn args with resume if we have an agent session ID
         // Use the ACTIVE TAB's agentSessionId (not the deprecated session-level one)
         const activeTab = getActiveTab(session);
-        const tabClaudeSessionId = activeTab?.agentSessionId;
+        const tabAgentSessionId = activeTab?.agentSessionId;
         const isReadOnly = activeTab?.readOnlyMode;
 
         // Filter out YOLO/skip-permissions flags when read-only mode is active
@@ -3429,8 +3429,8 @@ export default function MaestroConsole() {
             )
           : [...agent.args];
 
-        if (tabClaudeSessionId) {
-          spawnArgs.push('--resume', tabClaudeSessionId);
+        if (tabAgentSessionId) {
+          spawnArgs.push('--resume', tabAgentSessionId);
         }
 
         // Add read-only/plan mode if the active tab has readOnlyMode enabled
@@ -3442,12 +3442,12 @@ export default function MaestroConsole() {
         const targetSessionId = `${sessionId}-ai-${activeTab?.id || 'default'}`;
         const commandToUse = agent.path || agent.command;
 
-        console.log('[Remote] Spawning Claude directly:', {
+        console.log('[Remote] Spawning agent:', {
           maestroSessionId: sessionId,
           targetSessionId,
           activeTabId: activeTab?.id,
-          tabClaudeSessionId: tabClaudeSessionId || 'NEW SESSION',
-          isResume: !!tabClaudeSessionId,
+          tabAgentSessionId: tabAgentSessionId || 'NEW SESSION',
+          isResume: !!tabAgentSessionId,
           command: commandToUse,
           args: spawnArgs,
           prompt: promptToSend.substring(0, 100)
@@ -3598,7 +3598,7 @@ export default function MaestroConsole() {
 
       // Build spawn args with resume if we have a session ID
       // Use the TARGET TAB's agentSessionId (not the active tab or deprecated session-level one)
-      const tabClaudeSessionId = targetTab?.agentSessionId;
+      const tabAgentSessionId = targetTab?.agentSessionId;
       const isReadOnly = item.readOnlyMode || targetTab?.readOnlyMode;
 
       // Filter out YOLO/skip-permissions flags when read-only mode is active
@@ -3612,8 +3612,8 @@ export default function MaestroConsole() {
           )
         : [...(agent.args || [])];
 
-      if (tabClaudeSessionId) {
-        spawnArgs.push('--resume', tabClaudeSessionId);
+      if (tabAgentSessionId) {
+        spawnArgs.push('--resume', tabAgentSessionId);
       }
 
       // Add read-only/plan mode if the queued item was from a read-only tab
@@ -4420,7 +4420,7 @@ export default function MaestroConsole() {
     setLeftSidebarOpen, setRightPanelOpen, addNewSession, deleteSession, setQuickActionInitialMode,
     setQuickActionOpen, cycleSession, toggleInputMode, setShortcutsHelpOpen, setSettingsModalOpen,
     setSettingsTab, setActiveRightTab, handleSetActiveRightTab, setActiveFocus, setBookmarksCollapsed, setGroups,
-    setSelectedSidebarIndex, setActiveSessionId, handleViewGitDiff, setGitLogOpen, setActiveClaudeSessionId,
+    setSelectedSidebarIndex, setActiveSessionId, handleViewGitDiff, setGitLogOpen, setActiveAgentSessionId,
     setAgentSessionsOpen, setLogViewerOpen, setProcessMonitorOpen, logsEndRef, inputRef, terminalOutputRef, sidebarContainerRef,
     setSessions, createTab, closeTab, reopenClosedTab, getActiveTab, setRenameTabId, setRenameTabInitialName,
     setRenameTabModalOpen, navigateToNextTab, navigateToPrevTab, navigateToTabByIndex, navigateToLastTab,
@@ -4685,7 +4685,7 @@ export default function MaestroConsole() {
           setProcessMonitorOpen={setProcessMonitorOpen}
           setActiveRightTab={setActiveRightTab}
           setAgentSessionsOpen={setAgentSessionsOpen}
-          setActiveClaudeSessionId={setActiveClaudeSessionId}
+          setActiveAgentSessionId={setActiveAgentSessionId}
           setGitDiffPreview={setGitDiffPreview}
           setGitLogOpen={setGitLogOpen}
           isAiMode={activeSession?.inputMode === 'ai'}
@@ -5114,7 +5114,7 @@ export default function MaestroConsole() {
         ref={mainPanelRef}
         logViewerOpen={logViewerOpen}
         agentSessionsOpen={agentSessionsOpen}
-        activeClaudeSessionId={activeClaudeSessionId}
+        activeAgentSessionId={activeAgentSessionId}
         activeSession={activeSession}
         sessions={sessions}
         theme={theme}
@@ -5146,12 +5146,12 @@ export default function MaestroConsole() {
         setGitDiffPreview={setGitDiffPreview}
         setLogViewerOpen={setLogViewerOpen}
         setAgentSessionsOpen={setAgentSessionsOpen}
-        setActiveClaudeSessionId={setActiveClaudeSessionId}
-        onResumeClaudeSession={(agentSessionId: string, messages: LogEntry[], sessionName?: string, starred?: boolean) => {
+        setActiveAgentSessionId={setActiveAgentSessionId}
+        onResumeAgentSession={(agentSessionId: string, messages: LogEntry[], sessionName?: string, starred?: boolean) => {
           // Opens the Claude session as a new tab (or switches to existing tab if duplicate)
           handleResumeSession(agentSessionId, messages, sessionName, starred);
         }}
-        onNewClaudeSession={() => {
+        onNewAgentSession={() => {
           // Create a fresh AI tab
           if (activeSession) {
             setSessions(prev => prev.map(s => {
@@ -5159,7 +5159,7 @@ export default function MaestroConsole() {
               const result = createTab(s, { saveToHistory: defaultSaveToHistory });
               return result.session;
             }));
-            setActiveClaudeSessionId(null);
+            setActiveAgentSessionId(null);
           }
           setAgentSessionsOpen(false);
         }}

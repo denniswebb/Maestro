@@ -267,9 +267,9 @@ describe('MainPanel', () => {
     setGitDiffPreview: vi.fn(),
     setLogViewerOpen: vi.fn(),
     setAgentSessionsOpen: vi.fn(),
-    setActiveClaudeSessionId: vi.fn(),
-    onResumeClaudeSession: vi.fn(),
-    onNewClaudeSession: vi.fn(),
+    setActiveAgentSessionId: vi.fn(),
+    onResumeAgentSession: vi.fn(),
+    onNewAgentSession: vi.fn(),
     setActiveFocus: vi.fn(),
     setOutputSearchOpen: vi.fn(),
     setOutputSearchQuery: vi.fn(),
@@ -439,16 +439,16 @@ describe('MainPanel', () => {
 
     it('should open Agent Sessions when button is clicked', () => {
       const setAgentSessionsOpen = vi.fn();
-      const setActiveClaudeSessionId = vi.fn();
+      const setActiveAgentSessionId = vi.fn();
       render(<MainPanel
         {...defaultProps}
         setAgentSessionsOpen={setAgentSessionsOpen}
-        setActiveClaudeSessionId={setActiveClaudeSessionId}
+        setActiveAgentSessionId={setActiveAgentSessionId}
       />);
 
       fireEvent.click(screen.getByTitle(/Agent Sessions/));
 
-      expect(setActiveClaudeSessionId).toHaveBeenCalledWith(null);
+      expect(setActiveAgentSessionId).toHaveBeenCalledWith(null);
       expect(setAgentSessionsOpen).toHaveBeenCalledWith(true);
     });
 

@@ -23,7 +23,7 @@ interface SearchResult {
 interface AgentSessionsBrowserProps {
   theme: Theme;
   activeSession: Session | undefined;
-  activeClaudeSessionId: string | null;
+  activeAgentSessionId: string | null;
   onClose: () => void;
   onResumeSession: (agentSessionId: string, messages: LogEntry[], sessionName?: string, starred?: boolean) => void;
   onNewSession: () => void;
@@ -33,7 +33,7 @@ interface AgentSessionsBrowserProps {
 export function AgentSessionsBrowser({
   theme,
   activeSession,
-  activeClaudeSessionId,
+  activeAgentSessionId,
   onClose,
   onResumeSession,
   onNewSession,
@@ -273,17 +273,17 @@ export function AgentSessionsBrowser({
     cancelRename();
   }, [activeSession?.cwd, renameValue, viewingSession?.sessionId, cancelRename, onUpdateTab, updateSession]);
 
-  // Auto-view session when activeClaudeSessionId is provided (e.g., from history panel click)
+  // Auto-view session when activeAgentSessionId is provided (e.g., from history panel click)
   useEffect(() => {
-    // Only auto-jump once per activeClaudeSessionId
-    if (!loading && sessions.length > 0 && activeClaudeSessionId && !viewingSession && autoJumpedRef.current !== activeClaudeSessionId) {
-      const targetSession = sessions.find(s => s.sessionId === activeClaudeSessionId);
+    // Only auto-jump once per activeAgentSessionId
+    if (!loading && sessions.length > 0 && activeAgentSessionId && !viewingSession && autoJumpedRef.current !== activeAgentSessionId) {
+      const targetSession = sessions.find(s => s.sessionId === activeAgentSessionId);
       if (targetSession) {
-        autoJumpedRef.current = activeClaudeSessionId;
+        autoJumpedRef.current = activeAgentSessionId;
         handleViewSession(targetSession);
       }
     }
-  }, [loading, sessions, activeClaudeSessionId, viewingSession, handleViewSession]);
+  }, [loading, sessions, activeAgentSessionId, viewingSession, handleViewSession]);
 
   // Focus input on mount
   useEffect(() => {
@@ -639,12 +639,12 @@ export function AgentSessionsBrowser({
               <span className="text-sm font-medium" style={{ color: theme.colors.textMain }}>
                 {agentId === 'claude-code' ? 'Claude' : 'Agent'} Sessions for {activeSession?.name || 'Agent'}
               </span>
-              {activeClaudeSessionId && (
+              {activeAgentSessionId && (
                 <span
                   className="text-xs px-2 py-0.5 rounded-full"
                   style={{ backgroundColor: theme.colors.accent + '20', color: theme.colors.accent }}
                 >
-                  Active: {activeClaudeSessionId.slice(0, 8)}...
+                  Active: {activeAgentSessionId.slice(0, 8)}...
                 </span>
               )}
             </>
@@ -1116,7 +1116,7 @@ export function AgentSessionsBrowser({
                     index={i}
                     selectedIndex={selectedIndex}
                     isStarred={starredSessions.has(session.sessionId)}
-                    activeClaudeSessionId={activeClaudeSessionId}
+                    activeAgentSessionId={activeAgentSessionId}
                     renamingSessionId={renamingSessionId}
                     renameValue={renameValue}
                     searchMode={searchMode}
