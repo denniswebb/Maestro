@@ -186,22 +186,22 @@ export const AGENT_CAPABILITIES: Record<string, AgentCapabilities> = {
    * OpenCode - Open source coding assistant
    * https://github.com/opencode-ai/opencode
    *
-   * NOTE: Some capabilities marked as false may be supported but are unverified.
-   * Update this configuration after testing with the actual OpenCode CLI.
+   * Verified capabilities based on CLI testing and documentation review.
+   * See Auto Run Docs/OpenCode-Support.md for investigation details.
    */
   'opencode': {
-    supportsResume: true,        // --session flag (sessionID in output)
-    supportsReadOnlyMode: true,  // --agent plan (plan mode)
-    supportsJsonOutput: true,    // --format json
-    supportsSessionId: true,     // sessionID in JSON output
-    supportsImageInput: false,   // Unverified - may be supported
-    supportsSlashCommands: false, // Unverified - may be supported
-    supportsSessionStorage: false, // Server-managed sessions
-    supportsCostTracking: false, // May not apply to local/self-hosted
-    supportsUsageStats: true,    // part.tokens in output
-    supportsBatchMode: true,     // run subcommand
-    supportsStreaming: true,     // Streams JSON events
-    supportsResultMessages: true, // step_finish event type
+    supportsResume: true,         // --session flag (sessionID in output) - Verified
+    supportsReadOnlyMode: true,   // --agent plan (plan mode) - Verified
+    supportsJsonOutput: true,     // --format json - Verified
+    supportsSessionId: true,      // sessionID in JSON output (camelCase) - Verified
+    supportsImageInput: true,     // -f, --file flag documented - Documented
+    supportsSlashCommands: false, // Not investigated
+    supportsSessionStorage: true, // ~/.local/share/opencode/storage/ (JSON files) - Verified
+    supportsCostTracking: true,   // part.cost in step_finish events - Verified
+    supportsUsageStats: true,     // part.tokens in step_finish events - Verified
+    supportsBatchMode: true,      // run subcommand (auto-approves all permissions) - Verified
+    supportsStreaming: true,      // Streams JSONL events - Verified
+    supportsResultMessages: true, // step_finish with part.reason:"stop" - Verified
   },
 };
 

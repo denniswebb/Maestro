@@ -23,7 +23,7 @@ export interface AgentConfig {
   name: string;
   binaryName: string;
   command: string;
-  args: string[]; // Base args always included
+  args: string[]; // Base args always included (excludes batch mode prefix)
   available: boolean;
   path?: string;
   customPath?: string; // User-specified custom path (shown in UI even if not available)
@@ -31,6 +31,13 @@ export interface AgentConfig {
   configOptions?: AgentConfigOption[]; // Agent-specific configuration
   hidden?: boolean; // If true, agent is hidden from UI (internal use only)
   capabilities: AgentCapabilities; // Agent feature capabilities
+
+  // Argument builders for dynamic CLI construction
+  // These are optional - agents that don't have them use hardcoded behavior
+  batchModePrefix?: string[]; // Args added before base args for batch mode (e.g., ['run'] for OpenCode)
+  jsonOutputArgs?: string[]; // Args for JSON output format (e.g., ['--format', 'json'])
+  resumeArgs?: (sessionId: string) => string[]; // Function to build resume args
+  readOnlyArgs?: string[]; // Args for read-only/plan mode (e.g., ['--agent', 'plan'])
 }
 
 const AGENT_DEFINITIONS: Omit<AgentConfig, 'available' | 'path' | 'capabilities'>[] = [
@@ -77,7 +84,13 @@ const AGENT_DEFINITIONS: Omit<AgentConfig, 'available' | 'path' | 'capabilities'
     name: 'OpenCode',
     binaryName: 'opencode',
     command: 'opencode',
-    args: [],
+    args: [], // Base args (none for OpenCode - batch mode uses 'run' subcommand)
+    // OpenCode CLI argument builders
+    // Batch mode: opencode run --format json [--session <id>] [--agent plan] "prompt"
+    batchModePrefix: ['run'], // OpenCode uses 'run' subcommand for batch mode
+    jsonOutputArgs: ['--format', 'json'], // JSON output format
+    resumeArgs: (sessionId: string) => ['--session', sessionId], // Resume with session ID
+    readOnlyArgs: ['--agent', 'plan'], // Read-only/plan mode
   },
 ];
 
