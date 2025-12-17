@@ -1,6 +1,19 @@
-# Agent Support Architecture
+# Adding Agent Support
 
-This document describes the architecture for supporting multiple AI coding agents in Maestro, the refactoring needed to move from Claude-specific code to a generic agent abstraction, and how to add new agents.
+This guide explains how to add support for a new AI coding agent (provider) in Maestro. It covers the architecture, required implementations, and step-by-step instructions.
+
+## Table of Contents
+
+- [Vernacular](#vernacular)
+- [Architecture Overview](#architecture-overview)
+- [Agent Capability Model](#agent-capability-model)
+- [Step-by-Step: Adding a New Agent](#step-by-step-adding-a-new-agent)
+- [Implementation Details](#implementation-details)
+- [Error Handling](#error-handling)
+- [Testing Your Agent](#testing-your-agent)
+- [Supported Agents Reference](#supported-agents-reference)
+
+---
 
 ## Vernacular
 
@@ -15,35 +28,49 @@ Use these terms consistently throughout the codebase:
 
 **Hierarchy:** `Maestro Agent → Provider → Provider Sessions → Tabs`
 
-## Table of Contents
-
-- [Vernacular](#vernacular)
-- [Overview](#overview)
-- [Agent Capability Model](#agent-capability-model)
-- [Message Display Classification](#message-display-classification)
-- [Current State: Claude-Specific Code](#current-state-claude-specific-code)
-- [Target State: Generic Agent Architecture](#target-state-generic-agent-architecture)
-- [Refactoring Plan](#refactoring-plan)
-- [Test Impact](#test-impact)
-- [Adding a New Agent](#adding-a-new-agent)
-- [Agent-Specific Implementations](#agent-specific-implementations)
-
 ---
 
-## Overview
+## Architecture Overview
 
-Maestro currently supports Claude Code as its primary AI agent. To support additional agents (OpenCode, Gemini CLI, Codex, Qwen3 Coder, etc.), we need to:
+Maestro uses a pluggable architecture for AI agents. Each agent integrates through:
 
-1. Abstract Claude-specific code into a generic agent interface
-2. Define agent capabilities that control UI feature availability
-3. Create agent-specific adapters for session storage, output parsing, and CLI arguments
-4. Rename Claude-specific identifiers to generic "agent" terminology
+1. **Agent Definition** (`src/main/agent-detector.ts`) - CLI binary, arguments, detection
+2. **Capabilities** (`src/main/agent-capabilities.ts`) - Feature flags controlling UI
+3. **Output Parser** (`src/main/parsers/`) - Translates agent JSON to Maestro events
+4. **Session Storage** (`src/main/storage/`) - Optional browsing of past sessions
+5. **Error Patterns** (`src/main/parsers/error-patterns.ts`) - Error detection and recovery
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Maestro UI                           │
+│  (InputArea, MainPanel, AgentSessionsBrowser, etc.)        │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Capability Gates                          │
+│  useAgentCapabilities() → show/hide UI features             │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    ProcessManager                            │
+│  Spawns agent, routes output through parser                 │
+└─────────────────────────────────────────────────────────────┘
+                              │
+            ┌─────────────────┼─────────────────┐
+            ▼                 ▼                 ▼
+    ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+    │ ClaudeOutput │  │ OpenCodeOut  │  │ YourAgent    │
+    │ Parser       │  │ Parser       │  │ Parser       │
+    └──────────────┘  └──────────────┘  └──────────────┘
+```
 
 ---
 
 ## Agent Capability Model
 
-Each agent declares its capabilities, which determine which UI features are available when that agent is active.
+Each agent declares capabilities that determine which UI features are available.
 
 ### Capability Interface
 
@@ -52,7 +79,7 @@ Each agent declares its capabilities, which determine which UI features are avai
 
 interface AgentCapabilities {
   // Core features
-  supportsResume: boolean;           // Can resume previous sessions (--resume, --session, etc.)
+  supportsResume: boolean;           // Can resume previous sessions
   supportsReadOnlyMode: boolean;     // Has a plan/read-only mode
   supportsJsonOutput: boolean;       // Emits structured JSON for parsing
   supportsSessionId: boolean;        // Emits session ID for tracking
@@ -61,7 +88,7 @@ interface AgentCapabilities {
   supportsImageInput: boolean;       // Can receive images in prompts
   supportsSlashCommands: boolean;    // Has discoverable slash commands
   supportsSessionStorage: boolean;   // Persists sessions we can browse
-  supportsCostTracking: boolean;     // Reports token costs (API-based agents)
+  supportsCostTracking: boolean;     // Reports token costs
   supportsUsageStats: boolean;       // Reports token counts
 
   // Streaming behavior
@@ -69,587 +96,470 @@ interface AgentCapabilities {
   supportsStreaming: boolean;        // Streams output incrementally
 
   // Message classification
-  supportsResultMessages: boolean;   // Distinguishes final result from intermediary messages
+  supportsResultMessages: boolean;   // Distinguishes final result from intermediary
 }
 ```
 
 ### Capability-to-UI Feature Mapping
 
-| Capability | UI Feature | Component |
-|------------|------------|-----------|
-| `supportsReadOnlyMode` | Read-only toggle in input area | `InputArea.tsx` |
-| `supportsSessionStorage` | Agent Sessions browser tab | `RightPanel.tsx`, `AgentSessionsBrowser.tsx` |
-| `supportsResume` | Resume button in session browser | `AgentSessionsBrowser.tsx` |
-| `supportsCostTracking` | Cost widget display | `MainPanel.tsx` |
-| `supportsUsageStats` | Token usage display | `MainPanel.tsx`, `TabBar.tsx` |
-| `supportsImageInput` | Image attachment button | `InputArea.tsx` |
-| `supportsSlashCommands` | Slash command autocomplete | `InputArea.tsx`, autocomplete |
-| `supportsSessionId` | Session ID pill in header | `MainPanel.tsx` |
-| `supportsResultMessages` | Show only final result in AI Terminal | `LogViewer.tsx` |
+| Capability | UI Feature | Hidden When False |
+|------------|------------|-------------------|
+| `supportsReadOnlyMode` | Read-only toggle | Toggle hidden |
+| `supportsSessionStorage` | Sessions browser tab | Tab hidden |
+| `supportsResume` | Resume button | Button disabled |
+| `supportsCostTracking` | Cost widget | Widget hidden |
+| `supportsUsageStats` | Token usage display | Display hidden |
+| `supportsImageInput` | Image attachment button | Button hidden |
+| `supportsSlashCommands` | Slash command autocomplete | Autocomplete disabled |
+| `supportsSessionId` | Session ID pill | Pill hidden |
+| `supportsResultMessages` | Show only final result | Shows all messages |
 
-### Per-Agent Capability Definitions
+### Starting Point: All False
+
+When adding a new agent, start with all capabilities set to `false`:
 
 ```typescript
-// src/main/agent-capabilities.ts
+'your-agent': {
+  supportsResume: false,
+  supportsReadOnlyMode: false,
+  supportsJsonOutput: false,
+  supportsSessionId: false,
+  supportsImageInput: false,
+  supportsSlashCommands: false,
+  supportsSessionStorage: false,
+  supportsCostTracking: false,
+  supportsUsageStats: false,
+  supportsBatchMode: false,
+  supportsStreaming: false,
+  supportsResultMessages: false,
+},
+```
 
+Then enable capabilities as you implement and verify each feature.
+
+---
+
+## Step-by-Step: Adding a New Agent
+
+### Step 1: Agent Discovery
+
+Before writing code, investigate your agent's CLI:
+
+```bash
+# Check for JSON output mode
+your-agent --help | grep -i json
+your-agent --help | grep -i format
+
+# Check for session resume
+your-agent --help | grep -i session
+your-agent --help | grep -i resume
+your-agent --help | grep -i continue
+
+# Check for read-only/plan mode
+your-agent --help | grep -i plan
+your-agent --help | grep -i readonly
+your-agent --help | grep -i permission
+
+# Test JSON output
+your-agent run --format json "say hello" 2>&1 | head -20
+```
+
+Document:
+- [ ] How to get JSON output
+- [ ] Session ID field name and format
+- [ ] How to resume a session
+- [ ] How to enable read-only mode
+- [ ] Token/usage reporting format
+
+### Step 2: Add Agent Definition
+
+Edit `src/main/agent-detector.ts`:
+
+```typescript
+const AGENT_DEFINITIONS: AgentConfig[] = [
+  // ... existing agents
+  {
+    id: 'your-agent',
+    name: 'Your Agent',
+    binaryName: 'your-agent',
+    command: 'your-agent',
+    args: [],
+
+    // CLI argument builders
+    batchModePrefix: ['run'],              // Subcommand for batch mode
+    jsonOutputArgs: ['--format', 'json'],  // JSON output flag
+    resumeArgs: (sessionId) => ['--session', sessionId],
+    readOnlyArgs: ['--mode', 'readonly'],
+
+    // Runtime (set by detection)
+    available: false,
+    path: undefined,
+  },
+];
+```
+
+### Step 3: Define Capabilities
+
+Edit `src/main/agent-capabilities.ts`:
+
+```typescript
 const AGENT_CAPABILITIES: Record<string, AgentCapabilities> = {
-  'claude-code': {
-    supportsResume: true,
-    supportsReadOnlyMode: true,        // --permission-mode plan
-    supportsJsonOutput: true,          // --output-format stream-json
-    supportsSessionId: true,
-    supportsImageInput: true,          // --input-format stream-json
-    supportsSlashCommands: true,       // Emits in init message
-    supportsSessionStorage: true,      // ~/.claude/projects/
-    supportsCostTracking: true,        // API-based
-    supportsUsageStats: true,
+  // ... existing agents
+  'your-agent': {
+    supportsResume: true,           // If --session works
+    supportsReadOnlyMode: true,     // If readonly mode exists
+    supportsJsonOutput: true,       // If JSON output works
+    supportsSessionId: true,        // If session ID in output
+    supportsImageInput: false,      // Start false, enable if supported
+    supportsSlashCommands: false,
+    supportsSessionStorage: false,  // Enable if you implement storage
+    supportsCostTracking: false,    // Enable if API-based with costs
+    supportsUsageStats: true,       // If token counts in output
     supportsBatchMode: true,
     supportsStreaming: true,
-    supportsResultMessages: true,      // type: "result" vs type: "assistant"
+    supportsResultMessages: false,  // Enable if result vs intermediary distinction
   },
+};
+```
 
-  'opencode': {
-    supportsResume: true,              // --session <id>
-    supportsReadOnlyMode: true,        // --agent plan
-    supportsJsonOutput: true,          // --format json
-    supportsSessionId: true,           // sessionID in events
-    supportsImageInput: true,          // -f flag
-    supportsSlashCommands: false,      // TBD - needs investigation
-    supportsSessionStorage: true,      // TBD - needs investigation
-    supportsCostTracking: false,       // Local models = free
-    supportsUsageStats: true,          // tokens in step_finish
-    supportsBatchMode: true,
-    supportsStreaming: true,
-    supportsResultMessages: false,     // TBD - needs investigation
-  },
+### Step 4: Create Output Parser
 
-  'gemini-cli': {
-    supportsResume: false,             // TBD
-    supportsReadOnlyMode: false,       // TBD
-    supportsJsonOutput: false,         // TBD
-    supportsSessionId: false,
-    supportsImageInput: false,
-    supportsSlashCommands: false,
-    supportsSessionStorage: false,
-    supportsCostTracking: true,        // API-based
-    supportsUsageStats: false,
-    supportsBatchMode: false,          // TBD
-    supportsStreaming: true,
-    supportsResultMessages: false,     // TBD
-  },
+Create `src/main/parsers/your-agent-output-parser.ts`:
 
-  // Template for new agents - start with all false
-  '_template': {
-    supportsResume: false,
-    supportsReadOnlyMode: false,
-    supportsJsonOutput: false,
-    supportsSessionId: false,
-    supportsImageInput: false,
-    supportsSlashCommands: false,
-    supportsSessionStorage: false,
-    supportsCostTracking: false,
-    supportsUsageStats: false,
-    supportsBatchMode: false,
-    supportsStreaming: false,
-    supportsResultMessages: false,
-  },
+```typescript
+import { AgentOutputParser, ParsedEvent } from './agent-output-parser';
+
+export class YourAgentOutputParser implements AgentOutputParser {
+  parseJsonLine(line: string): ParsedEvent | null {
+    try {
+      const event = JSON.parse(line);
+
+      // Map your agent's event types to Maestro's ParsedEvent
+      switch (event.type) {
+        case 'your_text_event':
+          return {
+            type: 'text',
+            sessionId: event.sessionId,
+            text: event.content,
+            raw: event,
+          };
+
+        case 'your_tool_event':
+          return {
+            type: 'tool_use',
+            sessionId: event.sessionId,
+            toolName: event.tool,
+            toolState: event.state,
+            raw: event,
+          };
+
+        case 'your_finish_event':
+          return {
+            type: 'result',
+            sessionId: event.sessionId,
+            text: event.finalText,
+            usage: {
+              input: event.tokens?.input ?? 0,
+              output: event.tokens?.output ?? 0,
+            },
+            raw: event,
+          };
+
+        default:
+          return null;
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  isResultMessage(event: ParsedEvent): boolean {
+    return event.type === 'result';
+  }
+
+  extractSessionId(event: ParsedEvent): string | null {
+    return event.sessionId ?? null;
+  }
+}
+```
+
+### Step 5: Register Parser in Factory
+
+Edit `src/main/parsers/agent-output-parser.ts`:
+
+```typescript
+import { YourAgentOutputParser } from './your-agent-output-parser';
+
+export function getOutputParser(agentId: string): AgentOutputParser {
+  switch (agentId) {
+    case 'claude-code':
+      return new ClaudeOutputParser();
+    case 'opencode':
+      return new OpenCodeOutputParser();
+    case 'your-agent':
+      return new YourAgentOutputParser();
+    default:
+      return new GenericOutputParser();
+  }
+}
+```
+
+### Step 6: Add Error Patterns (Optional but Recommended)
+
+Edit `src/main/parsers/error-patterns.ts`:
+
+```typescript
+export const YOUR_AGENT_ERROR_PATTERNS = {
+  auth_expired: [
+    /authentication failed/i,
+    /invalid.*key/i,
+    /please login/i,
+  ],
+  token_exhaustion: [
+    /context.*exceeded/i,
+    /too many tokens/i,
+  ],
+  rate_limited: [
+    /rate limit/i,
+    /too many requests/i,
+  ],
+};
+```
+
+### Step 7: Implement Session Storage (Optional)
+
+If your agent stores sessions in browseable files, create `src/main/storage/your-agent-session-storage.ts`:
+
+```typescript
+import { AgentSessionStorage, AgentSession } from '../agent-session-storage';
+
+export class YourAgentSessionStorage implements AgentSessionStorage {
+  async listSessions(projectPath: string): Promise<AgentSession[]> {
+    // Find and parse session files
+    const sessionDir = this.getSessionDir(projectPath);
+    // ... implementation
+  }
+
+  async readSession(projectPath: string, sessionId: string): Promise<SessionMessage[]> {
+    // Read and parse session file
+    // ... implementation
+  }
+
+  // ... other methods
+}
+```
+
+### Step 8: Test Your Integration
+
+```bash
+# Run dev build
+npm run dev
+
+# Create a session with your agent
+# 1. Open Maestro
+# 2. Create new session, select your agent
+# 3. Send a message
+# 4. Verify output displays correctly
+# 5. Test session resume (if supported)
+# 6. Test read-only mode (if supported)
+```
+
+---
+
+## Implementation Details
+
+### Message Display Classification
+
+Agents may emit **intermediary messages** (streaming, tool calls) and **result messages** (final response). Configure display behavior via `supportsResultMessages`:
+
+| supportsResultMessages | Behavior |
+|------------------------|----------|
+| `true` | Only show result messages prominently; collapse intermediary |
+| `false` | Show all messages as they stream |
+
+### CLI Argument Builders
+
+The `AgentConfig` supports several argument builder patterns:
+
+```typescript
+interface AgentConfig {
+  // Static arguments always included
+  args: string[];
+
+  // Subcommand prefix for batch mode (e.g., ['run'] for opencode)
+  batchModePrefix?: string[];
+
+  // Arguments for JSON output
+  jsonOutputArgs?: string[];
+
+  // Function to build resume arguments
+  resumeArgs?: (sessionId: string) => string[];
+
+  // Arguments for read-only mode
+  readOnlyArgs?: string[];
+}
+```
+
+### ParsedEvent Types
+
+Your output parser should emit these normalized event types:
+
+```typescript
+type ParsedEvent = {
+  type: 'init' | 'text' | 'tool_use' | 'result' | 'error' | 'usage';
+  sessionId?: string;
+  text?: string;
+  toolName?: string;
+  toolState?: any;
+  usage?: { input: number; output: number; cacheRead?: number; cacheWrite?: number };
+  slashCommands?: string[];
+  raw: any;
 };
 ```
 
 ---
 
-## Message Display Classification
+## Error Handling
 
-Providers emit both **intermediary messages** (streaming content, tool calls, thinking) and **result messages** (final response). The AI Terminal should display result messages prominently while suppressing or collapsing intermediary messages.
+Maestro has unified error handling for agent failures. Your agent should integrate with this system.
 
-### Result vs Intermediary Messages
+### Error Types
 
-| Provider | Result Message | Intermediary Messages | Display Behavior |
-|----------|----------------|----------------------|------------------|
-| **Claude Code** | `type: "result"` → `msg.result` | `type: "assistant"` (streaming content) | Show result only, suppress intermediary |
-| **OpenCode** | `type: "step_finish"` (TBD) | `type: "text"`, `type: "tool_use"` | TBD - needs investigation |
-| **Gemini CLI** | TBD | TBD | TBD |
-| **Codex** | TBD | TBD | TBD |
+| Error Type | When to Detect |
+|------------|----------------|
+| `auth_expired` | API key invalid, login required |
+| `token_exhaustion` | Context window full |
+| `rate_limited` | Too many requests |
+| `network_error` | Connection failed |
+| `agent_crashed` | Non-zero exit code |
+| `permission_denied` | Operation not allowed |
 
-### Implementation Notes
+### Adding Error Detection
 
-For providers with `supportsResultMessages: true`:
-- Parse streaming output for message type
-- Buffer intermediary messages (may show in expandable section)
-- Display result message as the primary content in AI Terminal
-
-For providers with `supportsResultMessages: false`:
-- Show all messages as they stream
-- No distinction between intermediary and final content
-
-### Claude Code Message Types
+In your output parser, implement the `detectError` method:
 
 ```typescript
-// Intermediary - suppress in AI Terminal
-{ type: "assistant", message: { content: [...] } }
-
-// Result - show in AI Terminal
-{ type: "result", result: "Final response text", session_id: "...", modelUsage: {...} }
-
-// System/Init - metadata only
-{ type: "system", subtype: "init", session_id: "...", slash_commands: [...] }
-```
-
----
-
-## Current State: Claude-Specific Code
-
-The codebase has ~200+ references to "claude" that need refactoring. They fall into these categories:
-
-### Category 1: Generic Session Identifiers (RENAME)
-
-These represent "the agent's conversation session ID" - universal to all agents:
-
-| Current Name | New Name | Files |
-|--------------|----------|-------|
-| `claudeSessionId` | `agentSessionId` | 20+ files |
-| `activeClaudeSessionId` | `activeAgentSessionId` | App.tsx, MainPanel.tsx |
-| `claudeCommands` | `agentCommands` | Session interface |
-| `ClaudeSession` interface | `AgentSession` | AgentSessionsBrowser.tsx |
-| `ClaudeSessionOrigin` | `AgentSessionOrigin` | index.ts |
-
-**Key locations:**
-- `src/renderer/types/index.ts:238,307,327` - AITab and Session interfaces
-- `src/shared/types.ts:44` - HistoryEntry interface
-- `src/renderer/App.tsx` - 60+ occurrences
-- `src/main/index.ts` - 20+ occurrences
-
-### Category 2: Generic Functions (RENAME)
-
-| Current Name | New Name |
-|--------------|----------|
-| `startNewClaudeSession` | `startNewAgentSession` |
-| `handleJumpToClaudeSession` | `handleJumpToAgentSession` |
-| `onResumeClaudeSession` | `onResumeAgentSession` |
-| `onNewClaudeSession` | `onNewAgentSession` |
-| `spawnAgentForSession` | (already generic) |
-
-### Category 3: IPC API (REDESIGN)
-
-**Current:** `window.maestro.claude.*`
-
-**New:** `window.maestro.agentSessions.*` with agent ID parameter
-
-```typescript
-// Before
-window.maestro.claude.listSessions(projectPath)
-window.maestro.claude.readSessionMessages(projectPath, sessionId)
-
-// After
-window.maestro.agentSessions.list(agentId, projectPath)
-window.maestro.agentSessions.read(agentId, projectPath, sessionId)
-```
-
-### Category 4: Session Storage (ABSTRACT)
-
-Each agent stores sessions differently:
-- **Claude Code:** `~/.claude/projects/<encoded-path>/<session-id>.jsonl`
-- **OpenCode:** TBD (server-managed sessions)
-
-Create `AgentSessionStorage` interface with per-agent implementations.
-
-### Category 5: Output Parsing (ABSTRACT)
-
-Each agent has different JSON schemas:
-
-| Agent | Session ID Field | Text Content | Token Stats |
-|-------|------------------|--------------|-------------|
-| Claude Code | `session_id` | `msg.result` | `msg.modelUsage` |
-| OpenCode | `sessionID` | `msg.part.text` | `msg.part.tokens` |
-
-Create `AgentOutputParser` interface with per-agent implementations.
-
-### Category 6: CLI Arguments (CONFIGURE)
-
-| Feature | Claude Code | OpenCode |
-|---------|-------------|----------|
-| Resume | `--resume <id>` | `--session <id>` |
-| Read-only | `--permission-mode plan` | `--agent plan` |
-| JSON output | `--output-format stream-json` | `--format json` |
-| Batch mode | `--print` | `run` subcommand |
-
-Add to `AgentConfig`:
-
-```typescript
-interface AgentConfig {
-  // ... existing fields
-  resumeArgs?: (sessionId: string) => string[];
-  readOnlyArgs?: string[];
-  batchModeArgs?: string[];
-  jsonOutputArgs?: string[];
-}
-```
-
-### Category 7: KEEP AS AGENT-SPECIFIC
-
-These should NOT be renamed - they are legitimately Claude-only:
-
-- `id: 'claude-code'` in AGENT_DEFINITIONS
-- `binaryName: 'claude'`
-- `~/.claude/local` path detection
-- Claude-specific CLI args in the agent definition
-- Comments explaining Claude-specific behavior
-
----
-
-## Target State: Generic Agent Architecture
-
-### New Files to Create
-
-```
-src/main/
-├── agent-capabilities.ts      # Capability definitions per agent
-├── agent-session-storage.ts   # Abstract session storage interface
-│   ├── ClaudeSessionStorage   # Claude implementation
-│   └── OpenCodeSessionStorage # OpenCode implementation
-├── agent-output-parser.ts     # Abstract output parser interface
-│   ├── ClaudeOutputParser     # Claude implementation
-│   └── OpenCodeOutputParser   # OpenCode implementation
-└── agent-pricing.ts           # Cost calculation per agent
-```
-
-### Extended AgentConfig
-
-```typescript
-// src/main/agent-detector.ts
-
-interface AgentConfig {
-  // Identification
-  id: string;
-  name: string;
-  binaryName: string;
-  command: string;
-
-  // Base arguments
-  args: string[];
-
-  // Capability-driven arguments
-  resumeArgs?: (sessionId: string) => string[];   // e.g., ['--resume', id] or ['--session', id]
-  readOnlyArgs?: string[];                         // e.g., ['--permission-mode', 'plan']
-  jsonOutputArgs?: string[];                       // e.g., ['--format', 'json']
-  batchModePrefix?: string[];                      // e.g., ['run'] for opencode
-
-  // Runtime info
-  available: boolean;
-  path?: string;
-  customPath?: string;
-  requiresPty?: boolean;
-  hidden?: boolean;
-
-  // Capabilities (reference to AGENT_CAPABILITIES)
-  capabilities: AgentCapabilities;
-
-  // Pricing (for cost tracking)
-  pricing?: {
-    inputPerMillion: number;
-    outputPerMillion: number;
-    cacheReadPerMillion?: number;
-    cacheCreationPerMillion?: number;
-  };
-
-  // Session storage configuration
-  sessionStoragePath?: (projectPath: string) => string;  // e.g., ~/.claude/projects/...
-
-  // Default context window size
-  defaultContextWindow?: number;  // e.g., 200000 for Claude
-}
-```
-
-### UI Capability Checks
-
-```typescript
-// src/renderer/hooks/useAgentCapabilities.ts
-
-function useAgentCapabilities(agentId: string): AgentCapabilities {
-  const [capabilities, setCapabilities] = useState<AgentCapabilities | null>(null);
-
-  useEffect(() => {
-    window.maestro.agents.getCapabilities(agentId).then(setCapabilities);
-  }, [agentId]);
-
-  return capabilities ?? DEFAULT_CAPABILITIES;
-}
-
-// Usage in components:
-function InputArea({ session }) {
-  const capabilities = useAgentCapabilities(session.toolType);
-
-  return (
-    <div>
-      {/* Only show read-only toggle if agent supports it */}
-      {capabilities.supportsReadOnlyMode && (
-        <ReadOnlyToggle />
-      )}
-
-      {/* Only show image button if agent supports it */}
-      {capabilities.supportsImageInput && (
-        <ImageAttachButton />
-      )}
-    </div>
-  );
+detectError(line: string): AgentError | null {
+  for (const [errorType, patterns] of Object.entries(YOUR_AGENT_ERROR_PATTERNS)) {
+    for (const pattern of patterns) {
+      if (pattern.test(line)) {
+        return {
+          type: errorType as AgentError['type'],
+          message: line,
+          recoverable: errorType !== 'agent_crashed',
+          agentId: 'your-agent',
+          timestamp: Date.now(),
+        };
+      }
+    }
+  }
+  return null;
 }
 ```
 
 ---
 
-## Refactoring Plan
+## Testing Your Agent
 
-### Phase 1: Foundation (Types & Capabilities)
-**Effort: 2-3 hours**
+### Unit Tests
 
-1. Create `src/main/agent-capabilities.ts` with capability interface and definitions
-2. Add `capabilities` field to `AgentConfig`
-3. Expose capabilities via IPC: `window.maestro.agents.getCapabilities(agentId)`
-4. Create `useAgentCapabilities` hook
+Create `src/__tests__/parsers/your-agent-output-parser.test.ts`:
 
-### Phase 2: Identifier Renames
-**Effort: 3-4 hours**
+```typescript
+import { YourAgentOutputParser } from '../../main/parsers/your-agent-output-parser';
 
-1. Rename in type definitions:
-   - `claudeSessionId` → `agentSessionId`
-   - `claudeCommands` → `agentCommands`
-   - `ClaudeSession` → `AgentSession`
+describe('YourAgentOutputParser', () => {
+  const parser = new YourAgentOutputParser();
 
-2. Rename in components and hooks (find-and-replace with review)
+  it('parses text events', () => {
+    const line = '{"type": "your_text_event", "sessionId": "123", "content": "Hello"}';
+    const event = parser.parseJsonLine(line);
 
-3. Rename state variables and functions in App.tsx
+    expect(event).toEqual({
+      type: 'text',
+      sessionId: '123',
+      text: 'Hello',
+      raw: expect.any(Object),
+    });
+  });
 
-### Phase 3: Abstract Session Storage
-**Effort: 4-5 hours**
+  it('extracts session ID', () => {
+    const event = { type: 'text', sessionId: 'abc-123', raw: {} };
+    expect(parser.extractSessionId(event)).toBe('abc-123');
+  });
 
-1. Create `AgentSessionStorage` interface
-2. Extract Claude session logic from `index.ts` into `ClaudeSessionStorage`
-3. Create factory function `getSessionStorage(agentId)`
-4. Update IPC handlers to use abstraction
+  it('detects auth errors', () => {
+    const error = parser.detectError('Error: authentication failed');
+    expect(error?.type).toBe('auth_expired');
+  });
+});
+```
 
-### Phase 4: Abstract Output Parsing
-**Effort: 3-4 hours**
+### Integration Testing Checklist
 
-1. Create `AgentOutputParser` interface
-2. Extract Claude parsing from `process-manager.ts` into `ClaudeOutputParser`
-3. Create `OpenCodeOutputParser`
-4. Update `ProcessManager` to use factory
-
-### Phase 5: IPC API Refactor
-**Effort: 2-3 hours**
-
-1. Add new generic API: `window.maestro.agentSessions.*`
-2. Deprecate old API: `window.maestro.claude.*` (keep working, log warning)
-3. Update all call sites
-
-### Phase 6: UI Capability Gates
-**Effort: 2-3 hours**
-
-1. Add capability checks to `InputArea` (read-only toggle, image button)
-2. Add capability checks to `RightPanel` (session browser availability)
-3. Add capability checks to `MainPanel` (cost widget, session ID pill)
-4. Add capability checks to `AgentSessionsBrowser`
-
-### Phase 7: Add OpenCode Support
-**Effort: 3-4 hours**
-
-1. Add OpenCode to `AGENT_DEFINITIONS` with full config
-2. Implement `OpenCodeOutputParser`
-3. Implement `OpenCodeSessionStorage` (or mark as unsupported)
-4. Test end-to-end: new session, resume, read-only mode
-
-### Total Estimated Effort: 20-26 hours
+- [ ] Agent appears in agent selection dropdown
+- [ ] New session starts successfully
+- [ ] Output streams to AI Terminal
+- [ ] Session ID captured and displayed
+- [ ] Token usage updates (if applicable)
+- [ ] Session resume works (if applicable)
+- [ ] Read-only mode works (if applicable)
+- [ ] Error modal appears on auth/token errors
+- [ ] Auto Run works with your agent
 
 ---
 
-## Test Impact
-
-The test suite contains 147 test files, of which **55 files (37%)** contain Claude-specific references that will need updates during refactoring.
-
-### Test Files Requiring Updates
-
-| Category | Files | Changes Needed |
-|----------|-------|----------------|
-| Setup/Mocks | `setup.ts` | Rename `window.maestro.claude` mock to `agentSessions` |
-| Type Tests | `templateVariables.test.ts` | Update `claudeSessionId` in test data |
-| Hook Tests | `useSessionManager.test.ts`, `useBatchProcessor.test.ts` | Update session mock properties |
-| Component Tests | `TabBar.test.tsx`, `SessionList.test.tsx`, `MainPanel.test.tsx`, `HistoryPanel.test.tsx`, `ProcessMonitor.test.tsx`, +8 more | Update `claudeSessionId` in mock data |
-| CLI Tests | `batch-processor.test.ts`, `storage.test.ts` | Update mock session objects |
-| Agent Tests | `agent-detector.test.ts` | **Keep as-is** (tests Claude-specific detection) |
-
-### Tests That Should NOT Change
-
-Some tests are legitimately Claude-specific and should remain unchanged:
-
-- `agent-detector.test.ts` - Tests that `claude-code` agent is properly detected
-- Storage tests with `claude-code` config paths - Tests Claude-specific settings
-- Any test verifying Claude CLI argument construction
-
-### Refactoring Strategy with Tests
-
-**Recommended approach: Update tests incrementally alongside code changes.**
-
-For each refactoring phase:
-
-1. **Make the code change** (e.g., rename `claudeSessionId` → `agentSessionId`)
-2. **Run tests** - They will fail due to type/name mismatches
-3. **Update failing tests** with new names
-4. **Run tests again** - They should pass
-5. **Commit both code + test changes together**
-
-This approach ensures:
-- Tests catch any missed renames (TypeScript will also help)
-- Each commit is self-contained and all tests pass
-- The test suite remains a safety net throughout refactoring
-
-### Test Mock Updates Per Phase
-
-**Phase 2 (Identifier Renames):**
-```typescript
-// Before (in test files)
-createTestSession({ claudeSessionId: 'test-123' })
-
-// After
-createTestSession({ agentSessionId: 'test-123' })
-```
-
-**Phase 5 (IPC API Refactor):**
-```typescript
-// Before (in setup.ts)
-claude: {
-  listSessions: vi.fn(),
-  readSessionMessages: vi.fn(),
-}
-
-// After
-agentSessions: {
-  list: vi.fn(),      // Now takes agentId parameter
-  read: vi.fn(),
-}
-```
-
-### Estimated Test Update Effort
-
-| Phase | Test Files Affected | Effort |
-|-------|---------------------|--------|
-| Phase 1: Foundation | 0 (new code) | 0 |
-| Phase 2: Identifier Renames | ~45 files | 1-2 hours |
-| Phase 3: Session Storage | ~5 files | 30 min |
-| Phase 4: Output Parsing | ~3 files | 30 min |
-| Phase 5: IPC API | ~10 files | 30 min |
-| Phase 6: UI Capability Gates | ~10 files | 30 min |
-| Phase 7: OpenCode Support | 0 (new tests) | Write new tests |
-| **Total** | **55 files** | **~3-4 hours** |
-
-### Creating Test Factories
-
-To simplify future refactoring, consider creating test factories:
-
-```typescript
-// src/__tests__/factories/session.ts
-
-export function createMockSession(overrides?: Partial<Session>): Session {
-  return {
-    id: 'test-session-1',
-    name: 'Test Session',
-    toolType: 'claude-code',
-    agentSessionId: null,  // Generic name
-    agentCommands: [],     // Generic name
-    // ... other fields
-    ...overrides,
-  };
-}
-
-export function createMockAITab(overrides?: Partial<AITab>): AITab {
-  return {
-    id: 'tab-1',
-    agentSessionId: null,  // Generic name
-    // ... other fields
-    ...overrides,
-  };
-}
-```
-
-Using factories means future renames only require updating the factory, not every test file.
-
----
-
-## Adding a New Agent
-
-See [CONTRIBUTING.md](CONTRIBUTING.md#adding-a-new-ai-agent) for the step-by-step guide and capability checklist.
-
----
-
-## Agent-Specific Implementations
+## Supported Agents Reference
 
 ### Claude Code
 
-**CLI Reference:**
-```bash
-claude --print --verbose --output-format stream-json --dangerously-skip-permissions "prompt"
-claude --print --resume <session-id> "prompt"
-claude --print --permission-mode plan "prompt"  # Read-only
-```
+| Aspect | Value |
+|--------|-------|
+| Binary | `claude` |
+| JSON Output | `--output-format stream-json` |
+| Resume | `--resume <session-id>` |
+| Read-only | `--permission-mode plan` |
+| Session ID Field | `session_id` (snake_case) |
+| Session Storage | `~/.claude/projects/<encoded-path>/` |
 
-**Session Storage:** `~/.claude/projects/<encoded-path>/<session-id>.jsonl`
-
-**JSON Output Schema:**
-```json
-{"type": "system", "subtype": "init", "session_id": "...", "slash_commands": [...]}
-{"type": "assistant", "message": {...}}
-{"type": "result", "result": "response text", "session_id": "...", "modelUsage": {...}}
-```
-
-**Session ID Field:** `session_id` (snake_case)
+**JSON Event Types:**
+- `system` (init) → session_id, slash_commands
+- `assistant` → streaming content
+- `result` → final response, modelUsage
 
 ---
 
 ### OpenCode
 
-**CLI Reference:**
-```bash
-opencode run --format json "prompt"
-opencode run --session <session-id> --format json "prompt"
-opencode run --agent plan --format json "prompt"  # Read-only
-opencode run --model ollama/qwen3:4b --format json "prompt"  # Custom model
-```
+| Aspect | Value |
+|--------|-------|
+| Binary | `opencode` |
+| JSON Output | `--format json` |
+| Resume | `--session <session-id>` |
+| Read-only | `--agent plan` |
+| Session ID Field | `sessionID` (camelCase) |
+| Session Storage | Server-managed |
 
-**Session Storage:** Server-managed (TBD)
-
-**JSON Output Schema:**
-```json
-{"type": "step_start", "sessionID": "...", "part": {...}}
-{"type": "text", "sessionID": "...", "part": {"text": "response"}}
-{"type": "tool_use", "sessionID": "...", "part": {"tool": "write", "state": {...}}}
-{"type": "step_finish", "sessionID": "...", "part": {"tokens": {"input": N, "output": N}}}
-```
-
-**Session ID Field:** `sessionID` (camelCase)
+**JSON Event Types:**
+- `step_start` → session start
+- `text` → streaming content
+- `tool_use` → tool invocations
+- `step_finish` → tokens, completion
 
 ---
 
-### Gemini CLI (Placeholder)
+### Gemini CLI (Planned)
 
-**Status:** Not yet implemented
-
-**CLI Reference:** TBD
-
-**Known Info:**
-- API-based (has cost tracking)
-- May support streaming
+Status: Not yet implemented
 
 ---
 
-### Codex (Placeholder)
+### Codex (Planned)
 
-**Status:** Not yet implemented
-
-**CLI Reference:** TBD
+Status: Not yet implemented
 
 ---
 
-### Qwen3 Coder (Placeholder)
+### Qwen3 Coder (Planned)
 
-**Status:** Not yet implemented
-
-**CLI Reference:** TBD
+Status: Not yet implemented
