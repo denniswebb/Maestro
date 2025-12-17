@@ -16,8 +16,9 @@
  * @see https://github.com/opencode-ai/opencode
  */
 
-import type { ToolType } from '../../shared/types';
+import type { ToolType, AgentError } from '../../shared/types';
 import type { AgentOutputParser, ParsedEvent } from './agent-output-parser';
+import { getErrorPatterns, matchErrorPattern } from './error-patterns';
 
 /**
  * Raw message structure from OpenCode output
@@ -199,5 +200,96 @@ export class OpenCodeOutputParser implements AgentOutputParser {
    */
   extractSlashCommands(event: ParsedEvent): string[] | null {
     return event.slashCommands || null;
+  }
+
+  /**
+   * Detect an error from a line of agent output
+   */
+  detectErrorFromLine(line: string): AgentError | null {
+    // Skip empty lines
+    if (!line.trim()) {
+      return null;
+    }
+
+    // Try to parse as JSON first to check for error messages in structured output
+    let textToCheck = line;
+    try {
+      const parsed = JSON.parse(line);
+      // OpenCode uses an 'error' field for errors
+      if (parsed.error) {
+        textToCheck = parsed.error;
+      } else if (parsed.type === 'error' && parsed.message) {
+        textToCheck = parsed.message;
+      }
+    } catch {
+      // Not JSON, check the raw line
+    }
+
+    // Match against error patterns
+    const patterns = getErrorPatterns(this.agentId);
+    const match = matchErrorPattern(patterns, textToCheck);
+
+    if (match) {
+      return {
+        type: match.type,
+        message: match.message,
+        recoverable: match.recoverable,
+        agentId: this.agentId,
+        timestamp: Date.now(),
+        raw: {
+          errorLine: line,
+        },
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Detect an error from process exit information
+   */
+  detectErrorFromExit(
+    exitCode: number,
+    stderr: string,
+    stdout: string
+  ): AgentError | null {
+    // Exit code 0 is success
+    if (exitCode === 0) {
+      return null;
+    }
+
+    // Check stderr and stdout for error patterns
+    const combined = `${stderr}\n${stdout}`;
+    const patterns = getErrorPatterns(this.agentId);
+    const match = matchErrorPattern(patterns, combined);
+
+    if (match) {
+      return {
+        type: match.type,
+        message: match.message,
+        recoverable: match.recoverable,
+        agentId: this.agentId,
+        timestamp: Date.now(),
+        raw: {
+          exitCode,
+          stderr,
+          stdout,
+        },
+      };
+    }
+
+    // Non-zero exit with no recognized pattern - treat as crash
+    return {
+      type: 'agent_crashed',
+      message: `Agent exited with code ${exitCode}`,
+      recoverable: true,
+      agentId: this.agentId,
+      timestamp: Date.now(),
+      raw: {
+        exitCode,
+        stderr,
+        stdout,
+      },
+    };
   }
 }

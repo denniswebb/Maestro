@@ -114,3 +114,73 @@ export interface AgentConfig {
   requiresPty?: boolean;
   hidden?: boolean;
 }
+
+// ============================================================================
+// Agent Error Handling Types
+// ============================================================================
+
+/**
+ * Types of errors that agents can encounter.
+ * Used to determine appropriate recovery actions and UI display.
+ */
+export type AgentErrorType =
+  | 'auth_expired'      // API key invalid, token expired, login required
+  | 'token_exhaustion'  // Context window full, max tokens reached
+  | 'rate_limited'      // Too many requests, quota exceeded
+  | 'network_error'     // Connection failed, timeout
+  | 'agent_crashed'     // Process exited unexpectedly
+  | 'permission_denied' // Agent lacks required permissions
+  | 'unknown';          // Unrecognized error
+
+/**
+ * Structured error information from an AI agent.
+ * Contains details needed for error display and recovery.
+ */
+export interface AgentError {
+  /** The category of error */
+  type: AgentErrorType;
+
+  /** Human-readable error message for display */
+  message: string;
+
+  /** Whether the error can be recovered from (vs. requiring user intervention) */
+  recoverable: boolean;
+
+  /** The agent that encountered the error (e.g., 'claude-code', 'opencode') */
+  agentId: string;
+
+  /** The session ID where the error occurred (if applicable) */
+  sessionId?: string;
+
+  /** Timestamp when the error occurred */
+  timestamp: number;
+
+  /** Original error data for debugging (stderr, exit code, etc.) */
+  raw?: {
+    exitCode?: number;
+    stderr?: string;
+    stdout?: string;
+    errorLine?: string;
+  };
+}
+
+/**
+ * Recovery action for an agent error.
+ * Provides both the action metadata and the action function.
+ */
+export interface AgentErrorRecovery {
+  /** The error type this recovery addresses */
+  type: AgentErrorType;
+
+  /** Button label for the recovery action (e.g., "Re-authenticate", "Start New Session") */
+  label: string;
+
+  /** Description of what the recovery action will do */
+  description?: string;
+
+  /** Whether this is the recommended/primary action */
+  primary?: boolean;
+
+  /** Icon identifier for the action button (optional) */
+  icon?: string;
+}

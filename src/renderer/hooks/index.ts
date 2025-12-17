@@ -40,6 +40,7 @@ export { useListNavigation } from './useListNavigation';
 export { useExpandedSet } from './useExpandedSet';
 export { useScrollPosition } from './useScrollPosition';
 export { useAgentCapabilities, clearCapabilitiesCache, setCapabilitiesCache, DEFAULT_CAPABILITIES } from './useAgentCapabilities';
+export { useAgentErrorRecovery } from './useAgentErrorRecovery';
 
 export type { UseSettingsReturn } from './useSettings';
 export type { UseSessionManagerReturn } from './useSessionManager';
@@ -127,3 +128,4 @@ export type { UseListNavigationOptions, UseListNavigationReturn } from './useLis
 export type { UseExpandedSetOptions, UseExpandedSetReturn } from './useExpandedSet';
 export type { UseScrollPositionOptions, UseScrollPositionReturn, ScrollMetrics } from './useScrollPosition';
 export type { AgentCapabilities, UseAgentCapabilitiesReturn } from './useAgentCapabilities';
+export type { UseAgentErrorRecoveryOptions, UseAgentErrorRecoveryResult } from './useAgentErrorRecovery';

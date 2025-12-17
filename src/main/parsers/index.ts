@@ -21,7 +21,12 @@
  */
 
 // Re-export interface and types
-export type { AgentOutputParser, ParsedEvent } from './agent-output-parser';
+export type {
+  AgentOutputParser,
+  ParsedEvent,
+  AgentError,
+  AgentErrorType,
+} from './agent-output-parser';
 
 // Re-export registry functions
 export {
@@ -31,6 +36,17 @@ export {
   getAllOutputParsers,
   clearParserRegistry,
 } from './agent-output-parser';
+
+// Re-export error pattern utilities
+export type { ErrorPattern, AgentErrorPatterns } from './error-patterns';
+export {
+  getErrorPatterns,
+  matchErrorPattern,
+  registerErrorPatterns,
+  clearPatternRegistry,
+  CLAUDE_ERROR_PATTERNS,
+  OPENCODE_ERROR_PATTERNS,
+} from './error-patterns';
 
 // Import parser implementations
 import { ClaudeOutputParser } from './claude-output-parser';

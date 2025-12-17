@@ -4,6 +4,11 @@
 export type { Theme, ThemeId, ThemeMode, ThemeColors } from '../../shared/theme-types';
 export { isValidThemeId } from '../../shared/theme-types';
 
+// Re-export error types from shared location
+export type { AgentError, AgentErrorType, AgentErrorRecovery } from '../../shared/types';
+// Import AgentError for use within this file
+import type { AgentError } from '../../shared/types';
+
 export type ToolType = 'claude' | 'claude-code' | 'aider' | 'opencode' | 'terminal';
 export type SessionState = 'idle' | 'busy' | 'waiting_input' | 'connecting' | 'error';
 export type FileChangeType = 'modified' | 'added' | 'deleted';
@@ -400,6 +405,14 @@ export interface Session {
   // Nudge message - appended to every interactive user message (max 1000 chars)
   // Not visible in UI, but sent to the agent with each message
   nudgeMessage?: string;
+
+  // Agent error state - set when an agent error is detected
+  // Cleared when user dismisses the error or takes recovery action
+  agentError?: AgentError;
+
+  // Whether operations are paused due to an agent error
+  // When true, new messages are blocked until the error is resolved
+  agentErrorPaused?: boolean;
 }
 
 export interface Group {

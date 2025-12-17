@@ -15,9 +15,21 @@
  *   }
  * }
  * ```
+ *
+ * Error Detection:
+ * ```typescript
+ * const parser = getOutputParser('claude-code');
+ * const error = parser.detectError(line);
+ * if (error) {
+ *   // Handle agent error (auth, rate limit, etc.)
+ * }
+ * ```
  */
 
-import type { ToolType } from '../../shared/types';
+import type { ToolType, AgentError } from '../../shared/types';
+
+// Re-export error types for convenience
+export type { AgentError, AgentErrorType } from '../../shared/types';
 
 /**
  * Normalized parsed event from agent output.
@@ -144,6 +156,30 @@ export interface AgentOutputParser {
    * @returns Array of slash command strings or null if not present
    */
   extractSlashCommands(event: ParsedEvent): string[] | null;
+
+  /**
+   * Detect an error from a line of agent output
+   * Checks for error patterns in the output and returns structured error info
+   *
+   * @param line - A single line of output from the agent (may be JSON or plain text)
+   * @returns AgentError if an error was detected, null otherwise
+   */
+  detectErrorFromLine(line: string): AgentError | null;
+
+  /**
+   * Detect an error from process exit information
+   * Called when the agent process exits to determine if there was an error
+   *
+   * @param exitCode - The process exit code
+   * @param stderr - The stderr output (may be empty)
+   * @param stdout - The stdout output (may be empty)
+   * @returns AgentError if an error was detected, null otherwise
+   */
+  detectErrorFromExit(
+    exitCode: number,
+    stderr: string,
+    stdout: string
+  ): AgentError | null;
 }
 
 /**

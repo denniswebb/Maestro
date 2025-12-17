@@ -336,4 +336,99 @@ describe('ClaudeOutputParser', () => {
       expect(event?.usage?.costUsd).toBe(0);
     });
   });
+
+  describe('detectErrorFromLine', () => {
+    it('should return null for empty lines', () => {
+      expect(parser.detectErrorFromLine('')).toBeNull();
+      expect(parser.detectErrorFromLine('  ')).toBeNull();
+    });
+
+    it('should return null for normal output', () => {
+      expect(parser.detectErrorFromLine('Hello, how can I help you?')).toBeNull();
+    });
+
+    it('should detect auth errors', () => {
+      const error = parser.detectErrorFromLine('Error: Invalid API key');
+      expect(error).not.toBeNull();
+      expect(error?.type).toBe('auth_expired');
+      expect(error?.agentId).toBe('claude-code');
+      expect(error?.recoverable).toBe(true);
+      expect(error?.timestamp).toBeGreaterThan(0);
+    });
+
+    it('should detect token exhaustion errors', () => {
+      const error = parser.detectErrorFromLine('Error: context is too long');
+      expect(error).not.toBeNull();
+      expect(error?.type).toBe('token_exhaustion');
+    });
+
+    it('should detect rate limit errors', () => {
+      const error = parser.detectErrorFromLine('Rate limit exceeded');
+      expect(error).not.toBeNull();
+      expect(error?.type).toBe('rate_limited');
+    });
+
+    it('should detect network errors', () => {
+      const error = parser.detectErrorFromLine('Connection failed');
+      expect(error).not.toBeNull();
+      expect(error?.type).toBe('network_error');
+    });
+
+    it('should extract error from JSON error messages', () => {
+      const jsonLine = JSON.stringify({ type: 'error', message: 'Invalid API key' });
+      const error = parser.detectErrorFromLine(jsonLine);
+      expect(error).not.toBeNull();
+      expect(error?.type).toBe('auth_expired');
+    });
+
+    it('should extract error from JSON error field', () => {
+      const jsonLine = JSON.stringify({ error: 'rate limit exceeded' });
+      const error = parser.detectErrorFromLine(jsonLine);
+      expect(error).not.toBeNull();
+      expect(error?.type).toBe('rate_limited');
+    });
+
+    it('should preserve the original line in raw data', () => {
+      const line = 'Error: Invalid API key';
+      const error = parser.detectErrorFromLine(line);
+      expect(error?.raw?.errorLine).toBe(line);
+    });
+  });
+
+  describe('detectErrorFromExit', () => {
+    it('should return null for exit code 0', () => {
+      expect(parser.detectErrorFromExit(0, '', '')).toBeNull();
+      expect(parser.detectErrorFromExit(0, 'some stderr', 'some stdout')).toBeNull();
+    });
+
+    it('should detect auth errors from stderr', () => {
+      const error = parser.detectErrorFromExit(1, 'Invalid API key', '');
+      expect(error).not.toBeNull();
+      expect(error?.type).toBe('auth_expired');
+      expect(error?.raw?.exitCode).toBe(1);
+      expect(error?.raw?.stderr).toBe('Invalid API key');
+    });
+
+    it('should detect errors from stdout if not in stderr', () => {
+      const error = parser.detectErrorFromExit(1, '', 'rate limit exceeded');
+      expect(error).not.toBeNull();
+      expect(error?.type).toBe('rate_limited');
+    });
+
+    it('should return agent_crashed for unrecognized non-zero exit', () => {
+      const error = parser.detectErrorFromExit(1, 'Some unknown error', '');
+      expect(error).not.toBeNull();
+      expect(error?.type).toBe('agent_crashed');
+      expect(error?.message).toContain('exited with code 1');
+      expect(error?.recoverable).toBe(true);
+    });
+
+    it('should handle different exit codes', () => {
+      const error1 = parser.detectErrorFromExit(127, '', '');
+      expect(error1?.message).toContain('exited with code 127');
+
+      const error2 = parser.detectErrorFromExit(-1, '', '');
+      expect(error2?.message).toContain('exited with code -1');
+    });
+  });
 });
