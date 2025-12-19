@@ -145,6 +145,17 @@ body {
   background-color: rgba(0, 0, 0, 0.85);
 }
 
+/* Override browser autofill/datalist styling to maintain dark theme */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
+  -webkit-text-fill-color: inherit !important;
+  background-color: transparent !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
 /* Reduced motion preference - accessibility best practice */
 @media (prefers-reduced-motion: reduce) {
   .animate-pulse,

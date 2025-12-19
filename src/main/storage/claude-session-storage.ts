@@ -46,7 +46,7 @@ type StoredOriginData =
       starred?: boolean;
     };
 
-interface ClaudeSessionOriginsData {
+export interface ClaudeSessionOriginsData {
   origins: Record<string, Record<string, StoredOriginData>>;
 }
 

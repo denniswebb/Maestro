@@ -183,13 +183,14 @@ export function AgentSessionsBrowser({
 
   // Listen for progressive stats updates (Claude-specific)
   useEffect(() => {
-    if (!activeSession?.cwd) return;
+    // Use projectRoot for consistent session storage access (same as useSessionPagination)
+    if (!activeSession?.projectRoot) return;
     // Only subscribe for Claude Code sessions
     if (activeSession.toolType !== 'claude-code') return;
 
     const unsubscribe = window.maestro.claude.onProjectStatsUpdate((stats) => {
-      // Only update if this is for our project
-      if (stats.projectPath === activeSession.cwd) {
+      // Only update if this is for our project (use projectRoot, not cwd)
+      if (stats.projectPath === activeSession.projectRoot) {
         setAggregateStats({
           totalSessions: stats.totalSessions,
           totalMessages: stats.totalMessages,
@@ -203,7 +204,7 @@ export function AgentSessionsBrowser({
     });
 
     return unsubscribe;
-  }, [activeSession?.cwd, activeSession?.toolType]);
+  }, [activeSession?.projectRoot, activeSession?.toolType]);
 
   // Toggle star status for a session
   const toggleStar = useCallback(async (sessionId: string, e: React.MouseEvent) => {

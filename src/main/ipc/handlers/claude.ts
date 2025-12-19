@@ -641,6 +641,12 @@ export function registerClaudeHandlers(deps: ClaudeHandlerDependencies): void {
         }
       }
 
+      // Send immediate update with cached data (so UI shows something right away)
+      if (Object.keys(newCache.sessions).length > 0) {
+        const cachedTotals = calculateTotals(newCache);
+        sendUpdate({ ...cachedTotals, isComplete: sessionsToProcess.length === 0 });
+      }
+
       // Process new/modified sessions
       let processedCount = 0;
       for (const { filename, filePath, mtimeMs } of sessionsToProcess) {

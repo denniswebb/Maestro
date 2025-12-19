@@ -893,7 +893,8 @@ function setupIpcHandlers() {
 
   // Initialize session storages and register generic agent sessions handlers
   // This provides the new window.maestro.agentSessions.* API
-  initializeSessionStorages();
+  // Pass the shared claudeSessionOriginsStore so session names/stars are consistent
+  initializeSessionStorages({ claudeSessionOriginsStore });
   registerAgentSessionsHandlers({ getMainWindow: () => mainWindow });
 
   // Helper to get custom env vars for an agent

@@ -339,4 +339,62 @@ describe('Storage Module Initialization', () => {
     const { CodexSessionStorage } = await import('../../main/storage/index');
     expect(CodexSessionStorage).toBeDefined();
   });
+
+  it('should allow creating ClaudeSessionStorage with external store', async () => {
+    // This tests that ClaudeSessionStorage can receive an external store
+    // This prevents the dual-store bug where IPC handlers and storage class
+    // use different electron-store instances
+    const { ClaudeSessionStorage } = await import('../../main/storage/claude-session-storage');
+
+    // Create a mock store
+    const mockStore = {
+      get: vi.fn().mockReturnValue({}),
+      set: vi.fn(),
+      store: { origins: {} },
+    };
+
+    // Should be able to create with external store (no throw)
+    const storage = new ClaudeSessionStorage(mockStore as unknown as import('electron-store').default);
+    expect(storage.agentId).toBe('claude-code');
+  });
+
+  it('should export InitializeSessionStoragesOptions interface', async () => {
+    // This tests that the options interface is exported for type-safe initialization
+    const storageModule = await import('../../main/storage/index');
+    // The function should accept options object
+    expect(typeof storageModule.initializeSessionStorages).toBe('function');
+    // Function should accept undefined options (backward compatible)
+    expect(() => storageModule.initializeSessionStorages()).not.toThrow();
+  });
+
+  it('should accept claudeSessionOriginsStore in options', async () => {
+    // This tests the fix for the dual-store bug
+    // When a shared store is passed, it should be used instead of creating a new one
+    const { initializeSessionStorages } = await import('../../main/storage/index');
+    const { getSessionStorage, clearStorageRegistry } = await import('../../main/agent-session-storage');
+
+    // Clear registry first
+    clearStorageRegistry();
+
+    // Create a mock store-like object
+    // Note: In production, this would be an actual electron-store instance
+    // The key is that the SAME store is used by both IPC handlers and ClaudeSessionStorage
+    const mockStore = {
+      get: vi.fn().mockReturnValue({}),
+      set: vi.fn(),
+      store: { origins: {} },
+    };
+
+    // Initialize with the shared store
+    // This mimics what main/index.ts does
+    initializeSessionStorages({ claudeSessionOriginsStore: mockStore as unknown as import('electron-store').default });
+
+    // Verify ClaudeSessionStorage was registered
+    const storage = getSessionStorage('claude-code');
+    expect(storage).not.toBeNull();
+    expect(storage?.agentId).toBe('claude-code');
+
+    // Clean up
+    clearStorageRegistry();
+  });
 });

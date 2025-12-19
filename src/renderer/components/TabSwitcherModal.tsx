@@ -247,9 +247,9 @@ export function TabSwitcherModal({
       // Starred mode - show all starred sessions (open or closed) for the current project
       const items: ListItem[] = [];
 
-      // Add starred open tabs
+      // Add starred open tabs (no agentSessionId requirement - tabs can be starred before session starts)
       for (const tab of tabs) {
-        if (tab.starred && tab.agentSessionId) {
+        if (tab.starred) {
           items.push({ type: 'open' as const, tab });
         }
       }
@@ -476,7 +476,7 @@ export function TabSwitcherModal({
             }}
           >
             <Star className="w-3 h-3" style={{ fill: viewMode === 'starred' ? 'currentColor' : 'none' }} />
-            Starred ({tabs.filter(t => t.starred && t.agentSessionId).length + namedSessions.filter(s => s.starred && s.projectPath === projectRoot && !openTabSessionIds.has(s.agentSessionId)).length})
+            Starred ({tabs.filter(t => t.starred).length + namedSessions.filter(s => s.starred && s.projectPath === projectRoot && !openTabSessionIds.has(s.agentSessionId)).length})
           </button>
           <span className="text-[10px] opacity-50 ml-auto" style={{ color: theme.colors.textDim }}>
             Tab / ⇧Tab to switch
