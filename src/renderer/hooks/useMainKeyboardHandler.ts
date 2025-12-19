@@ -148,7 +148,14 @@ export function useMainKeyboardHandler(): UseMainKeyboardHandlerReturn {
       }
       else if (ctx.isShortcut(e, 'toggleRightPanel')) ctx.setRightPanelOpen((p: boolean) => !p);
       else if (ctx.isShortcut(e, 'newInstance')) ctx.addNewSession();
-      else if (ctx.isShortcut(e, 'killInstance')) ctx.deleteSession(ctx.activeSessionId!);
+      else if (ctx.isShortcut(e, 'killInstance')) {
+        // Delete whichever is currently active: group chat or agent session
+        if (ctx.activeGroupChatId) {
+          ctx.deleteGroupChatWithConfirmation(ctx.activeGroupChatId);
+        } else if (ctx.activeSessionId) {
+          ctx.deleteSession(ctx.activeSessionId);
+        }
+      }
       else if (ctx.isShortcut(e, 'moveToGroup')) {
         if (ctx.activeSession) {
           ctx.setQuickActionInitialMode('move-to-group');

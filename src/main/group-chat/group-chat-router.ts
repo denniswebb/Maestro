@@ -505,7 +505,7 @@ export async function routeAgentResponse(
   groupChatId: string,
   participantName: string,
   message: string,
-  processManager?: IProcessManager
+  _processManager?: IProcessManager
 ): Promise<void> {
   const chat = await loadGroupChat(groupChatId);
   if (!chat) {

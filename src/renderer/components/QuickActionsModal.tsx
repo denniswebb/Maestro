@@ -75,6 +75,7 @@ interface QuickActionsModalProps {
   onNewGroupChat?: () => void;
   onOpenGroupChat?: (id: string) => void;
   onCloseGroupChat?: () => void;
+  onDeleteGroupChat?: (id: string) => void;
   activeGroupChatId?: string | null;
 }
 
@@ -91,7 +92,7 @@ export function QuickActionsModal(props: QuickActionsModalProps) {
     setAgentSessionsOpen, setActiveAgentSessionId, setGitDiffPreview, setGitLogOpen,
     onRenameTab, onToggleReadOnlyMode, onOpenTabSwitcher, tabShortcuts, isAiMode, setPlaygroundOpen, onRefreshGitFileState,
     onDebugReleaseQueuedItem, markdownEditMode, onToggleMarkdownEditMode, setUpdateCheckModalOpen, openWizard, wizardGoToStep, setDebugWizardModalOpen, startTour, setFuzzyFileSearchOpen, onEditAgent,
-    groupChats, onNewGroupChat, onOpenGroupChat, onCloseGroupChat, activeGroupChatId
+    groupChats, onNewGroupChat, onOpenGroupChat, onCloseGroupChat, onDeleteGroupChat, activeGroupChatId
   } = props;
 
   const [search, setSearch] = useState('');
@@ -307,6 +308,7 @@ export function QuickActionsModal(props: QuickActionsModalProps) {
     // Group Chat commands
     ...(onNewGroupChat ? [{ id: 'newGroupChat', label: 'New Group Chat', action: () => { onNewGroupChat(); setQuickActionOpen(false); } }] : []),
     ...(activeGroupChatId && onCloseGroupChat ? [{ id: 'closeGroupChat', label: 'Close Group Chat', action: () => { onCloseGroupChat(); setQuickActionOpen(false); } }] : []),
+    ...(activeGroupChatId && onDeleteGroupChat && groupChats ? [{ id: 'deleteGroupChat', label: `Remove Group Chat: ${groupChats.find(c => c.id === activeGroupChatId)?.name || 'Group Chat'}`, shortcut: shortcuts.killInstance, action: () => { onDeleteGroupChat(activeGroupChatId); setQuickActionOpen(false); } }] : []),
     // Debug commands - only visible when user types "debug"
     { id: 'debugResetBusy', label: 'Debug: Reset Busy State', subtext: 'Clear stuck thinking/busy state for all sessions', action: () => {
       // Reset all sessions and tabs to idle state

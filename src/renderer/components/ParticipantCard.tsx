@@ -17,11 +17,9 @@ interface ParticipantCardProps {
 }
 
 /**
- * Format cost as a dollar amount.
+ * Format cost as a dollar amount (always 2 decimal places).
  */
 function formatCost(cost: number): string {
-  if (cost < 0.01) return `$${cost.toFixed(4)}`;
-  if (cost < 1) return `$${cost.toFixed(3)}`;
   return `$${cost.toFixed(2)}`;
 }
 

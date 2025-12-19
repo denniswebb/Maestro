@@ -1552,7 +1552,7 @@ export default function MaestroConsole() {
       ));
     });
 
-    const unsubModeratorUsage = window.maestro.groupChat.onModeratorUsage((id, usage) => {
+    const unsubModeratorUsage = window.maestro.groupChat.onModeratorUsage?.((id, usage) => {
       if (id === activeGroupChatId) {
         setModeratorUsage(usage);
       }
@@ -1562,7 +1562,7 @@ export default function MaestroConsole() {
       unsubMessage();
       unsubState();
       unsubParticipants();
-      unsubModeratorUsage();
+      unsubModeratorUsage?.();
     };
   }, [activeGroupChatId]);
 
@@ -2681,6 +2681,11 @@ export default function MaestroConsole() {
 
       // Start moderator if not running
       await window.maestro.groupChat.startModerator(id);
+
+      // Focus the input after the component renders
+      setTimeout(() => {
+        groupChatInputRef.current?.focus();
+      }, 100);
     }
   }, []);
 
@@ -3127,6 +3132,23 @@ export default function MaestroConsole() {
     setConfirmModalOnConfirm(() => onConfirm);
     setConfirmModalOpen(true);
   };
+
+  // Delete group chat with confirmation dialog (for keyboard shortcut and CMD+K)
+  const deleteGroupChatWithConfirmation = useCallback((id: string) => {
+    const chat = groupChats.find(c => c.id === id);
+    if (!chat) return;
+
+    showConfirmation(
+      `Are you sure you want to delete "${chat.name}"? This action cannot be undone.`,
+      async () => {
+        await window.maestro.groupChat.delete(id);
+        setGroupChats(prev => prev.filter(c => c.id !== id));
+        if (activeGroupChatId === id) {
+          handleCloseGroupChat();
+        }
+      }
+    );
+  }, [groupChats, activeGroupChatId, handleCloseGroupChat]);
 
   const deleteSession = (id: string) => {
     const session = sessions.find(s => s.id === id);
@@ -4859,7 +4881,7 @@ export default function MaestroConsole() {
     setFileTreeFilterOpen, isShortcut, isTabShortcut, handleNavBack, handleNavForward, toggleUnreadFilter,
     setTabSwitcherOpen, showUnreadOnly, stagedImages, handleSetLightboxImage, setMarkdownEditMode,
     toggleTabStar, toggleTabUnread, setPromptComposerOpen, openWizardModal, rightPanelRef, setFuzzyFileSearchOpen,
-    setShowNewGroupChatModal,
+    setShowNewGroupChatModal, deleteGroupChatWithConfirmation,
     // Group chat context
     activeGroupChatId, groupChatInputRef, groupChatStagedImages,
     // Navigation handlers from useKeyboardNavigation hook
@@ -5196,6 +5218,7 @@ export default function MaestroConsole() {
           onNewGroupChat={() => setShowNewGroupChatModal(true)}
           onOpenGroupChat={handleOpenGroupChat}
           onCloseGroupChat={handleCloseGroupChat}
+          onDeleteGroupChat={deleteGroupChatWithConfirmation}
           activeGroupChatId={activeGroupChatId}
           onToggleRemoteControl={async () => {
             await toggleGlobalLive();
