@@ -174,6 +174,9 @@ All these screenshots were captured in the them "Pedurple". For screenshots of o
 <img width="3592" height="2302" alt="image" src="https://github.com/user-attachments/assets/66e6f9e9-969e-497e-8139-f9fbf26f976a" />
 <img width="3592" height="2302" alt="image" src="https://github.com/user-attachments/assets/0aec0a73-a687-4b7f-9710-4bf9d1325b6d" />
 
+### Group Chat
+<img width="3592" height="2302" alt="image" src="https://github.com/user-attachments/assets/a7e98228-2ab2-424f-b5c6-a2f93efdc038" />
+
 ### Web Interface / Remote Control
 #### Chat
 <img width="400" alt="IMG_0163" src="https://github.com/user-attachments/assets/366addb0-f75a-4399-acd3-20d35954802a" />
