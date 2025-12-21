@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef, useCallback, memo } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback, memo } from 'react';
 import { GitCommit, GitBranch, Tag } from 'lucide-react';
 import type { Theme } from '../types';
 import { useLayerStack } from '../contexts/LayerStackContext';
@@ -6,6 +6,7 @@ import { MODAL_PRIORITIES } from '../constants/modalPriorities';
 import { Diff, Hunk } from 'react-diff-view';
 import { parseGitDiff } from '../utils/gitDiffParser';
 import { useListNavigation } from '../hooks';
+import { generateDiffViewStyles } from '../utils/markdownConfig';
 import 'react-diff-view/style/index.css';
 
 interface GitLogEntry {
@@ -467,45 +468,7 @@ export const GitLogViewer = memo(function GitLogViewer({ cwd, theme, onClose }: 
                   </div>
                 ) : parsedDiff && parsedDiff.length > 0 ? (
                   <div className="font-mono text-sm">
-                    <style>{`
-                      .diff-gutter {
-                        background-color: ${theme.colors.bgSidebar} !important;
-                        color: ${theme.colors.textDim} !important;
-                        border-right: 1px solid ${theme.colors.border} !important;
-                      }
-                      .diff-code {
-                        background-color: ${theme.colors.bgMain} !important;
-                        color: ${theme.colors.textMain} !important;
-                      }
-                      .diff-gutter-insert {
-                        background-color: rgba(34, 197, 94, 0.1) !important;
-                      }
-                      .diff-code-insert {
-                        background-color: rgba(34, 197, 94, 0.15) !important;
-                        color: ${theme.colors.textMain} !important;
-                      }
-                      .diff-gutter-delete {
-                        background-color: rgba(239, 68, 68, 0.1) !important;
-                      }
-                      .diff-code-delete {
-                        background-color: rgba(239, 68, 68, 0.15) !important;
-                        color: ${theme.colors.textMain} !important;
-                      }
-                      .diff-code-insert .diff-code-edit {
-                        background-color: rgba(34, 197, 94, 0.3) !important;
-                      }
-                      .diff-code-delete .diff-code-edit {
-                        background-color: rgba(239, 68, 68, 0.3) !important;
-                      }
-                      .diff-hunk-header {
-                        background-color: ${theme.colors.bgActivity} !important;
-                        color: ${theme.colors.accent} !important;
-                        border-bottom: 1px solid ${theme.colors.border} !important;
-                      }
-                      .diff-line {
-                        color: ${theme.colors.textMain} !important;
-                      }
-                    `}</style>
+                    <style>{generateDiffViewStyles(theme)}</style>
                     {parsedDiff.map((file, fileIndex) => (
                       <div key={fileIndex} className="mb-6">
                         {/* File header */}

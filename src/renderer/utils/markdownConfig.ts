@@ -6,11 +6,14 @@
  * - createMarkdownComponents: Factory for ReactMarkdown component overrides
  * - generateAutoRunProseStyles: Pre-configured styles for AutoRun panel
  * - generateTerminalProseStyles: Styles for terminal output and group chat messages
+ * - generateDiffViewStyles: Styles for react-diff-view library theme overrides
  *
  * Used by:
  * - AutoRun.tsx: Document editing/preview with image attachments and mermaid diagrams
  * - TerminalOutput.tsx: AI terminal message rendering
  * - GroupChatMessages.tsx: Group chat message rendering
+ * - GitDiffViewer.tsx: Git diff display
+ * - GitLogViewer.tsx: Git log with commit diff display
  */
 
 import type { Components } from 'react-markdown';
@@ -447,5 +450,56 @@ export function generateTerminalProseStyles(theme: Theme, scopeSelector: string)
     ${s} em { font-style: italic; }
     ${s} li > strong:first-child, ${s} li > b:first-child, ${s} li > em:first-child, ${s} li > code:first-child, ${s} li > a:first-child { vertical-align: baseline; line-height: inherit; }
     ${s} li::marker { font-weight: normal; }
+  `;
+}
+
+/**
+ * Generates CSS styles for react-diff-view library theme overrides.
+ * Used by GitDiffViewer and GitLogViewer to apply consistent diff styling.
+ *
+ * @param theme Theme object with color values
+ * @returns CSS string to be injected via <style> tag
+ */
+export function generateDiffViewStyles(theme: Theme): string {
+  const c = theme.colors;
+
+  return `
+    .diff-gutter {
+      background-color: ${c.bgSidebar} !important;
+      color: ${c.textDim} !important;
+      border-right: 1px solid ${c.border} !important;
+    }
+    .diff-code {
+      background-color: ${c.bgMain} !important;
+      color: ${c.textMain} !important;
+    }
+    .diff-gutter-insert {
+      background-color: rgba(34, 197, 94, 0.1) !important;
+    }
+    .diff-code-insert {
+      background-color: rgba(34, 197, 94, 0.15) !important;
+      color: ${c.textMain} !important;
+    }
+    .diff-gutter-delete {
+      background-color: rgba(239, 68, 68, 0.1) !important;
+    }
+    .diff-code-delete {
+      background-color: rgba(239, 68, 68, 0.15) !important;
+      color: ${c.textMain} !important;
+    }
+    .diff-code-insert .diff-code-edit {
+      background-color: rgba(34, 197, 94, 0.3) !important;
+    }
+    .diff-code-delete .diff-code-edit {
+      background-color: rgba(239, 68, 68, 0.3) !important;
+    }
+    .diff-hunk-header {
+      background-color: ${c.bgActivity} !important;
+      color: ${c.accent} !important;
+      border-bottom: 1px solid ${c.border} !important;
+    }
+    .diff-line {
+      color: ${c.textMain} !important;
+    }
   `;
 }
