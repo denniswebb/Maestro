@@ -18,6 +18,7 @@ import { triggerHaptic, HAPTIC_PATTERNS } from './constants';
 import { buildApiUrl } from '../utils/config';
 import { webLogger } from '../utils/logger';
 import { HistoryEntry } from '../../shared/types';
+import { stripAnsiCodes } from '../../shared/stringUtils';
 import { useSwipeGestures } from '../hooks/useSwipeGestures';
 
 /**
@@ -304,7 +305,7 @@ function HistoryDetailView({ entry, onClose, currentIndex, totalCount, onNavigat
 
   // Clean up the response for display - remove ANSI codes
   const rawResponse = entry.fullResponse || entry.summary || '';
-  const cleanResponse = rawResponse.replace(/\x1b\[[0-9;]*m/g, '');
+  const cleanResponse = stripAnsiCodes(rawResponse);
 
   // Handle keyboard navigation (Escape to close, Arrow keys to navigate)
   useEffect(() => {

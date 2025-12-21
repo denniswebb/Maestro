@@ -131,6 +131,13 @@ export function stripControlSequences(text: string, lastCommand?: string, isTerm
  * Strip ALL ANSI escape codes from text (including color codes).
  * This is more aggressive than stripControlSequences and removes everything.
  * Use this for stderr from AI agents where we don't want any formatting.
+ *
+ * NOTE: This is intentionally more comprehensive than shared/stringUtils.stripAnsiCodes().
+ * The shared version handles basic SGR color/style codes (sufficient for UI display cleanup).
+ * This version also handles: OSC sequences, character set selection, BEL, and control chars.
+ * This comprehensive version is needed for raw terminal output from AI agents.
+ *
+ * @see src/shared/stringUtils.ts for the basic version
  */
 export function stripAllAnsiCodes(text: string): string {
   // Remove all ANSI escape sequences including color codes

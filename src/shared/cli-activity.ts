@@ -1,6 +1,22 @@
-// CLI Activity Status
-// Shared module for tracking when CLI is actively running tasks on a session
-// Used to sync state between CLI and desktop app
+/**
+ * CLI Activity Status
+ *
+ * Shared module for tracking when CLI is actively running tasks on a session.
+ * Used to sync state between CLI and desktop app.
+ *
+ * NOTE: This file has its own `getConfigDir()` implementation (lowercase "maestro")
+ * which matches the electron-store default from package.json `"name": "maestro"`.
+ * The CLI storage.ts uses "Maestro" (capitalized) which is inconsistent.
+ * This module uses lowercase to be consistent with the Electron app.
+ *
+ * Duplicated implementations:
+ * - cli/services/storage.ts → getConfigDir() uses "Maestro" (capitalized)
+ * - main/group-chat/group-chat-storage.ts → getConfigDir() uses electron-store
+ * - shared/cli-activity.ts → getConfigDir() uses "maestro" (lowercase)
+ *
+ * These are kept separate to avoid cross-module dependencies and maintain
+ * compatibility with existing data directories.
+ */
 
 import * as fs from 'fs';
 import * as path from 'path';

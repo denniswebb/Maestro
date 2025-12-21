@@ -6,6 +6,8 @@
  * - parseSynopsis: Parse AI-generated synopsis responses into structured format
  */
 
+import { stripAnsiCodes } from './stringUtils';
+
 export interface ParsedSynopsis {
   shortSummary: string;
   fullSynopsis: string;
@@ -25,8 +27,7 @@ export interface ParsedSynopsis {
  */
 export function parseSynopsis(response: string): ParsedSynopsis {
   // Clean up ANSI codes and box drawing characters
-  const clean = response
-    .replace(/\x1b\[[0-9;]*m/g, '')
+  const clean = stripAnsiCodes(response)
     .replace(/─+/g, '')
     .replace(/[│┌┐└┘├┤┬┴┼]/g, '')
     .trim();

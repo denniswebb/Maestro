@@ -4,6 +4,7 @@ import type { Theme, HistoryEntry } from '../types';
 import { useLayerStack } from '../contexts/LayerStackContext';
 import { MODAL_PRIORITIES } from '../constants/modalPriorities';
 import { formatElapsedTime } from '../utils/formatters';
+import { stripAnsiCodes } from '../../shared/stringUtils';
 
 // Double checkmark SVG component for validated entries
 const DoubleCheck = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
@@ -156,7 +157,7 @@ export function HistoryDetailModal({
   //   - summary = the synopsis text
   //   - fullResponse = may contain more context
   const rawResponse = entry.fullResponse || entry.summary || '';
-  const cleanResponse = rawResponse.replace(/\x1b\[[0-9;]*m/g, ''); // Remove ANSI codes
+  const cleanResponse = stripAnsiCodes(rawResponse);
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-[9999]">
