@@ -23,7 +23,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import type { WorktreeValidationState } from '../components/GitWorktreeSection';
+import type { WorktreeValidationState } from '../types';
 
 /**
  * Dependencies required by the hook

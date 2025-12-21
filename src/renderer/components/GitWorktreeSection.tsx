@@ -1,29 +1,10 @@
 import React, { useState, useRef } from 'react';
 import { GitBranch, AlertTriangle, Loader2, ChevronDown } from 'lucide-react';
-import type { Theme } from '../types';
+import type { Theme, WorktreeValidationState, GhCliStatus } from '../types';
 import { useClickOutside } from '../hooks/useClickOutside';
 
-/**
- * Worktree validation state type
- */
-export interface WorktreeValidationState {
-  checking: boolean;
-  exists: boolean;
-  isWorktree: boolean;
-  currentBranch?: string;
-  branchMismatch: boolean;
-  sameRepo: boolean;
-  hasUncommittedChanges?: boolean;
-  error?: string;
-}
-
-/**
- * GitHub CLI status type
- */
-export interface GhCliStatus {
-  installed: boolean;
-  authenticated: boolean;
-}
+// Re-export types for backward compatibility
+export type { WorktreeValidationState, GhCliStatus } from '../types';
 
 /**
  * Props for GitWorktreeSection component

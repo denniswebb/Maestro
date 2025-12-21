@@ -120,6 +120,24 @@ export interface WorktreeConfig {
   ghPath?: string;               // Custom path to gh CLI binary (optional)
 }
 
+// Worktree path validation state (used by useWorktreeValidation hook)
+export interface WorktreeValidationState {
+  checking: boolean;              // Currently validating the path
+  exists: boolean;                // Path exists on disk
+  isWorktree: boolean;            // Path is an existing git worktree
+  currentBranch?: string;         // Current branch if it's a git repo
+  branchMismatch: boolean;        // Target branch differs from current branch
+  sameRepo: boolean;              // Worktree belongs to the same repository
+  hasUncommittedChanges?: boolean; // Has uncommitted changes (blocks checkout)
+  error?: string;                 // Validation error message
+}
+
+// GitHub CLI status for worktree PR creation
+export interface GhCliStatus {
+  installed: boolean;             // gh CLI is installed
+  authenticated: boolean;         // gh CLI is authenticated
+}
+
 // Configuration for starting a batch run
 export interface BatchRunConfig {
   documents: BatchDocumentEntry[];  // Ordered list of docs to run
