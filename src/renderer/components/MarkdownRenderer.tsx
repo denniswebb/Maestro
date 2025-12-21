@@ -17,12 +17,11 @@ import { remarkFrontmatterTable } from '../utils/remarkFrontmatterTable';
 interface LocalImageProps {
   src?: string;
   alt?: string;
-  projectRoot?: string;
   theme: Theme;
   width?: number; // Optional width in pixels (from ![[image|300]] syntax)
 }
 
-const LocalImage = memo(({ src, alt, projectRoot, theme, width }: LocalImageProps) => {
+const LocalImage = memo(({ src, alt, theme, width }: LocalImageProps) => {
   const [dataUrl, setDataUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -275,7 +274,6 @@ export const MarkdownRenderer = memo(({ content, theme, onCopy, className = '', 
               <LocalImage
                 src={src}
                 alt={alt}
-                projectRoot={projectRoot}
                 theme={theme}
                 width={width}
               />
