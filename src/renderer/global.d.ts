@@ -617,6 +617,76 @@ interface MaestroAPI {
     export: (sessionId: string, playbookId: string, autoRunFolderPath: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
     import: (sessionId: string, autoRunFolderPath: string) => Promise<{ success: boolean; playbook?: any; importedDocs?: string[]; error?: string }>;
   };
+  // Group Chat API
+  groupChat: {
+    create: (name: string, moderatorAgentId: string, moderatorConfig?: { customPath?: string; customArgs?: string; customEnvVars?: Record<string, string> }) => Promise<{
+      id: string;
+      name: string;
+      moderatorAgentId: string;
+      moderatorSessionId: string;
+      participants: Array<{ name: string; agentId: string; sessionId: string; addedAt: number }>;
+      logPath: string;
+      imagesDir: string;
+      createdAt: number;
+    }>;
+    list: () => Promise<Array<{
+      id: string;
+      name: string;
+      moderatorAgentId: string;
+      moderatorSessionId: string;
+      participants: Array<{ name: string; agentId: string; sessionId: string; addedAt: number }>;
+      logPath: string;
+      imagesDir: string;
+      createdAt: number;
+    }>>;
+    load: (id: string) => Promise<{
+      id: string;
+      name: string;
+      moderatorAgentId: string;
+      moderatorSessionId: string;
+      participants: Array<{ name: string; agentId: string; sessionId: string; addedAt: number }>;
+      logPath: string;
+      imagesDir: string;
+      createdAt: number;
+    } | null>;
+    delete: (id: string) => Promise<boolean>;
+    rename: (id: string, name: string) => Promise<any>;
+    update: (id: string, updates: { name?: string; moderatorAgentId?: string; moderatorConfig?: any }) => Promise<any>;
+    appendMessage: (id: string, from: string, content: string) => Promise<void>;
+    getMessages: (id: string) => Promise<Array<{ timestamp: string; from: string; content: string; readOnly?: boolean }>>;
+    saveImage: (id: string, imageData: string, filename: string) => Promise<string>;
+    startModerator: (id: string) => Promise<string>;
+    sendToModerator: (id: string, message: string, images?: string[], readOnly?: boolean) => Promise<void>;
+    stopModerator: (id: string) => Promise<void>;
+    getModeratorSessionId: (id: string) => Promise<string | null>;
+    addParticipant: (id: string, name: string, agentId: string, cwd?: string) => Promise<{ name: string; agentId: string; sessionId: string; addedAt: number }>;
+    sendToParticipant: (id: string, name: string, message: string, images?: string[]) => Promise<void>;
+    removeParticipant: (id: string, name: string) => Promise<void>;
+    getHistory: (id: string) => Promise<Array<{
+      id: string;
+      timestamp: number;
+      summary: string;
+      participantName: string;
+      participantColor: string;
+      type: 'delegation' | 'response' | 'synthesis' | 'error';
+      elapsedTimeMs?: number;
+      tokenCount?: number;
+      cost?: number;
+      fullResponse?: string;
+    }>>;
+    addHistoryEntry: (id: string, entry: any) => Promise<any>;
+    deleteHistoryEntry: (groupChatId: string, entryId: string) => Promise<boolean>;
+    clearHistory: (id: string) => Promise<void>;
+    getHistoryFilePath: (id: string) => Promise<string | null>;
+    getImages: (id: string) => Promise<Record<string, string>>;
+    onMessage: (callback: (groupChatId: string, message: { timestamp: string; from: string; content: string }) => void) => () => void;
+    onStateChange: (callback: (groupChatId: string, state: 'idle' | 'moderator-thinking' | 'agent-working') => void) => () => void;
+    onParticipantsChanged: (callback: (groupChatId: string, participants: Array<{ name: string; agentId: string; sessionId: string; addedAt: number }>) => void) => () => void;
+    onModeratorUsage: (callback: (groupChatId: string, usage: { contextUsage: number; totalCost: number; tokenCount: number }) => void) => () => void;
+    onHistoryEntry: (callback: (groupChatId: string, entry: any) => void) => () => void;
+    onParticipantState: (callback: (groupChatId: string, participantName: string, state: 'idle' | 'working') => void) => () => void;
+    onModeratorSessionIdChanged: (callback: (groupChatId: string, sessionId: string) => void) => () => void;
+  };
 }
 
 declare global {

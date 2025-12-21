@@ -1939,6 +1939,9 @@ export interface MaestroAPI {
     clearHistory: (id: string) => Promise<void>;
     getHistoryFilePath: (id: string) => Promise<string | null>;
 
+    // Export
+    getImages: (id: string) => Promise<Record<string, string>>;
+
     // Events
     onMessage: (callback: (groupChatId: string, message: {
       timestamp: string;

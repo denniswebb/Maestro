@@ -6,11 +6,12 @@
  * an "Open in Finder" button for the chat directory.
  */
 
-import { useRef, useCallback, useMemo } from 'react';
-import { Copy, FolderOpen, Users, MessageSquare, Bot, Clock, ExternalLink } from 'lucide-react';
-import type { Theme, GroupChat, GroupChatMessage } from '../types';
+import { useRef, useCallback, useMemo, useState } from 'react';
+import { Copy, FolderOpen, Users, MessageSquare, Bot, Clock, ExternalLink, Download } from 'lucide-react';
+import type { Theme, GroupChat, GroupChatMessage, GroupChatHistoryEntry } from '../types';
 import { MODAL_PRIORITIES } from '../constants/modalPriorities';
 import { Modal } from './ui/Modal';
+import { downloadGroupChatExport } from '../utils/groupChatExport';
 
 interface GroupChatInfoOverlayProps {
   theme: Theme;
@@ -105,6 +106,7 @@ export function GroupChatInfoOverlay({
   onOpenModeratorSession,
 }: GroupChatInfoOverlayProps): JSX.Element | null {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   const copyToClipboard = useCallback((text: string) => {
     navigator.clipboard.writeText(text);
@@ -115,6 +117,26 @@ export function GroupChatInfoOverlay({
     const chatDir = groupChat.imagesDir.replace(/\/images\/?$/, '');
     window.maestro.shell.openExternal(`file://${chatDir}`);
   }, [groupChat.imagesDir]);
+
+  const handleExport = useCallback(async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      // Fetch history entries
+      let history: GroupChatHistoryEntry[] = [];
+      try {
+        history = await window.maestro.groupChat.getHistory(groupChat.id);
+      } catch (error) {
+        console.warn('Failed to fetch history for export:', error);
+      }
+
+      await downloadGroupChatExport(groupChat, messages, history);
+    } catch (error) {
+      console.error('Export failed:', error);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [groupChat, messages, isExporting]);
 
   // Calculate statistics
   const stats = useMemo(() => {
@@ -310,7 +332,7 @@ export function GroupChatInfoOverlay({
         )}
 
         <div
-          className="border-t pt-4"
+          className="border-t pt-4 flex gap-2"
           style={{ borderColor: theme.colors.border }}
         >
           <button
@@ -323,6 +345,18 @@ export function GroupChatInfoOverlay({
           >
             <FolderOpen className="w-4 h-4" />
             Open in Finder
+          </button>
+          <button
+            onClick={handleExport}
+            disabled={isExporting}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm hover:bg-white/5 transition-colors border disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{
+              borderColor: theme.colors.border,
+              color: theme.colors.textMain,
+            }}
+          >
+            <Download className={`w-4 h-4 ${isExporting ? 'animate-pulse' : ''}`} />
+            {isExporting ? 'Exporting...' : 'Export HTML'}
           </button>
         </div>
       </div>
