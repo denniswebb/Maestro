@@ -204,8 +204,8 @@ function Tab({
         marginBottom: isActive ? '-1px' : '0',
         // Slight z-index for active tab to cover border properly
         zIndex: isActive ? 1 : 0,
-        ringColor: isDragOver ? theme.colors.accent : 'transparent'
-      }}
+        '--tw-ring-color': isDragOver ? theme.colors.accent : 'transparent'
+      } as React.CSSProperties}
       onClick={onSelect}
       onMouseDown={handleMouseDown}
       onMouseEnter={handleMouseEnter}
@@ -244,11 +244,12 @@ function Tab({
 
       {/* Draft indicator - pencil icon for tabs with unsent input or staged images */}
       {hasDraft && (
-        <Pencil
-          className="w-3 h-3 shrink-0"
-          style={{ color: theme.colors.warning }}
-          title="Has draft message"
-        />
+        <span title="Has draft message">
+          <Pencil
+            className="w-3 h-3 shrink-0"
+            style={{ color: theme.colors.warning }}
+          />
+        </span>
       )}
 
       {/* Shortcut hint badge - shows tab number for Cmd+1-9 navigation */}

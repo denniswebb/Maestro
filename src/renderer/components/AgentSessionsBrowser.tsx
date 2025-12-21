@@ -729,7 +729,7 @@ export function AgentSessionsBrowser({
                   </span>
                 </div>
                 <span className="text-lg font-mono font-semibold" style={{ color: theme.colors.success }}>
-                  ${viewingSession.costUsd.toFixed(2)}
+                  ${(viewingSession.costUsd ?? 0).toFixed(2)}
                 </span>
               </div>
 
