@@ -3,6 +3,9 @@ import type { Session, Group, FocusArea } from '../types';
 
 /**
  * Dependencies for useKeyboardNavigation hook
+ *
+ * Note: editingSessionId/editingGroupId are checked in useMainKeyboardHandler.ts
+ * before any navigation handlers are called, so they are not needed here.
  */
 export interface UseKeyboardNavigationDeps {
   /** All sessions sorted in visual display order */
@@ -27,10 +30,6 @@ export interface UseKeyboardNavigationDeps {
   bookmarksCollapsed: boolean;
   /** Setter for bookmarks collapsed state */
   setBookmarksCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
-  /** Whether a session is being renamed (prevents keyboard nav) */
-  editingSessionId: string | null;
-  /** Whether a group is being renamed (prevents keyboard nav) */
-  editingGroupId: string | null;
   /** Input ref for focus management */
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   /** Terminal output ref for escape handling */
@@ -78,8 +77,6 @@ export function useKeyboardNavigation(
     setGroups,
     bookmarksCollapsed,
     setBookmarksCollapsed,
-    editingSessionId,
-    editingGroupId,
     inputRef,
     terminalOutputRef,
   } = deps;
@@ -116,8 +113,8 @@ export function useKeyboardNavigation(
     if (focus !== 'sidebar') return false;
 
     // Skip if event originated from an input element (text areas, inputs)
-    const target = e.target as HTMLElement;
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+    const target = e.target as HTMLElement | null;
+    if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable) {
       return false;
     }
 
@@ -368,8 +365,8 @@ export function useKeyboardNavigation(
     if (focus !== 'sidebar' || e.key !== 'Enter' || e.metaKey || e.ctrlKey || e.altKey) return false;
 
     // Skip if event originated from an input element (text areas, inputs)
-    const target = e.target as HTMLElement;
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+    const target = e.target as HTMLElement | null;
+    if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable) {
       return false;
     }
 

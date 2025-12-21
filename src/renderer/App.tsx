@@ -3183,8 +3183,6 @@ export default function MaestroConsole() {
     setGroups,
     bookmarksCollapsed,
     setBookmarksCollapsed,
-    editingSessionId,
-    editingGroupId,
     inputRef,
     terminalOutputRef,
   });
@@ -6859,6 +6857,7 @@ export default function MaestroConsole() {
           setSuccessFlashNotification(message);
           setTimeout(() => setSuccessFlashNotification(null), 2000);
         }}
+        onOpenFuzzySearch={() => setFuzzyFileSearchOpen(true)}
       />
       )}
 
