@@ -29,6 +29,16 @@ const LOG_LEVEL_PRIORITY: Record<string, number> = {
   error: 3,
 };
 
+// Log level color mappings
+const LOG_LEVEL_COLORS: Record<string, { fg: string; bg: string }> = {
+  debug: { fg: '#6366f1', bg: 'rgba(99, 102, 241, 0.15)' },   // Indigo
+  info: { fg: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)' },    // Blue
+  warn: { fg: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)' },    // Amber
+  error: { fg: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)' },    // Red
+  toast: { fg: '#a855f7', bg: 'rgba(168, 85, 247, 0.15)' },   // Purple
+  autorun: { fg: '#f97316', bg: 'rgba(249, 115, 22, 0.15)' }, // Orange
+};
+
 export function LogViewer({ theme, onClose, logLevel = 'info', savedSelectedLevels, onSelectedLevelsChange }: LogViewerProps) {
   const [logs, setLogs] = useState<SystemLogEntry[]>([]);
   const [filteredLogs, setFilteredLogs] = useState<SystemLogEntry[]>([]);
@@ -68,7 +78,6 @@ export function LogViewer({ theme, onClose, logLevel = 'info', savedSelectedLeve
   }, [onSelectedLevelsChange]);
   const [expandedData, setExpandedData] = useState<Set<number>>(new Set());
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const logsEndRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const layerIdRef = useRef<string>();
@@ -303,43 +312,8 @@ export function LogViewer({ theme, onClose, logLevel = 'info', savedSelectedLeve
     }
   };
 
-  const getLevelColor = (level: string) => {
-    switch (level) {
-      case 'debug':
-        return '#6366f1'; // Indigo
-      case 'info':
-        return '#3b82f6'; // Blue
-      case 'warn':
-        return '#f59e0b'; // Amber
-      case 'error':
-        return '#ef4444'; // Red
-      case 'toast':
-        return '#a855f7'; // Purple
-      case 'autorun':
-        return '#f97316'; // Orange
-      default:
-        return theme.colors.textDim;
-    }
-  };
-
-  const getLevelBgColor = (level: string) => {
-    switch (level) {
-      case 'debug':
-        return 'rgba(99, 102, 241, 0.15)';
-      case 'info':
-        return 'rgba(59, 130, 246, 0.15)';
-      case 'warn':
-        return 'rgba(245, 158, 11, 0.15)';
-      case 'error':
-        return 'rgba(239, 68, 68, 0.15)';
-      case 'toast':
-        return 'rgba(168, 85, 247, 0.15)';
-      case 'autorun':
-        return 'rgba(249, 115, 22, 0.15)';
-      default:
-        return 'transparent';
-    }
-  };
+  const getLevelColor = (level: string) => LOG_LEVEL_COLORS[level]?.fg ?? theme.colors.textDim;
+  const getLevelBgColor = (level: string) => LOG_LEVEL_COLORS[level]?.bg ?? 'transparent';
 
   return (
     <div
@@ -379,7 +353,7 @@ export function LogViewer({ theme, onClose, logLevel = 'info', savedSelectedLeve
               <button
                 onClick={collapseAll}
                 className="p-2 rounded hover:bg-opacity-10 transition-all"
-                style={{ color: allCollapsed ? theme.colors.textDim : theme.colors.textDim }}
+                style={{ color: allCollapsed ? theme.colors.textDim : theme.colors.accent }}
                 title="Collapse all"
                 disabled={allCollapsed}
               >
@@ -634,7 +608,6 @@ export function LogViewer({ theme, onClose, logLevel = 'info', savedSelectedLeve
             </div>
           ))
         )}
-        <div ref={logsEndRef} />
       </div>
 
       {/* Footer hint */}
