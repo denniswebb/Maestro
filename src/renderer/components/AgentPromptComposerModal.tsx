@@ -6,6 +6,7 @@ import { MODAL_PRIORITIES } from '../constants/modalPriorities';
 import { TEMPLATE_VARIABLES } from '../utils/templateVariables';
 import { useTemplateAutocomplete } from '../hooks/useTemplateAutocomplete';
 import { TemplateAutocompleteDropdown } from './TemplateAutocompleteDropdown';
+import { estimateTokenCount } from '../../shared/formatters';
 
 interface AgentPromptComposerModalProps {
   isOpen: boolean;
@@ -13,12 +14,6 @@ interface AgentPromptComposerModalProps {
   theme: Theme;
   initialValue: string;
   onSubmit: (value: string) => void;
-}
-
-// Simple token estimation (roughly 4 chars per token for English text)
-function estimateTokenCount(text: string): number {
-  if (!text) return 0;
-  return Math.ceil(text.length / 4);
 }
 
 export function AgentPromptComposerModal({

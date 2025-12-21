@@ -11,6 +11,7 @@
  * - formatActiveTime: Duration display (1D, 2H 30M, <1M)
  * - formatElapsedTime: Precise elapsed time (1h 10m, 30s, 500ms)
  * - formatCost: USD currency display ($1.23, <$0.01)
+ * - estimateTokenCount: Estimate token count from text (~4 chars/token)
  */
 
 /**
@@ -159,4 +160,16 @@ export function formatCost(cost: number): string {
   if (cost === 0) return '$0.00';
   if (cost < 0.01) return '<$0.01';
   return '$' + cost.toFixed(2);
+}
+
+/**
+ * Estimate token count from text using rough approximation.
+ * Uses ~4 characters per token for English text, which is a common heuristic.
+ *
+ * @param text - The text to estimate tokens for
+ * @returns Estimated token count
+ */
+export function estimateTokenCount(text: string): number {
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
 }

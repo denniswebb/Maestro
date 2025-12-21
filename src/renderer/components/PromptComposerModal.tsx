@@ -3,6 +3,7 @@ import { X, PenLine, Send, ImageIcon, History, Eye, Keyboard } from 'lucide-reac
 import type { Theme } from '../types';
 import { useLayerStack } from '../contexts/LayerStackContext';
 import { MODAL_PRIORITIES } from '../constants/modalPriorities';
+import { estimateTokenCount } from '../../shared/formatters';
 
 interface PromptComposerModalProps {
   isOpen: boolean;
@@ -24,12 +25,6 @@ interface PromptComposerModalProps {
   onToggleTabReadOnlyMode?: () => void;
   enterToSend?: boolean;
   onToggleEnterToSend?: () => void;
-}
-
-// Simple token estimation (roughly 4 chars per token for English text)
-function estimateTokenCount(text: string): number {
-  if (!text) return 0;
-  return Math.ceil(text.length / 4);
 }
 
 export function PromptComposerModal({
