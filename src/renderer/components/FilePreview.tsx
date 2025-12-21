@@ -53,6 +53,8 @@ interface FilePreviewProps {
   onNavigateToIndex?: (index: number) => void;
   /** Current index in history */
   currentHistoryIndex?: number;
+  /** Callback to open fuzzy file search (available in preview mode, not edit mode) */
+  onOpenFuzzySearch?: () => void;
 }
 
 // Get language from filename extension
@@ -412,7 +414,7 @@ function remarkHighlight() {
   };
 }
 
-export function FilePreview({ file, onClose, theme, markdownEditMode, setMarkdownEditMode, onSave, shortcuts, fileTree, cwd, onFileClick, canGoBack, canGoForward, onNavigateBack, onNavigateForward, backHistory, forwardHistory, onNavigateToIndex, currentHistoryIndex }: FilePreviewProps) {
+export function FilePreview({ file, onClose, theme, markdownEditMode, setMarkdownEditMode, onSave, shortcuts, fileTree, cwd, onFileClick, canGoBack, canGoForward, onNavigateBack, onNavigateForward, backHistory, forwardHistory, onNavigateToIndex, currentHistoryIndex, onOpenFuzzySearch }: FilePreviewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [showCopyNotification, setShowCopyNotification] = useState(false);
@@ -1078,6 +1080,12 @@ export function FilePreview({ file, onClose, theme, markdownEditMode, setMarkdow
       if (canGoForward && onNavigateForward) {
         onNavigateForward();
       }
+    } else if (isShortcut(e, 'fuzzyFileSearch') && onOpenFuzzySearch) {
+      // Cmd+G: Open fuzzy file search (only in preview mode, not edit mode)
+      if (isMarkdown && markdownEditMode) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onOpenFuzzySearch();
     }
   };
 

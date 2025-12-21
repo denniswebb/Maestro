@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronRight, ChevronDown, ChevronUp, X, Activity, RefreshCw, XCircle } from 'lucide-react';
+import { ChevronRight, ChevronDown, ChevronUp, ChevronLeft, X, Activity, RefreshCw, XCircle, Clock, Terminal, Cpu, FolderOpen, Hash, Play } from 'lucide-react';
 import type { Session, Group, Theme, GroupChat } from '../types';
 import { useLayerStack } from '../contexts/LayerStackContext';
 import { MODAL_PRIORITIES } from '../constants/modalPriorities';
@@ -22,6 +22,8 @@ interface ActiveProcess {
   isTerminal: boolean;
   isBatchMode: boolean;
   startTime: number;
+  command?: string;
+  args?: string[];
 }
 
 interface ProcessNode {
@@ -44,6 +46,8 @@ interface ProcessNode {
   isAutoRun?: boolean; // True for batch processes from Auto Run
   groupChatId?: string; // For group chat processes - links to the group chat
   participantName?: string; // For group chat participant processes
+  command?: string; // The command used to spawn this process
+  args?: string[]; // The arguments passed to the command
 }
 
 // Format runtime in human readable format (e.g., "2m 30s", "1h 5m", "3d 2h")
@@ -69,6 +73,21 @@ function formatRuntime(startTime: number): string {
   return `${seconds}s`;
 }
 
+// Interface for the detailed process view
+interface ProcessDetailData {
+  processSessionId: string;
+  pid: number;
+  toolType: string;
+  cwd: string;
+  startTime: number;
+  command?: string;
+  args?: string[];
+  agentSessionId?: string;
+  sessionName?: string;
+  processType?: string;
+  isAutoRun?: boolean;
+}
+
 export function ProcessMonitor(props: ProcessMonitorProps) {
   const { theme, sessions, groups, groupChats = [], onClose, onNavigateToSession, onNavigateToGroupChat } = props;
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
@@ -79,9 +98,11 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
   const [hasExpandedInitially, setHasExpandedInitially] = useState(false);
   const [killConfirmProcessId, setKillConfirmProcessId] = useState<string | null>(null);
   const [isKilling, setIsKilling] = useState(false);
+  const [detailView, setDetailView] = useState<ProcessDetailData | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const selectedNodeRef = useRef<HTMLButtonElement | HTMLDivElement>(null);
   const killConfirmRef = useRef<HTMLDivElement>(null);
+  const detailViewRef = useRef<HTMLDivElement>(null);
   const { registerLayer, unregisterLayer, updateLayerHandler } = useLayerStack();
   const layerIdRef = useRef<string>();
 
@@ -141,12 +162,20 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
     return () => unregisterLayer(layerId);
   }, [registerLayer, unregisterLayer]);
 
-  // Update handler when onClose changes
+  // Update handler when onClose or detailView changes
+  // If in detail view, Escape goes back to list; otherwise closes the modal
   useEffect(() => {
     if (layerIdRef.current) {
-      updateLayerHandler(layerIdRef.current, onClose);
+      const handleEscape = () => {
+        if (detailView) {
+          setDetailView(null);
+        } else {
+          onClose();
+        }
+      };
+      updateLayerHandler(layerIdRef.current, handleEscape);
     }
-  }, [onClose, updateLayerHandler]);
+  }, [onClose, detailView, updateLayerHandler]);
 
   // Fetch processes on mount and poll for updates
   useEffect(() => {
@@ -160,6 +189,13 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
   useEffect(() => {
     containerRef.current?.focus();
   }, []);
+
+  // Focus detail view when it opens
+  useEffect(() => {
+    if (detailView && detailViewRef.current) {
+      detailViewRef.current.focus();
+    }
+  }, [detailView]);
 
   // Scroll selected node into view
   useEffect(() => {
@@ -347,7 +383,9 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
           agentSessionId,
           tabId,
           startTime: proc.startTime,
-          isAutoRun
+          isAutoRun,
+          command: proc.command,
+          args: proc.args,
         });
       });
 
@@ -458,7 +496,9 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
               cwd: proc.cwd,
               startTime: proc.startTime,
               groupChatId: groupChat.id,
-              participantName
+              participantName,
+              command: proc.command,
+              args: proc.args,
             };
           });
 
@@ -515,6 +555,29 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
     };
     traverse(nodes);
     return result;
+  };
+
+  // Open detail view for a process node
+  const openProcessDetail = (node: ProcessNode) => {
+    if (!node.processSessionId || !node.pid) return;
+
+    // Find the session name from the label (it's the part before " - ")
+    const labelParts = node.label.split(' - ');
+    const sessionName = labelParts.length > 1 ? labelParts[0] : node.label;
+
+    setDetailView({
+      processSessionId: node.processSessionId,
+      pid: node.pid,
+      toolType: node.toolType || 'unknown',
+      cwd: node.cwd || '',
+      startTime: node.startTime || Date.now(),
+      command: node.command,
+      args: node.args,
+      agentSessionId: node.agentSessionId,
+      sessionName,
+      processType: node.processType,
+      isAutoRun: node.isAutoRun,
+    });
   };
 
   // Keyboard navigation handler
@@ -601,8 +664,14 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
         e.preventDefault();
         if (selectedNodeId) {
           const selectedNode = visibleNodes.find(n => n.id === selectedNodeId);
-          if (selectedNode && selectedNode.children && selectedNode.children.length > 0) {
-            toggleNode(selectedNodeId);
+          if (selectedNode) {
+            if (selectedNode.type === 'process' && selectedNode.processSessionId) {
+              // Open detail view for process nodes
+              openProcessDetail(selectedNode);
+            } else if (selectedNode.children && selectedNode.children.length > 0) {
+              // Toggle expand/collapse for group/session nodes
+              toggleNode(selectedNodeId);
+            }
           }
         }
         break;
@@ -719,7 +788,7 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
           ref={isSelected ? selectedNodeRef as React.RefObject<HTMLDivElement> : null}
           key={node.id}
           tabIndex={0}
-          className="px-4 py-1.5 cursor-default group"
+          className="px-4 py-1.5 cursor-pointer group"
           style={{
             paddingLeft: `${paddingLeft}px`,
             color: theme.colors.textMain,
@@ -728,6 +797,7 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
             outlineOffset: '-2px'
           }}
           onClick={() => setSelectedNodeId(node.id)}
+          onDoubleClick={() => openProcessDetail(node)}
           onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = `${theme.colors.accent}15`; }}
           onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent'; }}
         >
@@ -906,6 +976,285 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
   const processTree = buildProcessTree();
   const totalActiveProcesses = activeProcesses.length;
 
+  // Render the detail view for a selected process
+  const renderDetailView = () => {
+    if (!detailView) return null;
+
+    const commandLine = detailView.command && detailView.args
+      ? `${detailView.command} ${detailView.args.join(' ')}`
+      : detailView.command || 'N/A';
+
+    return (
+      <div
+        ref={detailViewRef}
+        tabIndex={-1}
+        className="flex flex-col h-full outline-none"
+      >
+        {/* Detail Header */}
+        <div
+          className="px-6 py-4 border-b flex items-center justify-between"
+          style={{ borderColor: theme.colors.border }}
+        >
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setDetailView(null)}
+              className="p-1.5 rounded hover:bg-opacity-10 flex items-center gap-1"
+              style={{ color: theme.colors.textDim }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = `${theme.colors.accent}20`}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              title="Back (Esc)"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <Cpu className="w-5 h-5" style={{ color: theme.colors.accent }} />
+            <h2 className="text-lg font-semibold" style={{ color: theme.colors.textMain }}>
+              Process Details
+            </h2>
+            {detailView.isAutoRun && (
+              <span
+                className="text-xs font-semibold px-2 py-1 rounded"
+                style={{
+                  backgroundColor: theme.colors.accent + '20',
+                  color: theme.colors.accent
+                }}
+              >
+                AUTO RUN
+              </span>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded hover:bg-opacity-10"
+            style={{ color: theme.colors.textDim }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = `${theme.colors.accent}20`}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+            title="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Detail Content */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* Process Name & Status */}
+          <div className="flex items-center gap-3">
+            <div
+              className="w-3 h-3 rounded-full"
+              style={{ backgroundColor: theme.colors.success }}
+            />
+            <span className="text-xl font-semibold" style={{ color: theme.colors.textMain }}>
+              {detailView.sessionName || 'Process'}
+            </span>
+            <span
+              className="text-xs px-2 py-1 rounded"
+              style={{
+                backgroundColor: `${theme.colors.success}20`,
+                color: theme.colors.success
+              }}
+            >
+              Running
+            </span>
+          </div>
+
+          {/* Info Grid */}
+          <div className="grid grid-cols-1 gap-4">
+            {/* Session ID */}
+            <div
+              className="p-4 rounded-lg"
+              style={{ backgroundColor: theme.colors.bgMain }}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <Hash className="w-4 h-4" style={{ color: theme.colors.accent }} />
+                <span className="text-xs font-medium uppercase tracking-wide" style={{ color: theme.colors.textDim }}>
+                  Process Session ID
+                </span>
+              </div>
+              <code
+                className="text-sm font-mono break-all select-all"
+                style={{ color: theme.colors.textMain }}
+              >
+                {detailView.processSessionId}
+              </code>
+            </div>
+
+            {/* Agent Session ID (if available) */}
+            {detailView.agentSessionId && (
+              <div
+                className="p-4 rounded-lg"
+                style={{ backgroundColor: theme.colors.bgMain }}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <Activity className="w-4 h-4" style={{ color: theme.colors.accent }} />
+                  <span className="text-xs font-medium uppercase tracking-wide" style={{ color: theme.colors.textDim }}>
+                    Agent Session ID
+                  </span>
+                </div>
+                <code
+                  className="text-sm font-mono break-all select-all"
+                  style={{ color: theme.colors.textMain }}
+                >
+                  {detailView.agentSessionId}
+                </code>
+              </div>
+            )}
+
+            {/* PID & Runtime Row */}
+            <div className="grid grid-cols-2 gap-4">
+              <div
+                className="p-4 rounded-lg"
+                style={{ backgroundColor: theme.colors.bgMain }}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <Terminal className="w-4 h-4" style={{ color: theme.colors.accent }} />
+                  <span className="text-xs font-medium uppercase tracking-wide" style={{ color: theme.colors.textDim }}>
+                    PID
+                  </span>
+                </div>
+                <code
+                  className="text-lg font-mono select-all"
+                  style={{ color: theme.colors.textMain }}
+                >
+                  {detailView.pid}
+                </code>
+              </div>
+
+              <div
+                className="p-4 rounded-lg"
+                style={{ backgroundColor: theme.colors.bgMain }}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <Clock className="w-4 h-4" style={{ color: theme.colors.accent }} />
+                  <span className="text-xs font-medium uppercase tracking-wide" style={{ color: theme.colors.textDim }}>
+                    Runtime
+                  </span>
+                </div>
+                <span
+                  className="text-lg font-mono"
+                  style={{ color: theme.colors.textMain }}
+                >
+                  {formatRuntime(detailView.startTime)}
+                </span>
+              </div>
+            </div>
+
+            {/* Tool Type & Process Type Row */}
+            <div className="grid grid-cols-2 gap-4">
+              <div
+                className="p-4 rounded-lg"
+                style={{ backgroundColor: theme.colors.bgMain }}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <Cpu className="w-4 h-4" style={{ color: theme.colors.accent }} />
+                  <span className="text-xs font-medium uppercase tracking-wide" style={{ color: theme.colors.textDim }}>
+                    Tool Type
+                  </span>
+                </div>
+                <span
+                  className="text-sm"
+                  style={{ color: theme.colors.textMain }}
+                >
+                  {detailView.toolType}
+                </span>
+              </div>
+
+              {detailView.processType && (
+                <div
+                  className="p-4 rounded-lg"
+                  style={{ backgroundColor: theme.colors.bgMain }}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <Activity className="w-4 h-4" style={{ color: theme.colors.accent }} />
+                    <span className="text-xs font-medium uppercase tracking-wide" style={{ color: theme.colors.textDim }}>
+                      Process Type
+                    </span>
+                  </div>
+                  <span
+                    className="text-sm"
+                    style={{ color: theme.colors.textMain }}
+                  >
+                    {detailView.processType}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Working Directory */}
+            <div
+              className="p-4 rounded-lg"
+              style={{ backgroundColor: theme.colors.bgMain }}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <FolderOpen className="w-4 h-4" style={{ color: theme.colors.accent }} />
+                <span className="text-xs font-medium uppercase tracking-wide" style={{ color: theme.colors.textDim }}>
+                  Working Directory
+                </span>
+              </div>
+              <code
+                className="text-sm font-mono break-all select-all"
+                style={{ color: theme.colors.textMain }}
+              >
+                {detailView.cwd || 'N/A'}
+              </code>
+            </div>
+
+            {/* Command Line */}
+            <div
+              className="p-4 rounded-lg"
+              style={{ backgroundColor: theme.colors.bgMain }}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <Play className="w-4 h-4" style={{ color: theme.colors.accent }} />
+                <span className="text-xs font-medium uppercase tracking-wide" style={{ color: theme.colors.textDim }}>
+                  Command Line
+                </span>
+              </div>
+              <code
+                className="text-sm font-mono break-all select-all block whitespace-pre-wrap"
+                style={{ color: theme.colors.textMain }}
+              >
+                {commandLine}
+              </code>
+            </div>
+
+            {/* Start Time */}
+            <div
+              className="p-4 rounded-lg"
+              style={{ backgroundColor: theme.colors.bgMain }}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <Clock className="w-4 h-4" style={{ color: theme.colors.accent }} />
+                <span className="text-xs font-medium uppercase tracking-wide" style={{ color: theme.colors.textDim }}>
+                  Started At
+                </span>
+              </div>
+              <span
+                className="text-sm"
+                style={{ color: theme.colors.textMain }}
+              >
+                {new Date(detailView.startTime).toLocaleString()}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Detail Footer */}
+        <div
+          className="px-6 py-3 border-t flex items-center justify-between text-xs"
+          style={{
+            borderColor: theme.colors.border,
+            color: theme.colors.textDim
+          }}
+        >
+          <span style={{ opacity: 0.7 }}>Press Esc to go back</span>
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: theme.colors.success }} />
+            <span>Running</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div
       className="fixed inset-0 modal-overlay flex items-center justify-center z-[9999] animate-in fade-in duration-100"
@@ -916,122 +1265,128 @@ export function ProcessMonitor(props: ProcessMonitorProps) {
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        aria-label="System Processes"
+        aria-label={detailView ? 'Process Details' : 'System Processes'}
         className="w-[700px] max-h-[80vh] rounded-xl shadow-2xl border overflow-hidden flex flex-col outline-none"
         style={{ backgroundColor: theme.colors.bgActivity, borderColor: theme.colors.border }}
         onClick={(e) => e.stopPropagation()}
-        onKeyDown={handleKeyDown}
+        onKeyDown={detailView ? undefined : handleKeyDown}
       >
-        {/* Header */}
-        <div
-          className="px-6 py-4 border-b flex items-center justify-between"
-          style={{ borderColor: theme.colors.border }}
-        >
-          <div className="flex items-center gap-3">
-            <Activity className="w-5 h-5" style={{ color: theme.colors.accent }} />
-            <h2 className="text-lg font-semibold" style={{ color: theme.colors.textMain }}>
-              System Processes
-            </h2>
-            {totalActiveProcesses > 0 && (
-              <span
-                className="text-xs px-2 py-1 rounded-full"
-                style={{ backgroundColor: `${theme.colors.success}20`, color: theme.colors.success }}
-              >
-                {totalActiveProcesses} active
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => fetchActiveProcesses(true)}
-              className="p-1.5 rounded hover:bg-opacity-10 flex items-center gap-1"
-              style={{ color: theme.colors.textDim }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = `${theme.colors.accent}20`}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-              title="Refresh (R)"
-            >
-              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-            </button>
-            <button
-              onClick={expandAll}
-              className="p-1.5 rounded hover:bg-opacity-10"
-              style={{ color: theme.colors.textDim }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = `${theme.colors.accent}20`}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-              title="Expand all"
-            >
-              <div className="flex flex-col items-center -space-y-1.5">
-                <ChevronUp className="w-4 h-4" />
-                <ChevronDown className="w-4 h-4" />
-              </div>
-            </button>
-            <button
-              onClick={collapseAll}
-              className="p-1.5 rounded hover:bg-opacity-10"
-              style={{ color: theme.colors.textDim }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = `${theme.colors.accent}20`}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-              title="Collapse all"
-            >
-              <div className="flex flex-col items-center -space-y-1.5">
-                <ChevronDown className="w-4 h-4" />
-                <ChevronUp className="w-4 h-4" />
-              </div>
-            </button>
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded hover:bg-opacity-10"
-              style={{ color: theme.colors.textDim }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = `${theme.colors.accent}20`}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-              title="Close (Esc)"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* Process tree */}
-        <div className="overflow-y-auto flex-1 scrollbar-thin">
-          {isLoading ? (
+        {detailView ? (
+          renderDetailView()
+        ) : (
+          <>
+            {/* Header */}
             <div
-              className="px-6 py-8 text-center flex items-center justify-center gap-2"
-              style={{ color: theme.colors.textDim }}
+              className="px-6 py-4 border-b flex items-center justify-between"
+              style={{ borderColor: theme.colors.border }}
             >
-              <RefreshCw className="w-4 h-4 animate-spin" />
-              Loading processes...
+              <div className="flex items-center gap-3">
+                <Activity className="w-5 h-5" style={{ color: theme.colors.accent }} />
+                <h2 className="text-lg font-semibold" style={{ color: theme.colors.textMain }}>
+                  System Processes
+                </h2>
+                {totalActiveProcesses > 0 && (
+                  <span
+                    className="text-xs px-2 py-1 rounded-full"
+                    style={{ backgroundColor: `${theme.colors.success}20`, color: theme.colors.success }}
+                  >
+                    {totalActiveProcesses} active
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => fetchActiveProcesses(true)}
+                  className="p-1.5 rounded hover:bg-opacity-10 flex items-center gap-1"
+                  style={{ color: theme.colors.textDim }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = `${theme.colors.accent}20`}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  title="Refresh (R)"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                </button>
+                <button
+                  onClick={expandAll}
+                  className="p-1.5 rounded hover:bg-opacity-10"
+                  style={{ color: theme.colors.textDim }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = `${theme.colors.accent}20`}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  title="Expand all"
+                >
+                  <div className="flex flex-col items-center -space-y-1.5">
+                    <ChevronUp className="w-4 h-4" />
+                    <ChevronDown className="w-4 h-4" />
+                  </div>
+                </button>
+                <button
+                  onClick={collapseAll}
+                  className="p-1.5 rounded hover:bg-opacity-10"
+                  style={{ color: theme.colors.textDim }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = `${theme.colors.accent}20`}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  title="Collapse all"
+                >
+                  <div className="flex flex-col items-center -space-y-1.5">
+                    <ChevronDown className="w-4 h-4" />
+                    <ChevronUp className="w-4 h-4" />
+                  </div>
+                </button>
+                <button
+                  onClick={onClose}
+                  className="p-1.5 rounded hover:bg-opacity-10"
+                  style={{ color: theme.colors.textDim }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = `${theme.colors.accent}20`}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  title="Close (Esc)"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
-          ) : processTree.length === 0 ? (
-            <div
-              className="px-6 py-8 text-center"
-              style={{ color: theme.colors.textDim }}
-            >
-              No running processes
-            </div>
-          ) : (
-            <div className="py-2">
-              {processTree.map(node => renderNode(node, 0))}
-            </div>
-          )}
-        </div>
 
-        {/* Footer */}
-        <div
-          className="px-6 py-3 border-t flex items-center justify-between text-xs"
-          style={{
-            borderColor: theme.colors.border,
-            color: theme.colors.textDim
-          }}
-        >
-          <div className="flex items-center gap-4">
-            <span>{sessions.length} {sessions.length === 1 ? 'session' : 'sessions'} • {groups.length} {groups.length === 1 ? 'group' : 'groups'}</span>
-            <span style={{ opacity: 0.7 }}>↑↓ navigate • ←→ collapse/expand • R refresh</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: theme.colors.success }} />
-            <span>Running</span>
-          </div>
-        </div>
+            {/* Process tree */}
+            <div className="overflow-y-auto flex-1 scrollbar-thin">
+              {isLoading ? (
+                <div
+                  className="px-6 py-8 text-center flex items-center justify-center gap-2"
+                  style={{ color: theme.colors.textDim }}
+                >
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Loading processes...
+                </div>
+              ) : processTree.length === 0 ? (
+                <div
+                  className="px-6 py-8 text-center"
+                  style={{ color: theme.colors.textDim }}
+                >
+                  No running processes
+                </div>
+              ) : (
+                <div className="py-2">
+                  {processTree.map(node => renderNode(node, 0))}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div
+              className="px-6 py-3 border-t flex items-center justify-between text-xs"
+              style={{
+                borderColor: theme.colors.border,
+                color: theme.colors.textDim
+              }}
+            >
+              <div className="flex items-center gap-4">
+                <span>{sessions.length} {sessions.length === 1 ? 'session' : 'sessions'} • {groups.length} {groups.length === 1 ? 'group' : 'groups'}</span>
+                <span style={{ opacity: 0.7 }}>↑↓ navigate • Enter view details • R refresh</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: theme.colors.success }} />
+                <span>Running</span>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Kill confirmation modal */}

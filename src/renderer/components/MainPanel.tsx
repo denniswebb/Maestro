@@ -182,6 +182,8 @@ interface MainPanelProps {
   onShowAgentErrorModal?: () => void;
   // Flash notification callback
   showFlashNotification?: (message: string) => void;
+  // Fuzzy file search callback (for FilePreview in preview mode)
+  onOpenFuzzySearch?: () => void;
 }
 
 export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function MainPanel(props, ref) {
@@ -953,6 +955,7 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
                 forwardHistory={props.forwardHistory}
                 currentHistoryIndex={props.currentHistoryIndex}
                 onNavigateToIndex={props.onNavigateToIndex}
+                onOpenFuzzySearch={props.onOpenFuzzySearch}
               />
             </div>
           ) : (

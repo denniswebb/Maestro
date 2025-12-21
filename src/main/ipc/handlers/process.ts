@@ -269,6 +269,8 @@ export function registerProcessHandlers(deps: ProcessHandlerDependencies): void 
         isTerminal: p.isTerminal,
         isBatchMode: p.isBatchMode || false,
         startTime: p.startTime,
+        command: p.command,
+        args: p.args,
       }));
     })
   );

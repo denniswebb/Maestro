@@ -442,14 +442,6 @@ Core layer management for modals and overlays.
 - `unregisterLayer(id)` - Remove a layer
 - `updateLayerHandler(id, handler)` - Update escape handler
 
-#### useModalManager (`src/renderer/hooks/useModalManager.ts`)
-
-Higher-level modal state management utilities.
-
-#### useFocusManager (`src/renderer/hooks/useFocusManager.ts`)
-
-Focus management across panels (sidebar, main, right panel).
-
 #### useNavigationHistory (`src/renderer/hooks/useNavigationHistory.ts`)
 
 Back/forward navigation through sessions and tabs. See [Navigation History](#navigation-history).

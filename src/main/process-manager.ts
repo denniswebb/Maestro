@@ -82,6 +82,8 @@ interface ManagedProcess {
   streamedText?: string; // Buffer for accumulating streamed text from partial events (OpenCode, Codex)
   contextWindow?: number; // Configured context window size (0 or undefined = not configured)
   tempImageFiles?: string[]; // Temp files to clean up when process exits (for file-based image args)
+  command?: string; // The command used to spawn this process (e.g., 'claude', '/usr/bin/zsh')
+  args?: string[]; // The arguments passed to the command
   lastUsageTotals?: {
     inputTokens: number;
     outputTokens: number;
@@ -424,6 +426,8 @@ export class ProcessManager extends EventEmitter {
           pid: ptyProcess.pid,
           isTerminal: true,
           startTime: Date.now(),
+          command: ptyCommand,
+          args: ptyArgs,
         };
 
         this.processes.set(sessionId, managedProcess);
@@ -558,6 +562,8 @@ export class ProcessManager extends EventEmitter {
           stdoutBuffer: '', // Initialize stdout buffer for error detection at exit
           contextWindow, // User-configured context window size (0 = not configured)
           tempImageFiles: tempImageFiles.length > 0 ? tempImageFiles : undefined, // Temp files to clean up on exit
+          command,
+          args: finalArgs,
         };
 
         this.processes.set(sessionId, managedProcess);

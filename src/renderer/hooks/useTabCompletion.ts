@@ -213,14 +213,16 @@ export function useTabCompletion(session: Session | null): UseTabCompletionRetur
         const completedPath = searchInPath ? `${searchInPath}/${file.name}` : file.name;
         // Preserve the ./ prefix if the user typed it
         const completedPathWithPrefix = hasDotSlashPrefix ? `./${completedPath}` : completedPath;
-        const fullValue = prefix ? `${prefix} ${completedPathWithPrefix}` : completedPathWithPrefix;
+        const completionPath = completedPathWithPrefix + (file.type === 'folder' ? '/' : '');
+        const completionToken = /\s/.test(completionPath) ? `"${completionPath}"` : completionPath;
+        const fullValue = prefix ? `${prefix} ${completionToken}` : completionToken;
 
         if (!seenValues.has(fullValue)) {
           seenValues.add(fullValue);
           suggestions.push({
-            value: fullValue + (file.type === 'folder' ? '/' : ''),
+            value: fullValue,
             type: file.type,
-            displayText: completedPathWithPrefix + (file.type === 'folder' ? '/' : '')
+            displayText: completionToken
           });
         }
       }

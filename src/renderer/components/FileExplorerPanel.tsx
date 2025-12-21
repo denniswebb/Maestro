@@ -75,6 +75,19 @@ export function FileExplorerPanel(props: FileExplorerPanelProps) {
   const isOverOverlayRef = useRef(false);
   const autoRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Use refs to avoid recreating the timer when callbacks change
+  const refreshFileTreeRef = useRef(refreshFileTree);
+  const sessionIdRef = useRef(session.id);
+
+  // Keep refs up to date
+  useEffect(() => {
+    refreshFileTreeRef.current = refreshFileTree;
+  }, [refreshFileTree]);
+
+  useEffect(() => {
+    sessionIdRef.current = session.id;
+  }, [session.id]);
+
   // Get current auto-refresh interval from session
   const autoRefreshInterval = session.fileTreeAutoRefreshInterval || 0;
 
@@ -98,12 +111,7 @@ export function FileExplorerPanel(props: FileExplorerPanelProps) {
     }
   }, [refreshFileTree, session.id, onShowFlash]);
 
-  // Silent refresh for auto-refresh (no flash notification)
-  const silentRefresh = useCallback(async () => {
-    await refreshFileTree(session.id);
-  }, [refreshFileTree, session.id]);
-
-  // Auto-refresh timer
+  // Auto-refresh timer - uses refs to avoid resetting timer when callbacks change
   useEffect(() => {
     // Clear existing timer
     if (autoRefreshTimerRef.current) {
@@ -114,7 +122,8 @@ export function FileExplorerPanel(props: FileExplorerPanelProps) {
     // Start new timer if interval is set
     if (autoRefreshInterval > 0) {
       autoRefreshTimerRef.current = setInterval(() => {
-        silentRefresh();
+        // Use refs to get latest values without causing effect re-runs
+        refreshFileTreeRef.current(sessionIdRef.current);
       }, autoRefreshInterval * 1000);
     }
 
@@ -125,7 +134,7 @@ export function FileExplorerPanel(props: FileExplorerPanelProps) {
         autoRefreshTimerRef.current = null;
       }
     };
-  }, [autoRefreshInterval, silentRefresh]);
+  }, [autoRefreshInterval]); // Only depends on the interval now
 
   // Hover handlers for refresh button overlay
   const handleRefreshMouseEnter = useCallback(() => {
