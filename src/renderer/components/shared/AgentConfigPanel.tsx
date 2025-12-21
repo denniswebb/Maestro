@@ -15,7 +15,7 @@
 
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { RefreshCw, Plus, Trash2, HelpCircle, ChevronDown } from 'lucide-react';
-import type { Theme, AgentConfig } from '../../types';
+import type { Theme, AgentConfig, AgentConfigOption } from '../../types';
 
 // Counter for generating stable IDs for env vars
 let envVarIdCounter = 0;
@@ -558,7 +558,7 @@ export function AgentConfigPanel({
       </div>
 
       {/* Agent-specific configuration options (contextWindow, model, etc.) */}
-      {agent.configOptions && agent.configOptions.length > 0 && agent.configOptions.map((option: any) => (
+      {agent.configOptions && agent.configOptions.length > 0 && agent.configOptions.map((option: AgentConfigOption) => (
         <div
           key={option.key}
           className={`${padding} rounded border`}
