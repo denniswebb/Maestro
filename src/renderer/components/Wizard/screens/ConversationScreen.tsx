@@ -377,6 +377,8 @@ export function ConversationScreen({ theme }: ConversationScreenProps): JSX.Elem
   // Store initial question once to prevent it changing on re-renders
   const [initialQuestion] = useState(() => getInitialQuestion());
   const [errorRetryCount, setErrorRetryCount] = useState(0);
+  // Track if we've auto-sent the initial message for continue mode
+  const [autoSentInitialMessage, setAutoSentInitialMessage] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const [fillerPhrase, setFillerPhrase] = useState('');
 
@@ -714,6 +716,179 @@ export function ConversationScreen({ theme }: ConversationScreenProps): JSX.Elem
     setConfidenceLevel,
     setIsReadyToProceed,
   ]);
+
+  /**
+   * Auto-send initial message when continuing with existing docs
+   * This triggers the AI to analyze the docs and provide a synopsis
+   */
+  const sendInitialContinueMessage = useCallback(async () => {
+    if (state.isConversationLoading || isSendingRef.current) {
+      return;
+    }
+
+    // Set immediate guard before any async work
+    isSendingRef.current = true;
+
+    setConversationError(null);
+    setStreamingText('');
+    setFillerPhrase(getNextFillerPhrase());
+
+    // Don't show the normal initial question for continue mode
+    setShowInitialQuestion(false);
+    initialQuestionAddedRef.current = true;
+
+    // Add user message to history - asking for analysis
+    const continueMessage = "Please analyze the existing Auto Run documents and provide a synopsis of the current plan.";
+    addMessage(createUserMessage(continueMessage));
+
+    // Set loading state
+    setConversationLoading(true);
+
+    // Announce that AI is analyzing
+    setAnnouncement('Analyzing existing documents...');
+    setAnnouncementKey((prev) => prev + 1);
+
+    try {
+      // Re-initialize conversation if needed
+      if (!conversationManager.isConversationActive()) {
+        if (!state.selectedAgent) {
+          setConversationError('No agent selected. Please go back and select an agent.');
+          setConversationLoading(false);
+          return;
+        }
+
+        // Fetch existing docs for the system prompt
+        const autoRunPath = `${state.directoryPath}/${AUTO_RUN_FOLDER_NAME}`;
+        const listResult = await window.maestro.autorun.listDocs(autoRunPath);
+        const existingDocs: ExistingDocument[] = [];
+
+        if (listResult.success && listResult.files) {
+          for (const filename of listResult.files) {
+            try {
+              const readResult = await window.maestro.autorun.readDoc(autoRunPath, filename);
+              if (readResult.success && readResult.content) {
+                existingDocs.push({ filename, content: readResult.content });
+              }
+            } catch (err) {
+              console.warn(`Failed to read doc ${filename}:`, err);
+            }
+          }
+        }
+
+        await conversationManager.startConversation({
+          agentType: state.selectedAgent,
+          directoryPath: state.directoryPath,
+          projectName: state.agentName || 'My Project',
+          existingDocs: existingDocs.length > 0 ? existingDocs : undefined,
+        });
+      }
+
+      // Send message and wait for response
+      const result = await conversationManager.sendMessage(
+        continueMessage,
+        [], // Empty history since this is the first message
+        {
+          onChunk: (chunk) => {
+            try {
+              const lines = chunk.split('\n').filter((line) => line.trim());
+              for (const line of lines) {
+                try {
+                  const msg = JSON.parse(line);
+                  if (
+                    msg.type === 'stream_event' &&
+                    msg.event?.type === 'content_block_delta' &&
+                    msg.event?.delta?.text
+                  ) {
+                    setStreamingText((prev) => prev + msg.event.delta.text);
+                  }
+                } catch {
+                  // Ignore non-JSON lines
+                }
+              }
+            } catch {
+              // Ignore parse errors
+            }
+          },
+          onComplete: (sendResult) => {
+            setStreamingText('');
+
+            if (sendResult.success && sendResult.response) {
+              addMessage(createAssistantMessage(sendResult.response));
+
+              if (sendResult.response.structured) {
+                const newConfidence = sendResult.response.structured.confidence;
+                setConfidenceLevel(newConfidence);
+
+                const isReady =
+                  sendResult.response.structured.ready &&
+                  newConfidence >= READY_CONFIDENCE_THRESHOLD;
+                setIsReadyToProceed(isReady);
+
+                if (!isReady) {
+                  setAnnouncement(
+                    `Analysis complete. Project understanding at ${newConfidence}%.`
+                  );
+                  setAnnouncementKey((prev) => prev + 1);
+                }
+              } else {
+                setAnnouncement('Analysis complete.');
+                setAnnouncementKey((prev) => prev + 1);
+              }
+
+              setErrorRetryCount(0);
+            }
+          },
+          onError: (error) => {
+            console.error('Conversation error:', error);
+            setConversationError(error);
+            setErrorRetryCount((prev) => prev + 1);
+            setAnnouncement(`Error: ${error}. Please try again.`);
+            setAnnouncementKey((prev) => prev + 1);
+          },
+        }
+      );
+
+      if (!result.success && result.error) {
+        setConversationError(result.error);
+        setErrorRetryCount((prev) => prev + 1);
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      setConversationError(errorMessage);
+      setErrorRetryCount((prev) => prev + 1);
+    } finally {
+      setConversationLoading(false);
+      isSendingRef.current = false;
+      inputRef.current?.focus();
+    }
+  }, [
+    state.isConversationLoading,
+    state.selectedAgent,
+    state.directoryPath,
+    state.agentName,
+    addMessage,
+    setConversationLoading,
+    setConversationError,
+    setConfidenceLevel,
+    setIsReadyToProceed,
+  ]);
+
+  // Auto-trigger initial message when continuing with existing docs
+  useEffect(() => {
+    if (
+      conversationStarted &&
+      state.existingDocsChoice === 'continue' &&
+      !autoSentInitialMessage &&
+      state.conversationHistory.length === 0
+    ) {
+      setAutoSentInitialMessage(true);
+      // Small delay to ensure conversation manager is ready
+      const timer = setTimeout(() => {
+        sendInitialContinueMessage();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [conversationStarted, state.existingDocsChoice, autoSentInitialMessage, state.conversationHistory.length, sendInitialContinueMessage]);
 
   /**
    * Handle retry after error

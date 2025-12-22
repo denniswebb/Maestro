@@ -16,6 +16,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import type { Theme, AgentConfig } from '../../../types';
 import { useWizard } from '../WizardContext';
 import { ScreenReaderAnnouncement } from '../ScreenReaderAnnouncement';
+import { ExistingDocsModal } from '../ExistingDocsModal';
 import { AUTO_RUN_FOLDER_NAME } from '../services/phaseGenerator';
 
 interface DirectorySelectionScreenProps {
@@ -32,6 +33,7 @@ export function DirectorySelectionScreen({ theme }: DirectorySelectionScreenProp
     setIsGitRepo,
     setDirectoryError,
     setHasExistingAutoRunDocs,
+    setExistingDocsChoice,
     nextStep,
     previousStep,
     canProceedToNext,
@@ -42,6 +44,7 @@ export function DirectorySelectionScreen({ theme }: DirectorySelectionScreenProp
   const [isBrowsing, setIsBrowsing] = useState(false);
   const [isDetecting, setIsDetecting] = useState(true);
   const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null);
+  const [showExistingDocsModal, setShowExistingDocsModal] = useState(false);
 
   // Screen reader announcement state
   const [announcement, setAnnouncement] = useState('');
@@ -244,10 +247,16 @@ export function DirectorySelectionScreen({ theme }: DirectorySelectionScreenProp
 
   /**
    * Attempt to proceed to next step
-   * Blocks if Auto Run Docs folder exists and is not empty
+   * Shows modal if Auto Run Docs folder exists and is not empty
    */
   const attemptNextStep = useCallback(async () => {
     if (!canProceedToNext()) return;
+
+    // If user already made a choice about existing docs, proceed
+    if (state.existingDocsChoice) {
+      nextStep();
+      return;
+    }
 
     // Check if Auto Run Docs folder exists and has files
     try {
@@ -256,10 +265,9 @@ export function DirectorySelectionScreen({ theme }: DirectorySelectionScreenProp
       const docs = result.success ? result.files : [];
 
       if (docs && docs.length > 0) {
-        setDirectoryError(
-          `This project already has ${docs.length} Auto Run document${docs.length > 1 ? 's' : ''}. ` +
-          `Please manually delete the "${AUTO_RUN_FOLDER_NAME}" folder if you want to start fresh.`
-        );
+        // Update the count and show the modal
+        setHasExistingAutoRunDocs(true, docs.length);
+        setShowExistingDocsModal(true);
         return;
       }
     } catch {
@@ -267,7 +275,37 @@ export function DirectorySelectionScreen({ theme }: DirectorySelectionScreenProp
     }
 
     nextStep();
-  }, [canProceedToNext, nextStep, state.directoryPath, setDirectoryError]);
+  }, [canProceedToNext, nextStep, state.directoryPath, state.existingDocsChoice, setHasExistingAutoRunDocs]);
+
+  /**
+   * Handle "Start Fresh" choice - docs already deleted by modal
+   */
+  const handleStartFresh = useCallback(() => {
+    setShowExistingDocsModal(false);
+    setExistingDocsChoice('fresh');
+    setHasExistingAutoRunDocs(false, 0);
+    nextStep();
+  }, [setExistingDocsChoice, setHasExistingAutoRunDocs, nextStep]);
+
+  /**
+   * Handle "Continue" choice - keep existing docs and analyze them
+   */
+  const handleContinueWithDocs = useCallback(() => {
+    setShowExistingDocsModal(false);
+    setExistingDocsChoice('continue');
+    nextStep();
+  }, [setExistingDocsChoice, nextStep]);
+
+  /**
+   * Handle modal cancel - user wants to choose a different directory
+   */
+  const handleModalCancel = useCallback(() => {
+    setShowExistingDocsModal(false);
+    // Clear directory to prompt user to pick a new one
+    setDirectoryPath('');
+    setHasExistingAutoRunDocs(false, 0);
+    inputRef.current?.focus();
+  }, [setDirectoryPath, setHasExistingAutoRunDocs]);
 
   /**
    * Handle keyboard navigation
@@ -541,7 +579,7 @@ export function DirectorySelectionScreen({ theme }: DirectorySelectionScreenProp
                       className="text-xs"
                       style={{ color: theme.colors.textDim }}
                     >
-                      Version control features will be available for this project.
+                      Version control features like branch tracking, change detection, and worktrees will be available.
                     </p>
                   </div>
                 </>
@@ -590,7 +628,7 @@ export function DirectorySelectionScreen({ theme }: DirectorySelectionScreenProp
               className="text-xs text-center mb-6"
               style={{ color: theme.colors.textDim }}
             >
-              Git repositories get extra features like branch tracking and change detection.
+              Git repositories get extra features like branch tracking, change detection, and worktrees.
               Regular folders work too!
             </p>
           )}
@@ -686,6 +724,18 @@ export function DirectorySelectionScreen({ theme }: DirectorySelectionScreenProp
           Exit Wizard
         </span>
       </div>
+
+      {/* Existing docs modal */}
+      {showExistingDocsModal && (
+        <ExistingDocsModal
+          theme={theme}
+          documentCount={state.existingDocsCount}
+          directoryPath={state.directoryPath}
+          onStartFresh={handleStartFresh}
+          onContinue={handleContinueWithDocs}
+          onCancel={handleModalCancel}
+        />
+      )}
     </div>
   );
 }

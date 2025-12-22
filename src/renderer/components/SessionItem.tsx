@@ -262,8 +262,8 @@ export function SessionItem({
           )
         )}
 
-        {/* AI Status Indicator with Unread Badge */}
-        <div className="relative">
+        {/* AI Status Indicator with Unread Badge - ml-auto ensures it aligns to right edge */}
+        <div className="relative ml-auto">
           <div
             className={`w-2 h-2 rounded-full ${session.state === 'connecting' ? 'animate-pulse' : (session.state === 'busy' ? 'animate-pulse' : '')}`}
             style={

@@ -258,8 +258,8 @@ function Tab({
         />
       )}
 
-      {/* Star indicator for starred sessions */}
-      {tab.starred && (
+      {/* Star indicator for starred sessions - only show if tab has a session ID */}
+      {tab.starred && tab.agentSessionId && (
         <Star
           className="w-3 h-3 fill-current shrink-0"
           style={{ color: theme.colors.warning }}
@@ -377,17 +377,20 @@ function Tab({
               </button>
             )}
 
-            <button
-              onClick={handleStarClick}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-white/10 transition-colors"
-              style={{ color: theme.colors.textMain }}
-            >
-              <Star
-                className={`w-3.5 h-3.5 ${tab.starred ? 'fill-current' : ''}`}
-                style={{ color: tab.starred ? theme.colors.warning : theme.colors.textDim }}
-              />
-              {tab.starred ? 'Unstar Session' : 'Star Session'}
-            </button>
+            {/* Star button - only show for tabs with established session */}
+            {tab.agentSessionId && (
+              <button
+                onClick={handleStarClick}
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-white/10 transition-colors"
+                style={{ color: theme.colors.textMain }}
+              >
+                <Star
+                  className={`w-3.5 h-3.5 ${tab.starred ? 'fill-current' : ''}`}
+                  style={{ color: tab.starred ? theme.colors.warning : theme.colors.textDim }}
+                />
+                {tab.starred ? 'Unstar Session' : 'Star Session'}
+              </button>
+            )}
 
             <button
               onClick={handleRenameClick}

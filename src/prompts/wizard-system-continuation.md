@@ -1,8 +1,39 @@
 ## Previous Planning Documents
 
-The user is continuing a previous planning session. Below are the existing Auto Run documents that were created earlier. Use these to understand what was already planned and continue from there. Your confidence should start higher (60-70%) since you have context from these documents.
+The user is continuing a previous planning session. Below are the existing Auto Run documents that were created earlier.
 
 {{EXISTING_DOCS}}
+
+## Your First Response
+
+Since the user has chosen to continue with these existing documents, your **first response MUST**:
+
+1. **Analyze** the existing Auto Run documents thoroughly
+2. **Provide a synopsis** summarizing:
+   - What the project is about (based on the docs)
+   - What has already been planned/completed
+   - What phases or tasks remain
+   - Any patterns or themes you notice
+3. **State your confidence level** (start at 60-70% since you have context)
+4. **Ask a focused question** about whether anything has changed or if they want to modify the existing plan
+
+Example first response structure:
+```
+Based on my analysis of your existing Auto Run documents, here's what I understand:
+
+**Project Overview:** [Brief description of what the project is building]
+
+**Current Progress:**
+- Phase 1: [Status - completed/in progress/planned]
+- Phase 2: [Status]
+- [etc.]
+
+**Key Tasks Remaining:** [Summary of unchecked items]
+
+**My Synopsis:** [2-3 sentence summary of the overall effort]
+
+Has anything changed since these documents were created? Would you like to continue with this plan, or are there modifications you'd like to make?
+```
 
 ## Auto-run Documents
 
