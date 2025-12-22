@@ -482,7 +482,7 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
                         {...gitTooltip.contentHandlers}
                       />
                       <div
-                        className="absolute top-full left-0 pt-2 w-80 z-50 pointer-events-auto"
+                        className="absolute top-full left-0 pt-2 w-96 z-50 pointer-events-auto"
                         {...gitTooltip.contentHandlers}
                       >
                         <div
@@ -492,15 +492,16 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
                             border: `1px solid ${theme.colors.border}`
                           }}
                         >
-                      {/* Branch */}
-                      <div className="p-3 border-b" style={{ borderColor: theme.colors.border }}>
-                        <div className="text-[10px] uppercase font-bold mb-2" style={{ color: theme.colors.textDim }}>Branch</div>
+                      {/* Branch / Origin / Status */}
+                      <div className="p-3 space-y-2 border-b" style={{ borderColor: theme.colors.border }}>
+                        {/* Branch row */}
                         <div className="flex items-center gap-2">
-                          <GitBranch className="w-4 h-4 text-orange-500" />
-                          <span className="text-sm font-mono font-medium" style={{ color: theme.colors.textMain }}>
+                          <span className="text-[10px] uppercase font-bold w-14 shrink-0" style={{ color: theme.colors.textDim }}>Branch</span>
+                          <GitBranch className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                          <span className="text-xs font-mono font-medium truncate" style={{ color: theme.colors.textMain }}>
                             {gitInfo.branch}
                           </span>
-                          <div className="flex items-center gap-2 ml-auto">
+                          <div className="flex items-center gap-1.5 ml-auto shrink-0">
                             {gitInfo.ahead > 0 && (
                               <span className="flex items-center gap-0.5 text-xs text-green-500">
                                 <ArrowUp className="w-3 h-3" />
@@ -518,53 +519,54 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
                                 e.stopPropagation();
                                 copyToClipboard(gitInfo.branch, `"${gitInfo.branch}" copied to clipboard`);
                               }}
-                              className="p-1 rounded hover:bg-white/10 transition-colors shrink-0"
+                              className="p-1 rounded hover:bg-white/10 transition-colors"
                               title="Copy branch name"
                             >
                               <Copy className="w-3 h-3" style={{ color: theme.colors.textDim }} />
                             </button>
                           </div>
                         </div>
-                      </div>
 
-                      {/* Remote Origin */}
-                      {gitInfo.remote && (
-                        <div className="p-3 border-b" style={{ borderColor: theme.colors.border }}>
-                          <div className="text-[10px] uppercase font-bold mb-2" style={{ color: theme.colors.textDim }}>Origin</div>
+                        {/* Origin row */}
+                        {gitInfo.remote && (
                           <div className="flex items-center gap-2">
+                            <span className="text-[10px] uppercase font-bold w-14 shrink-0" style={{ color: theme.colors.textDim }}>Origin</span>
                             <ExternalLink className="w-3 h-3 shrink-0" style={{ color: theme.colors.textDim }} />
-                            <span
-                              className="text-xs font-mono truncate flex-1"
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const url = gitInfo.remote.startsWith('http') ? gitInfo.remote : `https://${gitInfo.remote}`;
+                                window.open(url.replace(/\.git$/, ''), '_blank');
+                              }}
+                              className="text-xs font-mono truncate hover:underline text-left"
                               style={{ color: theme.colors.textMain }}
-                              title={gitInfo.remote}
+                              title={`Open ${gitInfo.remote}`}
                             >
                               {gitInfo.remote.replace(/^https?:\/\//, '').replace(/\.git$/, '')}
-                            </span>
+                            </button>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 copyToClipboard(gitInfo.remote);
                               }}
-                              className="p-1 rounded hover:bg-white/10 transition-colors shrink-0"
+                              className="p-1 rounded hover:bg-white/10 transition-colors ml-auto shrink-0"
                               title="Copy remote URL"
                             >
                               <Copy className="w-3 h-3" style={{ color: theme.colors.textDim }} />
                             </button>
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      {/* Status Summary */}
-                      <div className="p-3 border-b" style={{ borderColor: theme.colors.border }}>
-                        <div className="text-[10px] uppercase font-bold mb-2" style={{ color: theme.colors.textDim }}>Status</div>
-                        <div className="flex items-center gap-4 text-xs">
+                        {/* Status row */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] uppercase font-bold w-14 shrink-0" style={{ color: theme.colors.textDim }}>Status</span>
                           {gitInfo.uncommittedChanges > 0 ? (
-                            <span className="flex items-center gap-1.5" style={{ color: theme.colors.textMain }}>
+                            <span className="flex items-center gap-1.5 text-xs" style={{ color: theme.colors.textMain }}>
                               <FileEdit className="w-3 h-3 text-orange-500" />
                               {gitInfo.uncommittedChanges} uncommitted {gitInfo.uncommittedChanges === 1 ? 'change' : 'changes'}
                             </span>
                           ) : (
-                            <span className="flex items-center gap-1.5 text-green-500">
+                            <span className="flex items-center gap-1.5 text-xs text-green-500">
                               Working tree clean
                             </span>
                           )}
@@ -581,10 +583,10 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
                               onOpenWorktreeConfig();
                               gitTooltip.close();
                             }}
-                            className="w-full flex items-center gap-2 px-3 py-2 rounded text-xs hover:bg-white/10 transition-colors"
-                            style={{ color: theme.colors.textMain }}
+                            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded text-xs hover:bg-white/10 transition-colors"
+                            style={{ color: theme.colors.textDim }}
                           >
-                            <Settings2 className="w-4 h-4" style={{ color: theme.colors.accent }} />
+                            <Settings2 className="w-3.5 h-3.5" style={{ color: theme.colors.textDim }} />
                             Configure Worktrees
                           </button>
                         )}
@@ -596,10 +598,10 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
                               onOpenCreatePR();
                               gitTooltip.close();
                             }}
-                            className="w-full flex items-center gap-2 px-3 py-2 rounded text-xs hover:bg-white/10 transition-colors"
-                            style={{ color: theme.colors.textMain }}
+                            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded text-xs hover:bg-white/10 transition-colors"
+                            style={{ color: theme.colors.textDim }}
                           >
-                            <GitPullRequest className="w-4 h-4" style={{ color: theme.colors.accent }} />
+                            <GitPullRequest className="w-3.5 h-3.5" style={{ color: theme.colors.textDim }} />
                             Create Pull Request
                           </button>
                         )}

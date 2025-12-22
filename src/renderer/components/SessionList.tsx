@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Wand2, Plus, Settings, ChevronRight, ChevronDown, X, Keyboard,
+  Wand2, Plus, Settings, ChevronRight, ChevronDown, ChevronUp, X, Keyboard,
   Radio, Copy, ExternalLink, PanelLeftClose, PanelLeftOpen, Folder, Info, GitBranch, Bot, Clock,
   ScrollText, Cpu, Menu, Bookmark, Trophy, Trash2, Edit3, FolderInput, Download, Compass, Globe,
   GitPullRequest
@@ -56,6 +56,7 @@ function SessionContextMenu({
 }: SessionContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const moveToGroupRef = useRef<HTMLDivElement>(null);
+  const submenuTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showMoveSubmenu, setShowMoveSubmenu] = useState(false);
   const [submenuPosition, setSubmenuPosition] = useState<{ vertical: 'below' | 'above'; horizontal: 'right' | 'left' }>({ vertical: 'below', horizontal: 'right' });
 
@@ -81,6 +82,11 @@ function SessionContextMenu({
 
   // Calculate submenu position when showing
   const handleMoveToGroupHover = () => {
+    // Clear any pending close timeout
+    if (submenuTimeoutRef.current) {
+      clearTimeout(submenuTimeoutRef.current);
+      submenuTimeoutRef.current = null;
+    }
     setShowMoveSubmenu(true);
 
     if (moveToGroupRef.current) {
@@ -100,6 +106,13 @@ function SessionContextMenu({
 
       setSubmenuPosition({ vertical, horizontal });
     }
+  };
+
+  // Delayed close for submenu to allow mouse to travel to it
+  const handleMoveToGroupLeave = () => {
+    submenuTimeoutRef.current = setTimeout(() => {
+      setShowMoveSubmenu(false);
+    }, 300); // 300ms delay to move mouse to submenu
   };
 
   return (
@@ -140,20 +153,95 @@ function SessionContextMenu({
         Edit Agent...
       </button>
 
-      {/* Toggle Bookmark */}
-      <button
-        onClick={() => {
-          onToggleBookmark();
-          onDismiss();
-        }}
-        className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/5 transition-colors flex items-center gap-2"
-        style={{ color: theme.colors.textMain }}
-      >
-        <Bookmark className="w-3.5 h-3.5" fill={session.bookmarked ? 'currentColor' : 'none'} />
-        {session.bookmarked ? 'Remove Bookmark' : 'Add Bookmark'}
-      </button>
+      {/* Toggle Bookmark - only for non-worktree sessions */}
+      {!session.parentSessionId && (
+        <button
+          onClick={() => {
+            onToggleBookmark();
+            onDismiss();
+          }}
+          className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/5 transition-colors flex items-center gap-2"
+          style={{ color: theme.colors.textMain }}
+        >
+          <Bookmark className="w-3.5 h-3.5" fill={session.bookmarked ? 'currentColor' : 'none'} />
+          {session.bookmarked ? 'Remove Bookmark' : 'Add Bookmark'}
+        </button>
+      )}
 
-      {/* Worktree section - for parent sessions with worktree children OR worktree child sessions */}
+      {/* Move to Group - only for non-worktree sessions, no separator */}
+      {!session.parentSessionId && (
+        <div
+          ref={moveToGroupRef}
+          className="relative"
+          onMouseEnter={handleMoveToGroupHover}
+          onMouseLeave={handleMoveToGroupLeave}
+        >
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/5 transition-colors flex items-center justify-between"
+            style={{ color: theme.colors.textMain }}
+          >
+            <span className="flex items-center gap-2">
+              <FolderInput className="w-3.5 h-3.5" />
+              Move to Group
+            </span>
+            <ChevronRight className="w-3 h-3" />
+          </button>
+
+          {/* Submenu */}
+          {showMoveSubmenu && (
+            <div
+              className="absolute py-1 rounded-md shadow-xl border"
+              style={{
+                backgroundColor: theme.colors.bgSidebar,
+                borderColor: theme.colors.border,
+                minWidth: '140px',
+                ...(submenuPosition.vertical === 'above' ? { bottom: 0 } : { top: 0 }),
+                ...(submenuPosition.horizontal === 'left' ? { right: '100%', marginRight: 4 } : { left: '100%', marginLeft: 4 })
+              }}
+            >
+              {/* No Group option */}
+              <button
+                onClick={() => {
+                  onMoveToGroup('');
+                  onDismiss();
+                }}
+                className={`w-full text-left px-3 py-1.5 text-xs hover:bg-white/5 transition-colors flex items-center gap-2 ${!session.groupId ? 'opacity-50' : ''}`}
+                style={{ color: theme.colors.textMain }}
+                disabled={!session.groupId}
+              >
+                <Folder className="w-3.5 h-3.5" />
+                Ungrouped
+                {!session.groupId && <span className="text-[10px] opacity-50">(current)</span>}
+              </button>
+
+              {/* Divider if there are groups */}
+              {groups.length > 0 && (
+                <div className="my-1 border-t" style={{ borderColor: theme.colors.border }} />
+              )}
+
+              {/* Group options */}
+              {groups.map(group => (
+                <button
+                  key={group.id}
+                  onClick={() => {
+                    onMoveToGroup(group.id);
+                    onDismiss();
+                  }}
+                  className={`w-full text-left px-3 py-1.5 text-xs hover:bg-white/5 transition-colors flex items-center gap-2 ${session.groupId === group.id ? 'opacity-50' : ''}`}
+                  style={{ color: theme.colors.textMain }}
+                  disabled={session.groupId === group.id}
+                >
+                  <span>{group.emoji}</span>
+                  <span className="truncate">{group.name}</span>
+                  {session.groupId === group.id && <span className="text-[10px] opacity-50">(current)</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Worktree section - for parent sessions */}
       {((hasWorktreeChildren || session.isGitRepo) && !session.parentSessionId && onCreateWorktree) && (
         <>
           <div className="my-1 border-t" style={{ borderColor: theme.colors.border }} />
@@ -166,7 +254,7 @@ function SessionContextMenu({
             style={{ color: theme.colors.accent }}
           >
             <GitBranch className="w-3.5 h-3.5" />
-            Create Worktree
+            {session.worktreeConfig?.basePath ? 'Create Worktree' : 'Configure Worktrees'}
           </button>
         </>
       )}
@@ -204,87 +292,10 @@ function SessionContextMenu({
         </>
       )}
 
-      {/* Move to Group and Remove Agent - only for non-worktree sessions */}
+      {/* Remove Agent - only for non-worktree sessions */}
       {!session.parentSessionId && (
         <>
-          {/* Divider */}
           <div className="my-1 border-t" style={{ borderColor: theme.colors.border }} />
-
-          {/* Move to Group - with submenu */}
-          <div
-            ref={moveToGroupRef}
-            className="relative"
-            onMouseEnter={handleMoveToGroupHover}
-            onMouseLeave={() => setShowMoveSubmenu(false)}
-          >
-            <button
-              className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/5 transition-colors flex items-center justify-between"
-              style={{ color: theme.colors.textMain }}
-            >
-              <span className="flex items-center gap-2">
-                <FolderInput className="w-3.5 h-3.5" />
-                Move to Group
-              </span>
-              <ChevronRight className="w-3 h-3" />
-            </button>
-
-            {/* Submenu */}
-            {showMoveSubmenu && (
-              <div
-                className="absolute py-1 rounded-md shadow-xl border"
-                style={{
-                  backgroundColor: theme.colors.bgSidebar,
-                  borderColor: theme.colors.border,
-                  minWidth: '140px',
-                  ...(submenuPosition.vertical === 'above' ? { bottom: 0 } : { top: 0 }),
-                  ...(submenuPosition.horizontal === 'left' ? { right: '100%', marginRight: 4 } : { left: '100%', marginLeft: 4 })
-                }}
-              >
-                {/* No Group option */}
-                <button
-                  onClick={() => {
-                    onMoveToGroup('');
-                    onDismiss();
-                  }}
-                  className={`w-full text-left px-3 py-1.5 text-xs hover:bg-white/5 transition-colors flex items-center gap-2 ${!session.groupId ? 'opacity-50' : ''}`}
-                  style={{ color: theme.colors.textMain }}
-                  disabled={!session.groupId}
-                >
-                  <Folder className="w-3.5 h-3.5" />
-                  Ungrouped
-                  {!session.groupId && <span className="text-[10px] opacity-50">(current)</span>}
-                </button>
-
-                {/* Divider if there are groups */}
-                {groups.length > 0 && (
-                  <div className="my-1 border-t" style={{ borderColor: theme.colors.border }} />
-                )}
-
-                {/* Group options */}
-                {groups.map(group => (
-                  <button
-                    key={group.id}
-                    onClick={() => {
-                      onMoveToGroup(group.id);
-                      onDismiss();
-                    }}
-                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-white/5 transition-colors flex items-center gap-2 ${session.groupId === group.id ? 'opacity-50' : ''}`}
-                    style={{ color: theme.colors.textMain }}
-                    disabled={session.groupId === group.id}
-                  >
-                    <span>{group.emoji}</span>
-                    <span className="truncate">{group.name}</span>
-                    {session.groupId === group.id && <span className="text-[10px] opacity-50">(current)</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Divider */}
-          <div className="my-1 border-t" style={{ borderColor: theme.colors.border }} />
-
-          {/* Delete */}
           <button
             onClick={() => {
               onDelete();
@@ -904,99 +915,107 @@ export function SessionList(props: SessionListProps) {
 
     return (
       <div key={`${options.keyPrefix}-${session.id}`}>
-        {/* Parent session with expand/collapse toggle for worktrees */}
-        <div className="flex items-center">
-          {/* Expand/collapse button for sessions with worktrees */}
-          {hasWorktrees && onToggleWorktreeExpanded && (
+        {/* Parent session - no chevron, maintains alignment */}
+        <SessionItem
+          session={session}
+          variant={variant}
+          theme={theme}
+          isActive={activeSessionId === session.id && !activeGroupChatId}
+          isKeyboardSelected={isKeyboardSelected}
+          isDragging={draggingSessionId === session.id}
+          isEditing={editingSessionId === `${options.keyPrefix}-${session.id}`}
+          leftSidebarOpen={leftSidebarOpen}
+          group={options.group}
+          groupId={options.groupId}
+          gitFileCount={gitFileCounts.get(session.id)}
+          isInBatch={activeBatchSessionIds.includes(session.id)}
+          jumpNumber={getSessionJumpNumber(session.id)}
+          onSelect={() => setActiveSessionId(session.id)}
+          onDragStart={() => handleDragStart(session.id)}
+          onDragOver={handleDragOver}
+          onDrop={options.onDrop || handleDropOnUngrouped}
+          onContextMenu={(e) => handleContextMenu(e, session.id)}
+          onFinishRename={(newName) => finishRenamingSession(session.id, newName)}
+          onStartRename={() => startRenamingSession(`${options.keyPrefix}-${session.id}`)}
+          onToggleBookmark={() => toggleBookmark(session.id)}
+        />
+
+        {/* Thin band below parent when worktrees exist but collapsed - click to expand */}
+        {hasWorktrees && !worktreesExpanded && onToggleWorktreeExpanded && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleWorktreeExpanded(session.id);
+            }}
+            className="w-full flex items-center justify-center gap-1.5 py-0.5 text-[9px] font-medium hover:opacity-80 transition-opacity cursor-pointer"
+            style={{
+              backgroundColor: theme.colors.accent + '15',
+              color: theme.colors.accent,
+            }}
+            title={`${worktreeChildren.length} worktree${worktreeChildren.length > 1 ? 's' : ''} (click to expand)`}
+          >
+            <GitBranch className="w-2.5 h-2.5" />
+            <span>{worktreeChildren.length} worktree{worktreeChildren.length > 1 ? 's' : ''}</span>
+            <ChevronDown className="w-2.5 h-2.5" />
+          </button>
+        )}
+
+        {/* Worktree children drawer (when expanded) */}
+        {hasWorktrees && worktreesExpanded && onToggleWorktreeExpanded && (
+          <div
+            className="mx-1 rounded-b overflow-hidden"
+            style={{
+              backgroundColor: theme.colors.accent + '10',
+              border: `1px solid ${theme.colors.accent}30`,
+              borderTop: 'none',
+            }}
+          >
+            {/* Worktree children list - minimal left indent */}
+            <div className="pl-1">
+              {worktreeChildren.sort((a, b) => compareSessionNames(a.worktreeBranch || a.name, b.worktreeBranch || b.name)).map(child => {
+                const childGlobalIdx = sortedSessions.findIndex(s => s.id === child.id);
+                const isChildKeyboardSelected = activeFocus === 'sidebar' && childGlobalIdx === selectedSidebarIndex;
+                return (
+                  <SessionItem
+                    key={`worktree-${session.id}-${child.id}`}
+                    session={child}
+                    variant="worktree"
+                    theme={theme}
+                    isActive={activeSessionId === child.id && !activeGroupChatId}
+                    isKeyboardSelected={isChildKeyboardSelected}
+                    isDragging={draggingSessionId === child.id}
+                    isEditing={editingSessionId === `worktree-${session.id}-${child.id}`}
+                    leftSidebarOpen={leftSidebarOpen}
+                    gitFileCount={gitFileCounts.get(child.id)}
+                    isInBatch={activeBatchSessionIds.includes(child.id)}
+                    jumpNumber={getSessionJumpNumber(child.id)}
+                    onSelect={() => setActiveSessionId(child.id)}
+                    onDragStart={() => handleDragStart(child.id)}
+                    onContextMenu={(e) => handleContextMenu(e, child.id)}
+                    onFinishRename={(newName) => finishRenamingSession(child.id, newName)}
+                    onStartRename={() => startRenamingSession(`worktree-${session.id}-${child.id}`)}
+                    onToggleBookmark={() => toggleBookmark(child.id)}
+                  />
+                );
+              })}
+            </div>
+            {/* Drawer handle at bottom - click to collapse */}
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onToggleWorktreeExpanded(session.id);
               }}
-              className="p-1 hover:bg-white/10 rounded transition-colors ml-1 shrink-0"
-              title={worktreesExpanded ? 'Collapse worktrees' : 'Expand worktrees'}
-            >
-              {worktreesExpanded ? (
-                <ChevronDown className="w-3 h-3" style={{ color: theme.colors.textDim }} />
-              ) : (
-                <ChevronRight className="w-3 h-3" style={{ color: theme.colors.textDim }} />
-              )}
-            </button>
-          )}
-          <div className="flex-1">
-            <SessionItem
-              session={session}
-              variant={variant}
-              theme={theme}
-              isActive={activeSessionId === session.id && !activeGroupChatId}
-              isKeyboardSelected={isKeyboardSelected}
-              isDragging={draggingSessionId === session.id}
-              isEditing={editingSessionId === `${options.keyPrefix}-${session.id}`}
-              leftSidebarOpen={leftSidebarOpen}
-              group={options.group}
-              groupId={options.groupId}
-              gitFileCount={gitFileCounts.get(session.id)}
-              isInBatch={activeBatchSessionIds.includes(session.id)}
-              jumpNumber={getSessionJumpNumber(session.id)}
-              onSelect={() => setActiveSessionId(session.id)}
-              onDragStart={() => handleDragStart(session.id)}
-              onDragOver={handleDragOver}
-              onDrop={options.onDrop || handleDropOnUngrouped}
-              onContextMenu={(e) => handleContextMenu(e, session.id)}
-              onFinishRename={(newName) => finishRenamingSession(session.id, newName)}
-              onStartRename={() => startRenamingSession(`${options.keyPrefix}-${session.id}`)}
-              onToggleBookmark={() => toggleBookmark(session.id)}
-            />
-          </div>
-          {/* Worktree count badge when collapsed - clickable to expand */}
-          {hasWorktrees && !worktreesExpanded && onToggleWorktreeExpanded && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleWorktreeExpanded(session.id);
-              }}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold mr-2 shrink-0 hover:opacity-80 transition-opacity"
+              className="w-full flex items-center justify-center gap-1.5 py-0.5 text-[9px] font-medium hover:opacity-80 transition-opacity cursor-pointer"
               style={{
                 backgroundColor: theme.colors.accent + '20',
                 color: theme.colors.accent,
               }}
-              title={`${worktreeChildren.length} worktree${worktreeChildren.length > 1 ? 's' : ''} (click to expand)`}
+              title="Click to collapse worktrees"
             >
               <GitBranch className="w-2.5 h-2.5" />
-              {worktreeChildren.length}
+              <span>{worktreeChildren.length} worktree{worktreeChildren.length > 1 ? 's' : ''}</span>
+              <ChevronUp className="w-2.5 h-2.5" />
             </button>
-          )}
-        </div>
-
-        {/* Worktree children (when expanded) */}
-        {hasWorktrees && worktreesExpanded && (
-          <div className="border-l ml-3 pl-1.5" style={{ borderColor: theme.colors.accent + '40' }}>
-            {worktreeChildren.sort((a, b) => compareSessionNames(a.worktreeBranch || a.name, b.worktreeBranch || b.name)).map(child => {
-              const childGlobalIdx = sortedSessions.findIndex(s => s.id === child.id);
-              const isChildKeyboardSelected = activeFocus === 'sidebar' && childGlobalIdx === selectedSidebarIndex;
-              return (
-                <SessionItem
-                  key={`worktree-${session.id}-${child.id}`}
-                  session={child}
-                  variant="worktree"
-                  theme={theme}
-                  isActive={activeSessionId === child.id && !activeGroupChatId}
-                  isKeyboardSelected={isChildKeyboardSelected}
-                  isDragging={draggingSessionId === child.id}
-                  isEditing={editingSessionId === `worktree-${session.id}-${child.id}`}
-                  leftSidebarOpen={leftSidebarOpen}
-                  gitFileCount={gitFileCounts.get(child.id)}
-                  isInBatch={activeBatchSessionIds.includes(child.id)}
-                  jumpNumber={getSessionJumpNumber(child.id)}
-                  onSelect={() => setActiveSessionId(child.id)}
-                  onDragStart={() => handleDragStart(child.id)}
-                  onContextMenu={(e) => handleContextMenu(e, child.id)}
-                  onFinishRename={(newName) => finishRenamingSession(child.id, newName)}
-                  onStartRename={() => startRenamingSession(`worktree-${session.id}-${child.id}`)}
-                  onToggleBookmark={() => toggleBookmark(child.id)}
-                />
-              );
-            })}
           </div>
         )}
       </div>
@@ -1840,14 +1859,20 @@ export function SessionList(props: SessionListProps) {
                     )}
                   </div>
                 ) : (
-                  /* Collapsed Group Palette */
+                  /* Collapsed Group Palette - includes worktree children */
                   <div
                     className="ml-8 mr-3 mt-1 mb-2 flex gap-1 h-1.5 cursor-pointer"
                     onClick={() => toggleGroup(group.id)}
                   >
-                    {groupSessions.map(s => {
+                    {groupSessions.flatMap(s => {
+                      // Get worktree children for this session
+                      const worktreeChildren = getWorktreeChildren(s.id);
+                      // Return parent + all worktree children
+                      return [s, ...worktreeChildren];
+                    }).map(s => {
                       // Check if this session has any unread tabs
                       const hasUnreadTabs = s.aiTabs?.some(tab => tab.hasUnread);
+                      const isWorktreeChild = !!s.parentSessionId;
                       return (
                       <div
                         key={`group-collapsed-${group.id}-${s.id}`}
@@ -1869,6 +1894,13 @@ export function SessionList(props: SessionListProps) {
                           <div
                             className="absolute -right-0.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full"
                             style={{ backgroundColor: theme.colors.error }}
+                          />
+                        )}
+                        {/* Worktree child indicator - small border accent */}
+                        {isWorktreeChild && (
+                          <div
+                            className="absolute inset-0 rounded-full"
+                            style={{ border: `1px solid ${theme.colors.accent}40` }}
                           />
                         )}
                         {/* Hover Tooltip for Collapsed Group Indicator */}
@@ -1943,14 +1975,20 @@ export function SessionList(props: SessionListProps) {
                 )}
               </div>
             ) : (
-              /* Collapsed Ungrouped Palette */
+              /* Collapsed Ungrouped Palette - includes worktree children */
               <div
                 className="ml-8 mr-3 mt-1 mb-2 flex gap-1 h-1.5 cursor-pointer"
                 onClick={() => setUngroupedCollapsed(false)}
               >
-                {[...filteredSessions.filter(s => !s.groupId)].sort((a, b) => compareSessionNames(a.name, b.name)).map(s => {
+                {[...filteredSessions.filter(s => !s.groupId)].sort((a, b) => compareSessionNames(a.name, b.name)).flatMap(s => {
+                  // Get worktree children for this session
+                  const worktreeChildren = getWorktreeChildren(s.id);
+                  // Return parent + all worktree children
+                  return [s, ...worktreeChildren];
+                }).map(s => {
                   // Check if this session has any unread tabs
                   const hasUnreadTabs = s.aiTabs?.some(tab => tab.hasUnread);
+                  const isWorktreeChild = !!s.parentSessionId;
                   return (
                   <div
                     key={`ungrouped-collapsed-${s.id}`}
@@ -1972,6 +2010,13 @@ export function SessionList(props: SessionListProps) {
                       <div
                         className="absolute -right-0.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full"
                         style={{ backgroundColor: theme.colors.error }}
+                      />
+                    )}
+                    {/* Worktree child indicator - small border accent */}
+                    {isWorktreeChild && (
+                      <div
+                        className="absolute inset-0 rounded-full"
+                        style={{ border: `1px solid ${theme.colors.accent}40` }}
                       />
                     )}
                     {/* Hover Tooltip for Collapsed Ungrouped Indicator */}

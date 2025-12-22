@@ -49,27 +49,48 @@ export interface UseSortedSessionsReturn {
 export function useSortedSessions(deps: UseSortedSessionsDeps): UseSortedSessionsReturn {
   const { sessions, groups, bookmarksCollapsed } = deps;
 
+  // Helper to get worktree children for a session
+  const getWorktreeChildren = (parentId: string) =>
+    sessions.filter(s => s.parentSessionId === parentId)
+      .sort((a, b) => compareNamesIgnoringEmojis(a.worktreeBranch || a.name, b.worktreeBranch || b.name));
+
   // Create sorted sessions array that matches visual display order (includes ALL sessions)
   // Note: sorting ignores leading emojis for proper alphabetization
+  // Worktree children are inserted after their parent when the parent's worktrees are expanded
   const sortedSessions = useMemo(() => {
     const sorted: Session[] = [];
+
+    // Helper to add session with its worktree children
+    const addSessionWithWorktrees = (session: Session) => {
+      // Skip worktree children - they're added with their parent
+      if (session.parentSessionId) return;
+
+      sorted.push(session);
+
+      // Add worktree children if expanded
+      if (session.worktreesExpanded !== false) {
+        const children = getWorktreeChildren(session.id);
+        sorted.push(...children);
+      }
+    };
 
     // First, add sessions from sorted groups (ignoring leading emojis)
     const sortedGroups = [...groups].sort((a, b) => compareNamesIgnoringEmojis(a.name, b.name));
     sortedGroups.forEach(group => {
       const groupSessions = sessions
-        .filter(s => s.groupId === group.id)
+        .filter(s => s.groupId === group.id && !s.parentSessionId)
         .sort((a, b) => compareNamesIgnoringEmojis(a.name, b.name));
-      sorted.push(...groupSessions);
+      groupSessions.forEach(addSessionWithWorktrees);
     });
 
     // Then, add ungrouped sessions (sorted alphabetically, ignoring leading emojis)
     const ungroupedSessions = sessions
-      .filter(s => !s.groupId)
+      .filter(s => !s.groupId && !s.parentSessionId)
       .sort((a, b) => compareNamesIgnoringEmojis(a.name, b.name));
-    sorted.push(...ungroupedSessions);
+    ungroupedSessions.forEach(addSessionWithWorktrees);
 
     return sorted;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessions, groups]);
 
   // Create visible sessions array for session jump shortcuts (Opt+Cmd+NUMBER)

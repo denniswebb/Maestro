@@ -869,7 +869,8 @@ export default function MaestroConsole() {
               customEnvVars: parentSession.customEnvVars,
               customModel: parentSession.customModel,
               customContextWindow: parentSession.customContextWindow,
-              nudgeMessage: parentSession.nudgeMessage
+              nudgeMessage: parentSession.nudgeMessage,
+              autoRunFolderPath: parentSession.autoRunFolderPath
             };
 
             newWorktreeSessions.push(worktreeSession);
@@ -3156,7 +3157,8 @@ export default function MaestroConsole() {
         customEnvVars: parentSession.customEnvVars,
         customModel: parentSession.customModel,
         customContextWindow: parentSession.customContextWindow,
-        nudgeMessage: parentSession.nudgeMessage
+        nudgeMessage: parentSession.nudgeMessage,
+        autoRunFolderPath: parentSession.autoRunFolderPath
       };
 
       setSessions(prev => {
@@ -3901,13 +3903,32 @@ export default function MaestroConsole() {
 
     const visualOrder: VisualOrderItem[] = [];
 
+    // Helper to get worktree children for a session
+    const getWorktreeChildren = (parentId: string) =>
+      sessions.filter(s => s.parentSessionId === parentId)
+        .sort((a, b) => compareNamesIgnoringEmojis(a.worktreeBranch || a.name, b.worktreeBranch || b.name));
+
+    // Helper to add session with its worktree children to visual order
+    const addSessionWithWorktrees = (session: Session) => {
+      // Skip worktree children - they're added with their parent
+      if (session.parentSessionId) return;
+
+      visualOrder.push({ type: 'session' as const, id: session.id, name: session.name });
+
+      // Add worktree children if expanded
+      if (session.worktreesExpanded !== false) {
+        const children = getWorktreeChildren(session.id);
+        visualOrder.push(...children.map(s => ({ type: 'session' as const, id: s.id, name: s.worktreeBranch || s.name })));
+      }
+    };
+
     if (leftSidebarOpen) {
       // Bookmarks section (if expanded and has bookmarked sessions)
       if (!bookmarksCollapsed) {
         const bookmarkedSessions = sessions
-          .filter(s => s.bookmarked)
+          .filter(s => s.bookmarked && !s.parentSessionId)
           .sort((a, b) => compareNamesIgnoringEmojis(a.name, b.name));
-        visualOrder.push(...bookmarkedSessions.map(s => ({ type: 'session' as const, id: s.id, name: s.name })));
+        bookmarkedSessions.forEach(addSessionWithWorktrees);
       }
 
       // Groups (sorted alphabetically), with each group's sessions
@@ -3915,18 +3936,18 @@ export default function MaestroConsole() {
       for (const group of sortedGroups) {
         if (!group.collapsed) {
           const groupSessions = sessions
-            .filter(s => s.groupId === group.id)
+            .filter(s => s.groupId === group.id && !s.parentSessionId)
             .sort((a, b) => compareNamesIgnoringEmojis(a.name, b.name));
-          visualOrder.push(...groupSessions.map(s => ({ type: 'session' as const, id: s.id, name: s.name })));
+          groupSessions.forEach(addSessionWithWorktrees);
         }
       }
 
       // Ungrouped sessions (sorted alphabetically) - only if not collapsed
       if (!settings.ungroupedCollapsed) {
         const ungroupedSessions = sessions
-          .filter(s => !s.groupId)
+          .filter(s => !s.groupId && !s.parentSessionId)
           .sort((a, b) => compareNamesIgnoringEmojis(a.name, b.name));
-        visualOrder.push(...ungroupedSessions.map(s => ({ type: 'session' as const, id: s.id, name: s.name })));
+        ungroupedSessions.forEach(addSessionWithWorktrees);
       }
 
       // Group Chats section (if expanded and has group chats)
@@ -6764,7 +6785,8 @@ export default function MaestroConsole() {
                     customEnvVars: activeSession.customEnvVars,
                     customModel: activeSession.customModel,
                     customContextWindow: activeSession.customContextWindow,
-                    nudgeMessage: activeSession.nudgeMessage
+                    nudgeMessage: activeSession.nudgeMessage,
+                    autoRunFolderPath: activeSession.autoRunFolderPath
                   };
 
                   newWorktreeSessions.push(worktreeSession);
@@ -6883,7 +6905,8 @@ export default function MaestroConsole() {
                 customEnvVars: activeSession.customEnvVars,
                 customModel: activeSession.customModel,
                 customContextWindow: activeSession.customContextWindow,
-                nudgeMessage: activeSession.nudgeMessage
+                nudgeMessage: activeSession.nudgeMessage,
+                autoRunFolderPath: activeSession.autoRunFolderPath
               };
 
               setSessions(prev => [...prev, worktreeSession]);

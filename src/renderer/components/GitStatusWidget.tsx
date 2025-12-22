@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { GitBranch, Plus, Minus, FileEdit } from 'lucide-react';
+import { GitBranch, Plus, Minus, FileEdit, FileDiff } from 'lucide-react';
 import type { Theme } from '../types';
 import { useGitStatus, type GitFileChange } from '../contexts/GitStatusContext';
 
@@ -191,12 +191,13 @@ export function GitStatusWidget({ sessionId, isGitRepo, theme, onViewDiff }: Git
         </div>
           <button
             onClick={onViewDiff}
-            className="text-[10px] p-2 text-center border-t w-full hover:bg-white/5 transition-colors cursor-pointer"
+            className="flex items-center justify-center gap-2 text-xs p-2 border-t w-full hover:bg-white/10 transition-colors cursor-pointer"
             style={{
               color: theme.colors.textDim,
               borderColor: theme.colors.border
             }}
           >
+            <FileDiff className="w-3.5 h-3.5" style={{ color: theme.colors.textDim }} />
             View Full Diff
           </button>
           </div>
