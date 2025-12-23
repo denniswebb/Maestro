@@ -23,6 +23,7 @@ import { collectWebServer, WebServerInfo } from './collectors/web-server';
 import { collectStorage, StorageInfo } from './collectors/storage';
 import { collectGroupChats, GroupChatInfo } from './collectors/group-chats';
 import { collectBatchState, BatchStateInfo } from './collectors/batch-state';
+import { collectWindowsDiagnostics, WindowsDiagnosticsInfo } from './collectors/windows-diagnostics';
 import { createZipPackage, PackageContents } from './packager';
 import { logger } from '../utils/logger';
 import { AgentDetector } from '../agent-detector';
@@ -123,6 +124,17 @@ export async function generateDebugPackage(
     const errMsg = error instanceof Error ? error.message : String(error);
     errors.push(`external-tools: ${errMsg}`);
     logger.error('Failed to collect external tools info', 'DebugPackage', error);
+  }
+
+  // Collect Windows-specific diagnostics (always included, minimal on non-Windows)
+  try {
+    const windowsDiagnostics = await collectWindowsDiagnostics();
+    contents['windows-diagnostics.json'] = windowsDiagnostics;
+    filesIncluded.push('windows-diagnostics.json');
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    errors.push(`windows-diagnostics: ${errMsg}`);
+    logger.error('Failed to collect Windows diagnostics', 'DebugPackage', error);
   }
 
   // Collect groups (always included)
@@ -287,6 +299,7 @@ export function previewDebugPackage(): {
       { id: 'settings', name: 'Settings', included: true, sizeEstimate: '< 5 KB' },
       { id: 'agents', name: 'Agent Configurations', included: true, sizeEstimate: '< 2 KB' },
       { id: 'externalTools', name: 'External Tools', included: true, sizeEstimate: '< 2 KB' },
+      { id: 'windowsDiagnostics', name: 'Windows Diagnostics', included: true, sizeEstimate: '< 10 KB' },
       { id: 'sessions', name: 'Session Metadata', included: true, sizeEstimate: '~10-50 KB' },
       { id: 'logs', name: 'System Logs', included: true, sizeEstimate: '~50-200 KB' },
       { id: 'errors', name: 'Error States', included: true, sizeEstimate: '< 10 KB' },
@@ -304,6 +317,7 @@ export type {
   SanitizedSettings,
   AgentsInfo,
   ExternalToolsInfo,
+  WindowsDiagnosticsInfo,
   SessionInfo,
   ProcessInfo,
   LogsInfo,

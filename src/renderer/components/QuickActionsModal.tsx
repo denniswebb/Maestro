@@ -195,20 +195,32 @@ export function QuickActionsModal(props: QuickActionsModalProps) {
     setQuickActionOpen(false);
   };
 
-  const sessionActions: QuickAction[] = sessions.map(s => ({
-    id: `jump-${s.id}`,
-    label: `Jump to: ${s.name}`,
-    action: () => {
-      setActiveSessionId(s.id);
-      // Auto-expand group if it's collapsed
-      if (s.groupId) {
-        setGroups(prev => prev.map(g =>
-          g.id === s.groupId && g.collapsed ? { ...g, collapsed: false } : g
-        ));
-      }
-    },
-    subtext: s.state.toUpperCase()
-  }));
+  const sessionActions: QuickAction[] = sessions.map(s => {
+    // For worktree subagents, format as "Jump to $PARENT subagent: $NAME"
+    let label: string;
+    if (s.parentSessionId) {
+      const parentSession = sessions.find(p => p.id === s.parentSessionId);
+      const parentName = parentSession?.name || 'Unknown';
+      label = `Jump to ${parentName} subagent: ${s.name}`;
+    } else {
+      label = `Jump to: ${s.name}`;
+    }
+
+    return {
+      id: `jump-${s.id}`,
+      label,
+      action: () => {
+        setActiveSessionId(s.id);
+        // Auto-expand group if it's collapsed
+        if (s.groupId) {
+          setGroups(prev => prev.map(g =>
+            g.id === s.groupId && g.collapsed ? { ...g, collapsed: false } : g
+          ));
+        }
+      },
+      subtext: s.state.toUpperCase()
+    };
+  });
 
   // Group chat jump actions
   const groupChatActions: QuickAction[] = (groupChats && onOpenGroupChat)

@@ -327,7 +327,7 @@ jobs:
             core.setOutput('notes', notes);
 
       - name: Notify Discord
-        if: steps.check_artifacts.outputs.has_artifacts == 'true'
+        if: steps.check_artifacts.outputs.has_artifacts == 'true' && !endsWith(github.ref_name, '-RC')
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
