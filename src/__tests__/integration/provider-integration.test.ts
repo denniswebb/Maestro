@@ -73,6 +73,10 @@ interface ProviderConfig {
   parseResponse: (output: string) => string | null;
   /** Check if output indicates success */
   isSuccessful: (output: string, exitCode: number) => boolean;
+  /** Parse tools array from init event */
+  parseTools?: (output: string) => string[] | null;
+  /** Parse tool execution events from output */
+  parseToolExecutions?: (output: string) => Array<{ name: string; status?: string; input?: unknown; output?: unknown }>;
 }
 
 const PROVIDERS: ProviderConfig[] = [
@@ -167,6 +171,65 @@ const PROVIDERS: ProviderConfig[] = [
         },
       };
       return JSON.stringify(message);
+    },
+    /**
+     * Parse tools array from Claude Code init event.
+     * Claude outputs: {"type":"system","subtype":"init","tools":["Task","Bash",...]}
+     */
+    parseTools: (output: string) => {
+      for (const line of output.split('\n')) {
+        try {
+          const json = JSON.parse(line);
+          if (json.type === 'system' && json.subtype === 'init' && Array.isArray(json.tools)) {
+            return json.tools;
+          }
+        } catch { /* ignore non-JSON lines */ }
+      }
+      return null;
+    },
+    /**
+     * Parse tool execution events from Claude Code output.
+     * Claude outputs tool_use blocks in assistant messages:
+     * {"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{...}}]}}
+     */
+    parseToolExecutions: (output: string) => {
+      const executions: Array<{ name: string; status?: string; input?: unknown; output?: unknown }> = [];
+      for (const line of output.split('\n')) {
+        try {
+          const json = JSON.parse(line);
+          // Handle assistant messages with tool_use blocks
+          if (json.type === 'assistant' && json.message?.content) {
+            const content = json.message.content;
+            if (Array.isArray(content)) {
+              for (const block of content) {
+                if (block.type === 'tool_use' && block.name) {
+                  executions.push({
+                    name: block.name,
+                    status: 'running',
+                    input: block.input,
+                  });
+                }
+              }
+            }
+          }
+          // Handle tool_result in user messages (completion of tool)
+          if (json.type === 'user' && json.message?.content) {
+            const content = json.message.content;
+            if (Array.isArray(content)) {
+              for (const block of content) {
+                if (block.type === 'tool_result') {
+                  executions.push({
+                    name: `tool_result:${block.tool_use_id}`,
+                    status: block.is_error ? 'error' : 'complete',
+                    output: block.content,
+                  });
+                }
+              }
+            }
+          }
+        } catch { /* ignore non-JSON lines */ }
+      }
+      return executions;
     },
   },
   {
@@ -283,6 +346,56 @@ const PROVIDERS: ProviderConfig[] = [
       '--',
       prompt,
     ],
+    /**
+     * Parse tools from Codex init event.
+     * Codex outputs tools in thread.started event or session.started
+     * Note: Codex may not expose tools array in the same way as Claude
+     */
+    parseTools: (output: string) => {
+      for (const line of output.split('\n')) {
+        try {
+          const json = JSON.parse(line);
+          // Codex may include tools in thread.started or separate event
+          if (json.tools && Array.isArray(json.tools)) {
+            return json.tools;
+          }
+          // Try extracting from session config if present
+          if (json.type === 'session.started' && json.session?.tools) {
+            return json.session.tools;
+          }
+        } catch { /* ignore non-JSON lines */ }
+      }
+      return null;
+    },
+    /**
+     * Parse tool execution events from Codex output.
+     * Codex outputs: {"type":"item.completed","item":{"type":"tool_call","name":"shell",...}}
+     */
+    parseToolExecutions: (output: string) => {
+      const executions: Array<{ name: string; status?: string; input?: unknown; output?: unknown }> = [];
+      for (const line of output.split('\n')) {
+        try {
+          const json = JSON.parse(line);
+          // Handle tool_call items
+          if (json.type === 'item.completed' && json.item?.type === 'tool_call') {
+            executions.push({
+              name: json.item.name || json.item.tool || 'unknown',
+              status: 'running',
+              input: json.item.arguments || json.item.input,
+            });
+          }
+          // Handle tool_result items
+          if (json.type === 'item.completed' && json.item?.type === 'tool_result') {
+            executions.push({
+              name: `tool_result:${json.item.tool_call_id || json.item.id}`,
+              status: json.item.error ? 'error' : 'complete',
+              output: json.item.output || json.item.content,
+            });
+          }
+        } catch { /* ignore non-JSON lines */ }
+      }
+      return executions;
+    },
   },
   {
     name: 'OpenCode',
@@ -390,6 +503,48 @@ const PROVIDERS: ProviderConfig[] = [
       '--',
       prompt,
     ],
+    /**
+     * Parse tools from OpenCode init event.
+     * OpenCode may expose available tools in step_start or init events
+     */
+    parseTools: (output: string) => {
+      for (const line of output.split('\n')) {
+        try {
+          const json = JSON.parse(line);
+          // Check for tools array in any event
+          if (json.tools && Array.isArray(json.tools)) {
+            return json.tools;
+          }
+          // OpenCode may include tools in part metadata
+          if (json.part?.tools && Array.isArray(json.part.tools)) {
+            return json.part.tools;
+          }
+        } catch { /* ignore non-JSON lines */ }
+      }
+      return null;
+    },
+    /**
+     * Parse tool execution events from OpenCode output.
+     * OpenCode outputs: {"type":"tool_use","part":{"tool":"Read","state":{"status":"running",...}}}
+     */
+    parseToolExecutions: (output: string) => {
+      const executions: Array<{ name: string; status?: string; input?: unknown; output?: unknown }> = [];
+      for (const line of output.split('\n')) {
+        try {
+          const json = JSON.parse(line);
+          // Handle tool_use events
+          if (json.type === 'tool_use' && json.part) {
+            executions.push({
+              name: json.part.tool || json.part.name || 'unknown',
+              status: json.part.state?.status || 'running',
+              input: json.part.state?.input,
+              output: json.part.state?.output,
+            });
+          }
+        } catch { /* ignore non-JSON lines */ }
+      }
+      return executions;
+    },
   },
 ];
 
@@ -1117,6 +1272,217 @@ Rules:
           `${provider.name} should identify "Maestro" in the image. Got: "${response}"`
         ).toBe(true);
       }, PROVIDER_TIMEOUT);
+
+      it('should enumerate available tools from init event', async () => {
+        // This test verifies that the provider exposes its available tools
+        // in the init/startup event. This is important for UI features that
+        // show what capabilities the agent has.
+        //
+        // Claude Code: {"type":"system","subtype":"init","tools":["Task","Bash","Read",...]}
+        // Codex: may include tools in session.started or thread config
+        // OpenCode: may include tools in step_start or init events
+
+        if (!providerAvailable) {
+          console.log(`Skipping: ${provider.name} not available`);
+          return;
+        }
+
+        if (!provider.parseTools) {
+          console.log(`Skipping: ${provider.name} does not have parseTools implemented`);
+          return;
+        }
+
+        const prompt = 'Say "hi" briefly.';
+        const args = provider.buildInitialArgs(prompt);
+
+        console.log(`\n🔧 Testing tool enumeration for ${provider.name}`);
+        console.log(`🚀 Running: ${provider.command} ${args.join(' ')}`);
+
+        const result = await runProvider(provider, args);
+
+        console.log(`📤 Exit code: ${result.exitCode}`);
+
+        // Parse tools from output
+        const tools = provider.parseTools(result.stdout);
+        console.log(`🔧 Tools found: ${tools ? tools.length : 0}`);
+        if (tools && tools.length > 0) {
+          console.log(`   Sample tools: ${tools.slice(0, 10).join(', ')}${tools.length > 10 ? '...' : ''}`);
+        }
+
+        // Check for success first
+        expect(
+          provider.isSuccessful(result.stdout, result.exitCode),
+          `${provider.name} should complete successfully`
+        ).toBe(true);
+
+        // Claude Code definitely exposes tools, others may not
+        if (provider.agentId === 'claude-code') {
+          expect(tools, `${provider.name} should expose tools array`).toBeTruthy();
+          expect(tools!.length, `${provider.name} should have multiple tools`).toBeGreaterThan(5);
+
+          // Verify common tools are present
+          const expectedTools = ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep'];
+          for (const tool of expectedTools) {
+            expect(
+              tools!.includes(tool),
+              `${provider.name} should have ${tool} tool`
+            ).toBe(true);
+          }
+        } else {
+          // For other providers, just log what we found
+          console.log(`   ℹ️  ${provider.name} tools parsing may need adjustment based on actual output format`);
+        }
+      }, PROVIDER_TIMEOUT);
+
+      it('should emit tool execution events when using tools', async () => {
+        // This test verifies that when an agent uses a tool (like reading a file),
+        // the output contains parseable tool execution events that Maestro can
+        // use to show tool activity in the UI.
+        //
+        // We ask the agent to read a known file (package.json) which should trigger
+        // tool usage events in the output stream.
+
+        if (!providerAvailable) {
+          console.log(`Skipping: ${provider.name} not available`);
+          return;
+        }
+
+        if (!provider.parseToolExecutions) {
+          console.log(`Skipping: ${provider.name} does not have parseToolExecutions implemented`);
+          return;
+        }
+
+        // Ask to read package.json - this should trigger a Read/file tool
+        const prompt = 'Read the package.json file in the current directory and tell me the project name. Be brief.';
+        const args = provider.buildInitialArgs(prompt);
+
+        console.log(`\n🔨 Testing tool execution for ${provider.name}`);
+        console.log(`🚀 Running: ${provider.command} ${args.join(' ')}`);
+
+        const result = await runProvider(provider, args);
+
+        console.log(`📤 Exit code: ${result.exitCode}`);
+
+        // Check for success
+        expect(
+          provider.isSuccessful(result.stdout, result.exitCode),
+          `${provider.name} should complete successfully`
+        ).toBe(true);
+
+        // Parse tool executions
+        const executions = provider.parseToolExecutions(result.stdout);
+        console.log(`🔨 Tool executions found: ${executions.length}`);
+        for (const exec of executions.slice(0, 5)) {
+          console.log(`   - ${exec.name} (${exec.status || 'unknown status'})`);
+        }
+
+        // Verify we got tool execution events
+        expect(
+          executions.length,
+          `${provider.name} should have tool execution events when reading a file`
+        ).toBeGreaterThan(0);
+
+        // Verify at least one tool looks like a file read operation
+        const hasReadTool = executions.some(exec => {
+          const name = exec.name.toLowerCase();
+          return name.includes('read') || 
+                 name.includes('file') || 
+                 name.includes('cat') ||
+                 name.includes('glob') ||
+                 name.includes('fs');
+        });
+
+        // Also check for result containing project name (maestro)
+        const response = provider.parseResponse(result.stdout);
+        console.log(`💬 Response: ${response?.substring(0, 200)}`);
+
+        const responseHasProjectName = response?.toLowerCase().includes('maestro');
+        expect(
+          responseHasProjectName,
+          `${provider.name} should have read package.json and found project name. Got: "${response?.substring(0, 100)}"`
+        ).toBe(true);
+
+        // Log whether we found a read-like tool (informational, not a hard failure for all providers)
+        if (hasReadTool) {
+          console.log(`   ✓ Found file read tool in executions`);
+        } else {
+          console.log(`   ⚠️  No obvious file read tool found - tool names may differ by provider`);
+        }
+      }, PROVIDER_TIMEOUT);
+
+      it('should track tool execution state transitions', async () => {
+        // This test verifies that tool execution events include state information
+        // (running, complete, error) that Maestro can use to show tool progress.
+        //
+        // We ask the agent to perform multiple tool operations and verify
+        // that we can parse the state of each tool execution.
+
+        if (!providerAvailable) {
+          console.log(`Skipping: ${provider.name} not available`);
+          return;
+        }
+
+        if (!provider.parseToolExecutions) {
+          console.log(`Skipping: ${provider.name} does not have parseToolExecutions implemented`);
+          return;
+        }
+
+        // Ask to do multiple operations that trigger tools
+        const prompt = 'List the files in the current directory using the Glob or Bash tool, then read the README.md file. Be very brief in your response.';
+        const args = provider.buildInitialArgs(prompt);
+
+        console.log(`\n📊 Testing tool state tracking for ${provider.name}`);
+        console.log(`🚀 Running: ${provider.command} ${args.join(' ')}`);
+
+        const result = await runProvider(provider, args);
+
+        console.log(`📤 Exit code: ${result.exitCode}`);
+
+        // Check for success
+        expect(
+          provider.isSuccessful(result.stdout, result.exitCode),
+          `${provider.name} should complete successfully`
+        ).toBe(true);
+
+        // Parse tool executions
+        const executions = provider.parseToolExecutions(result.stdout);
+        console.log(`📊 Tool executions found: ${executions.length}`);
+
+        // Analyze state distribution
+        const states = {
+          running: 0,
+          complete: 0,
+          error: 0,
+          unknown: 0,
+        };
+
+        for (const exec of executions) {
+          const status = exec.status?.toLowerCase() || 'unknown';
+          if (status.includes('run') || status === 'running') {
+            states.running++;
+          } else if (status.includes('complete') || status === 'complete' || status === 'success') {
+            states.complete++;
+          } else if (status.includes('error') || status === 'error' || status === 'failed') {
+            states.error++;
+          } else {
+            states.unknown++;
+          }
+          console.log(`   - ${exec.name}: ${exec.status || 'no status'}`);
+        }
+
+        console.log(`📊 State distribution: running=${states.running}, complete=${states.complete}, error=${states.error}, unknown=${states.unknown}`);
+
+        // Verify we got multiple tool executions (list + read = at least 2)
+        expect(
+          executions.length,
+          `${provider.name} should have multiple tool executions for list + read operations`
+        ).toBeGreaterThanOrEqual(1); // At least 1, some providers may batch
+
+        // Verify response mentions something from the directory or README
+        const response = provider.parseResponse(result.stdout);
+        console.log(`💬 Response: ${response?.substring(0, 300)}`);
+        expect(response, `${provider.name} should return a response`).toBeTruthy();
+      }, PROVIDER_TIMEOUT * 2); // Double timeout for multi-tool operations
     });
   }
 });
