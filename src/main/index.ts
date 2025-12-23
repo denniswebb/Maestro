@@ -2234,6 +2234,13 @@ function setupProcessListeners() {
       mainWindow?.webContents.send('process:slash-commands', sessionId, slashCommands);
     });
 
+    // Handle thinking/streaming content chunks from AI agents
+    // Emitted when agents produce partial text events (isPartial: true)
+    // Renderer decides whether to display based on tab's showThinking setting
+    processManager.on('thinking-chunk', (sessionId: string, content: string) => {
+      mainWindow?.webContents.send('process:thinking-chunk', sessionId, content);
+    });
+
     // Handle stderr separately from runCommand (for clean command execution)
     processManager.on('stderr', (sessionId: string, data: string) => {
       mainWindow?.webContents.send('process:stderr', sessionId, data);

@@ -743,6 +743,10 @@ export class ProcessManager extends EventEmitter {
                     // Accumulate text from partial streaming events (OpenCode text messages)
                     // Skip error events - they're handled separately by detectErrorFromLine
                     if (event.type === 'text' && event.isPartial && event.text) {
+                      // Emit thinking chunk for real-time display (let renderer decide to display based on tab setting)
+                      this.emit('thinking-chunk', sessionId, event.text);
+
+                      // Existing: accumulate for result fallback
                       managedProcess.streamedText = (managedProcess.streamedText || '') + event.text;
                     }
 
