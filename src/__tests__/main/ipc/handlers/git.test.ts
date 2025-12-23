@@ -3555,4 +3555,480 @@ branch refs/heads/bugfix-123
       expect(result.gitSubdirs[0].repoRoot).toMatch(/main-repo$/);
     });
   });
+
+  describe('git:watchWorktreeDirectory', () => {
+    let mockFs: typeof import('fs/promises').default;
+    let mockChokidar: typeof import('chokidar').default;
+
+    beforeEach(async () => {
+      mockFs = (await import('fs/promises')).default;
+      mockChokidar = (await import('chokidar')).default;
+    });
+
+    it('should start watching a valid directory and return success', async () => {
+      // Mock fs.access to succeed (directory exists)
+      vi.mocked(mockFs.access).mockResolvedValue(undefined);
+
+      // Mock chokidar.watch
+      const mockWatcher = {
+        on: vi.fn().mockReturnThis(),
+        close: vi.fn().mockResolvedValue(undefined),
+      };
+      vi.mocked(mockChokidar.watch).mockReturnValue(mockWatcher as any);
+
+      const handler = handlers.get('git:watchWorktreeDirectory');
+      const result = await handler!({} as any, 'session-123', '/parent/worktrees');
+
+      expect(mockFs.access).toHaveBeenCalledWith('/parent/worktrees');
+      expect(mockChokidar.watch).toHaveBeenCalledWith('/parent/worktrees', {
+        ignored: /(^|[/\\])\../,
+        persistent: true,
+        ignoreInitial: true,
+        depth: 0,
+      });
+      expect(mockWatcher.on).toHaveBeenCalledWith('addDir', expect.any(Function));
+      expect(mockWatcher.on).toHaveBeenCalledWith('error', expect.any(Function));
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should close existing watcher before starting new one for same session', async () => {
+      vi.mocked(mockFs.access).mockResolvedValue(undefined);
+
+      const mockWatcher1 = {
+        on: vi.fn().mockReturnThis(),
+        close: vi.fn().mockResolvedValue(undefined),
+      };
+      const mockWatcher2 = {
+        on: vi.fn().mockReturnThis(),
+        close: vi.fn().mockResolvedValue(undefined),
+      };
+      vi.mocked(mockChokidar.watch)
+        .mockReturnValueOnce(mockWatcher1 as any)
+        .mockReturnValueOnce(mockWatcher2 as any);
+
+      const handler = handlers.get('git:watchWorktreeDirectory');
+
+      // First watch
+      await handler!({} as any, 'session-123', '/path/1');
+      expect(mockWatcher1.close).not.toHaveBeenCalled();
+
+      // Second watch for same session should close first watcher
+      await handler!({} as any, 'session-123', '/path/2');
+      expect(mockWatcher1.close).toHaveBeenCalled();
+    });
+
+    it('should return error when directory does not exist', async () => {
+      vi.mocked(mockFs.access).mockRejectedValue(new Error('ENOENT: no such file or directory'));
+
+      const handler = handlers.get('git:watchWorktreeDirectory');
+      const result = await handler!({} as any, 'session-456', '/nonexistent/path');
+
+      // The handler catches errors and returns success: false with error message
+      // The handler's explicit return { success: false, error } overrides createIpcHandler's success: true
+      expect(result).toEqual({
+        success: false,
+        error: 'Error: ENOENT: no such file or directory',
+      });
+      // Should not attempt to watch
+      expect(mockChokidar.watch).not.toHaveBeenCalled();
+    });
+
+    it('should handle watcher setup errors', async () => {
+      vi.mocked(mockFs.access).mockResolvedValue(undefined);
+
+      // Mock chokidar.watch to throw an error
+      vi.mocked(mockChokidar.watch).mockImplementation(() => {
+        throw new Error('Failed to initialize watcher');
+      });
+
+      const handler = handlers.get('git:watchWorktreeDirectory');
+      const result = await handler!({} as any, 'session-789', '/some/path');
+
+      // The handler's explicit return { success: false, error } overrides createIpcHandler's success: true
+      expect(result).toEqual({
+        success: false,
+        error: 'Error: Failed to initialize watcher',
+      });
+    });
+
+    it('should set up addDir event handler that emits worktree:discovered', async () => {
+      vi.useFakeTimers();
+
+      vi.mocked(mockFs.access).mockResolvedValue(undefined);
+
+      let addDirCallback: Function | undefined;
+      const mockWatcher = {
+        on: vi.fn((event: string, cb: Function) => {
+          if (event === 'addDir') {
+            addDirCallback = cb;
+          }
+          return mockWatcher;
+        }),
+        close: vi.fn().mockResolvedValue(undefined),
+      };
+      vi.mocked(mockChokidar.watch).mockReturnValue(mockWatcher as any);
+
+      // Mock window for event emission
+      const mockWindow = {
+        webContents: {
+          send: vi.fn(),
+        },
+      };
+      const { BrowserWindow } = await import('electron');
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWindow] as any);
+
+      // Mock git commands for the discovered directory
+      vi.mocked(execFile.execFileNoThrow).mockImplementation(async (cmd, args, cwd) => {
+        if (args?.includes('--is-inside-work-tree')) {
+          return { stdout: 'true\n', stderr: '', exitCode: 0 };
+        }
+        if (args?.includes('--abbrev-ref')) {
+          return { stdout: 'feature-branch\n', stderr: '', exitCode: 0 };
+        }
+        return { stdout: '', stderr: '', exitCode: 0 };
+      });
+
+      const handler = handlers.get('git:watchWorktreeDirectory');
+      await handler!({} as any, 'session-emit', '/parent/worktrees');
+
+      // Verify addDir handler was registered
+      expect(addDirCallback).toBeDefined();
+
+      // Simulate directory addition
+      await addDirCallback!('/parent/worktrees/new-worktree');
+
+      // Fast-forward past debounce
+      await vi.advanceTimersByTimeAsync(600);
+
+      // Should emit worktree:discovered event
+      expect(mockWindow.webContents.send).toHaveBeenCalledWith('worktree:discovered', {
+        sessionId: 'session-emit',
+        worktree: {
+          path: '/parent/worktrees/new-worktree',
+          name: 'new-worktree',
+          branch: 'feature-branch',
+        },
+      });
+
+      vi.useRealTimers();
+    });
+
+    it('should skip emitting event when directory is the watched path itself', async () => {
+      vi.useFakeTimers();
+
+      vi.mocked(mockFs.access).mockResolvedValue(undefined);
+
+      let addDirCallback: Function | undefined;
+      const mockWatcher = {
+        on: vi.fn((event: string, cb: Function) => {
+          if (event === 'addDir') {
+            addDirCallback = cb;
+          }
+          return mockWatcher;
+        }),
+        close: vi.fn().mockResolvedValue(undefined),
+      };
+      vi.mocked(mockChokidar.watch).mockReturnValue(mockWatcher as any);
+
+      const mockWindow = {
+        webContents: {
+          send: vi.fn(),
+        },
+      };
+      const { BrowserWindow } = await import('electron');
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWindow] as any);
+
+      const handler = handlers.get('git:watchWorktreeDirectory');
+      await handler!({} as any, 'session-skip', '/parent/worktrees');
+
+      // Simulate root directory being reported (should be skipped)
+      await addDirCallback!('/parent/worktrees');
+
+      await vi.advanceTimersByTimeAsync(600);
+
+      // Should not emit any events
+      expect(mockWindow.webContents.send).not.toHaveBeenCalled();
+
+      vi.useRealTimers();
+    });
+
+    it('should skip emitting event for main/master/HEAD branches', async () => {
+      vi.useFakeTimers();
+
+      vi.mocked(mockFs.access).mockResolvedValue(undefined);
+
+      let addDirCallback: Function | undefined;
+      const mockWatcher = {
+        on: vi.fn((event: string, cb: Function) => {
+          if (event === 'addDir') {
+            addDirCallback = cb;
+          }
+          return mockWatcher;
+        }),
+        close: vi.fn().mockResolvedValue(undefined),
+      };
+      vi.mocked(mockChokidar.watch).mockReturnValue(mockWatcher as any);
+
+      const mockWindow = {
+        webContents: {
+          send: vi.fn(),
+        },
+      };
+      const { BrowserWindow } = await import('electron');
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWindow] as any);
+
+      // Mock git commands - return main branch
+      vi.mocked(execFile.execFileNoThrow).mockImplementation(async (cmd, args) => {
+        if (args?.includes('--is-inside-work-tree')) {
+          return { stdout: 'true\n', stderr: '', exitCode: 0 };
+        }
+        if (args?.includes('--abbrev-ref')) {
+          return { stdout: 'main\n', stderr: '', exitCode: 0 };
+        }
+        return { stdout: '', stderr: '', exitCode: 0 };
+      });
+
+      const handler = handlers.get('git:watchWorktreeDirectory');
+      await handler!({} as any, 'session-main', '/parent/worktrees');
+
+      // Simulate directory with main branch
+      await addDirCallback!('/parent/worktrees/main-clone');
+
+      await vi.advanceTimersByTimeAsync(600);
+
+      // Should not emit events for main/master branches
+      expect(mockWindow.webContents.send).not.toHaveBeenCalled();
+
+      vi.useRealTimers();
+    });
+
+    it('should skip non-git directories', async () => {
+      vi.useFakeTimers();
+
+      vi.mocked(mockFs.access).mockResolvedValue(undefined);
+
+      let addDirCallback: Function | undefined;
+      const mockWatcher = {
+        on: vi.fn((event: string, cb: Function) => {
+          if (event === 'addDir') {
+            addDirCallback = cb;
+          }
+          return mockWatcher;
+        }),
+        close: vi.fn().mockResolvedValue(undefined),
+      };
+      vi.mocked(mockChokidar.watch).mockReturnValue(mockWatcher as any);
+
+      const mockWindow = {
+        webContents: {
+          send: vi.fn(),
+        },
+      };
+      const { BrowserWindow } = await import('electron');
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWindow] as any);
+
+      // Mock git commands - not a git repo
+      vi.mocked(execFile.execFileNoThrow).mockImplementation(async (cmd, args) => {
+        if (args?.includes('--is-inside-work-tree')) {
+          return { stdout: '', stderr: 'fatal: not a git repository', exitCode: 128 };
+        }
+        return { stdout: '', stderr: '', exitCode: 0 };
+      });
+
+      const handler = handlers.get('git:watchWorktreeDirectory');
+      await handler!({} as any, 'session-nongit', '/parent/worktrees');
+
+      // Simulate non-git directory
+      await addDirCallback!('/parent/worktrees/regular-folder');
+
+      await vi.advanceTimersByTimeAsync(600);
+
+      // Should not emit events for non-git directories
+      expect(mockWindow.webContents.send).not.toHaveBeenCalled();
+
+      vi.useRealTimers();
+    });
+
+    it('should debounce rapid directory additions', async () => {
+      vi.useFakeTimers();
+
+      vi.mocked(mockFs.access).mockResolvedValue(undefined);
+
+      let addDirCallback: Function | undefined;
+      const mockWatcher = {
+        on: vi.fn((event: string, cb: Function) => {
+          if (event === 'addDir') {
+            addDirCallback = cb;
+          }
+          return mockWatcher;
+        }),
+        close: vi.fn().mockResolvedValue(undefined),
+      };
+      vi.mocked(mockChokidar.watch).mockReturnValue(mockWatcher as any);
+
+      const mockWindow = {
+        webContents: {
+          send: vi.fn(),
+        },
+      };
+      const { BrowserWindow } = await import('electron');
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWindow] as any);
+
+      // Track which paths were checked
+      const checkedPaths: string[] = [];
+      vi.mocked(execFile.execFileNoThrow).mockImplementation(async (cmd, args, cwd) => {
+        if (args?.includes('--is-inside-work-tree')) {
+          checkedPaths.push(cwd as string);
+          return { stdout: 'true\n', stderr: '', exitCode: 0 };
+        }
+        if (args?.includes('--abbrev-ref')) {
+          return { stdout: 'feature\n', stderr: '', exitCode: 0 };
+        }
+        return { stdout: '', stderr: '', exitCode: 0 };
+      });
+
+      const handler = handlers.get('git:watchWorktreeDirectory');
+      await handler!({} as any, 'session-debounce', '/parent/worktrees');
+
+      // Simulate rapid directory additions
+      await addDirCallback!('/parent/worktrees/dir1');
+      await vi.advanceTimersByTimeAsync(100);
+      await addDirCallback!('/parent/worktrees/dir2');
+      await vi.advanceTimersByTimeAsync(100);
+      await addDirCallback!('/parent/worktrees/dir3');
+
+      // Fast-forward past debounce
+      await vi.advanceTimersByTimeAsync(600);
+
+      // Only the last directory should be processed due to debouncing
+      expect(checkedPaths).toEqual(['/parent/worktrees/dir3']);
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe('git:unwatchWorktreeDirectory', () => {
+    let mockFs: typeof import('fs/promises').default;
+    let mockChokidar: typeof import('chokidar').default;
+
+    beforeEach(async () => {
+      mockFs = (await import('fs/promises')).default;
+      mockChokidar = (await import('chokidar')).default;
+    });
+
+    it('should close watcher and return success', async () => {
+      vi.mocked(mockFs.access).mockResolvedValue(undefined);
+
+      const mockWatcher = {
+        on: vi.fn().mockReturnThis(),
+        close: vi.fn().mockResolvedValue(undefined),
+      };
+      vi.mocked(mockChokidar.watch).mockReturnValue(mockWatcher as any);
+
+      // First set up a watcher
+      const watchHandler = handlers.get('git:watchWorktreeDirectory');
+      await watchHandler!({} as any, 'session-unwatch', '/some/path');
+
+      // Now unwatch it
+      const unwatchHandler = handlers.get('git:unwatchWorktreeDirectory');
+      const result = await unwatchHandler!({} as any, 'session-unwatch');
+
+      expect(mockWatcher.close).toHaveBeenCalled();
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should return success even when no watcher exists for session', async () => {
+      const handler = handlers.get('git:unwatchWorktreeDirectory');
+      const result = await handler!({} as any, 'nonexistent-session');
+
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should clear pending debounce timers', async () => {
+      vi.useFakeTimers();
+
+      vi.mocked(mockFs.access).mockResolvedValue(undefined);
+
+      let addDirCallback: Function | undefined;
+      const mockWatcher = {
+        on: vi.fn((event: string, cb: Function) => {
+          if (event === 'addDir') {
+            addDirCallback = cb;
+          }
+          return mockWatcher;
+        }),
+        close: vi.fn().mockResolvedValue(undefined),
+      };
+      vi.mocked(mockChokidar.watch).mockReturnValue(mockWatcher as any);
+
+      const mockWindow = {
+        webContents: {
+          send: vi.fn(),
+        },
+      };
+      const { BrowserWindow } = await import('electron');
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWindow] as any);
+
+      vi.mocked(execFile.execFileNoThrow).mockImplementation(async (cmd, args) => {
+        if (args?.includes('--is-inside-work-tree')) {
+          return { stdout: 'true\n', stderr: '', exitCode: 0 };
+        }
+        if (args?.includes('--abbrev-ref')) {
+          return { stdout: 'feature\n', stderr: '', exitCode: 0 };
+        }
+        return { stdout: '', stderr: '', exitCode: 0 };
+      });
+
+      const watchHandler = handlers.get('git:watchWorktreeDirectory');
+      await watchHandler!({} as any, 'session-timer', '/some/path');
+
+      // Trigger a directory add that starts the debounce timer
+      await addDirCallback!('/some/path/new-dir');
+      await vi.advanceTimersByTimeAsync(100); // Don't complete debounce
+
+      // Unwatch should clear the timer
+      const unwatchHandler = handlers.get('git:unwatchWorktreeDirectory');
+      await unwatchHandler!({} as any, 'session-timer');
+
+      // Advance past the original debounce timeout
+      await vi.advanceTimersByTimeAsync(600);
+
+      // No event should have been emitted because timer was cleared
+      expect(mockWindow.webContents.send).not.toHaveBeenCalled();
+
+      vi.useRealTimers();
+    });
+
+    it('should handle multiple watch/unwatch cycles for same session', async () => {
+      vi.mocked(mockFs.access).mockResolvedValue(undefined);
+
+      const mockWatchers = [
+        { on: vi.fn().mockReturnThis(), close: vi.fn().mockResolvedValue(undefined) },
+        { on: vi.fn().mockReturnThis(), close: vi.fn().mockResolvedValue(undefined) },
+        { on: vi.fn().mockReturnThis(), close: vi.fn().mockResolvedValue(undefined) },
+      ];
+      vi.mocked(mockChokidar.watch)
+        .mockReturnValueOnce(mockWatchers[0] as any)
+        .mockReturnValueOnce(mockWatchers[1] as any)
+        .mockReturnValueOnce(mockWatchers[2] as any);
+
+      const watchHandler = handlers.get('git:watchWorktreeDirectory');
+      const unwatchHandler = handlers.get('git:unwatchWorktreeDirectory');
+
+      // First cycle
+      await watchHandler!({} as any, 'session-cycle', '/path/1');
+      await unwatchHandler!({} as any, 'session-cycle');
+      expect(mockWatchers[0].close).toHaveBeenCalled();
+
+      // Second cycle
+      await watchHandler!({} as any, 'session-cycle', '/path/2');
+      await unwatchHandler!({} as any, 'session-cycle');
+      expect(mockWatchers[1].close).toHaveBeenCalled();
+
+      // Third cycle
+      await watchHandler!({} as any, 'session-cycle', '/path/3');
+      await unwatchHandler!({} as any, 'session-cycle');
+      expect(mockWatchers[2].close).toHaveBeenCalled();
+    });
+  });
 });
