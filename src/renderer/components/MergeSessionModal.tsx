@@ -1,21 +1,21 @@
 /**
- * MergeSessionModal - Modal for merging session contexts
+ * MergeSessionModal - Modal for merging current context into another session
  *
- * Allows users to select a target session/tab to merge with the current context.
- * Supports three modes:
+ * Allows users to select a target session/tab to merge the current context into.
+ * The flow is: 1) Select target session, 2) Select target tab within that session.
+ *
+ * Supports two modes:
  * - Paste ID: Paste a session or tab ID directly
- * - Search Sessions: Fuzzy search across all sessions and tabs
- * - Recent: Quick access to recently interacted sessions
+ * - Open Tabs: Fuzzy search across all open tabs in all agents
  *
  * Features:
  * - Real-time token estimation for merged context
- * - AI-powered context grooming option
- * - Option to create new session vs merge into current
+ * - AI-powered context cleaning option
  * - Keyboard navigation with arrow keys, Enter, Tab
  */
 
 import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
-import { Search, ChevronRight, ChevronDown, GitMerge, Clipboard, Clock, Check, X } from 'lucide-react';
+import { Search, ChevronRight, ChevronDown, GitMerge, Clipboard, Check, X } from 'lucide-react';
 import type { Theme, Session, AITab } from '../types';
 import type { MergeResult } from '../types/contextMerge';
 import { fuzzyMatchWithScore } from '../utils/search';
@@ -28,7 +28,7 @@ import { ScreenReaderAnnouncement, useAnnouncement } from './Wizard/ScreenReader
 /**
  * View modes for the modal
  */
-type ViewMode = 'paste' | 'search' | 'recent';
+type ViewMode = 'paste' | 'search';
 
 /**
  * Merge options that can be configured by the user
@@ -65,8 +65,6 @@ export interface MergeSessionModalProps {
   sourceTabId: string;
   /** All available sessions to merge with */
   allSessions: Session[];
-  /** Recently accessed sessions/tabs (for Recent view) */
-  recentSessionIds?: string[];
   /** Callback when modal is closed */
   onClose: () => void;
   /** Callback when merge is initiated */
@@ -154,7 +152,6 @@ export function MergeSessionModal({
   sourceSession,
   sourceTabId,
   allSessions,
-  recentSessionIds = [],
   onClose,
   onMerge,
 }: MergeSessionModalProps) {
@@ -280,13 +277,6 @@ export function MergeSessionModal({
 
   // Filter items based on search query
   const filteredItems = useMemo((): SessionListItem[] => {
-    if (viewMode === 'recent') {
-      // Filter to recent sessions only
-      return allItems
-        .filter(item => recentSessionIds.includes(item.sessionId))
-        .slice(0, 10);
-    }
-
     if (!searchQuery.trim()) {
       return allItems;
     }
@@ -301,7 +291,7 @@ export function MergeSessionModal({
       .filter(r => r.score > 0)
       .sort((a, b) => b.score - a.score)
       .map(r => r.item);
-  }, [allItems, searchQuery, viewMode, recentSessionIds]);
+  }, [allItems, searchQuery]);
 
   // Group filtered items by session for tree display
   const groupedItems = useMemo(() => {
@@ -442,7 +432,7 @@ export function MergeSessionModal({
     // Tab to switch view modes
     if (e.key === 'Tab' && !e.shiftKey) {
       e.preventDefault();
-      const modes: ViewMode[] = ['paste', 'search', 'recent'];
+      const modes: ViewMode[] = ['paste', 'search'];
       const currentIndex = modes.indexOf(viewMode);
       setViewMode(modes[(currentIndex + 1) % modes.length]);
       return;
@@ -451,7 +441,7 @@ export function MergeSessionModal({
     // Shift+Tab to switch view modes backwards
     if (e.key === 'Tab' && e.shiftKey) {
       e.preventDefault();
-      const modes: ViewMode[] = ['paste', 'search', 'recent'];
+      const modes: ViewMode[] = ['paste', 'search'];
       const currentIndex = modes.indexOf(viewMode);
       setViewMode(modes[(currentIndex - 1 + modes.length) % modes.length]);
       return;
@@ -494,7 +484,7 @@ export function MergeSessionModal({
       e.stopPropagation();
       if (viewMode === 'paste' && pastedIdValid && pastedIdMatch) {
         handleMerge();
-      } else if ((viewMode === 'search' || viewMode === 'recent') && selectedTarget) {
+      } else if (viewMode === 'search' && selectedTarget) {
         handleMerge();
       } else if (filteredItems[selectedIndex]) {
         handleSelectItem(filteredItems[selectedIndex]);
@@ -562,7 +552,7 @@ export function MergeSessionModal({
               className="text-sm font-bold"
               style={{ color: theme.colors.textMain }}
             >
-              Merge Session Contexts
+              Merge "{sourceTab ? getTabDisplayName(sourceTab) : 'Context'}" Into
             </h2>
           </div>
           <button
@@ -578,7 +568,7 @@ export function MergeSessionModal({
 
         {/* Description for screen readers */}
         <p id="merge-modal-description" className="sr-only">
-          Select a session or tab to merge with the current context. Use Tab to switch between Paste ID, Search Sessions, and Recent modes. Use arrow keys to navigate the list.
+          Select a session and tab to merge your current context into. Use Tab to switch between Paste ID and Open Tabs modes. Use arrow keys to navigate the list.
         </p>
 
         {/* View Mode Tabs */}
@@ -590,8 +580,7 @@ export function MergeSessionModal({
         >
           {[
             { mode: 'paste' as ViewMode, label: 'Paste ID', icon: Clipboard },
-            { mode: 'search' as ViewMode, label: 'Search Sessions', icon: Search },
-            { mode: 'recent' as ViewMode, label: 'Recent', icon: Clock },
+            { mode: 'search' as ViewMode, label: 'Open Tabs', icon: Search },
           ].map(({ mode, label, icon: Icon }) => (
             <button
               key={mode}
@@ -731,7 +720,7 @@ export function MergeSessionModal({
                     id="search-sessions-input"
                     ref={inputRef}
                     type="text"
-                    placeholder="Search sessions and tabs..."
+                    placeholder="Search open tabs across all agents..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     aria-controls="session-list"
@@ -877,95 +866,6 @@ export function MergeSessionModal({
             </div>
           )}
 
-          {/* Recent View */}
-          {viewMode === 'recent' && (
-            <div
-              id="merge-tabpanel-recent"
-              role="tabpanel"
-              aria-labelledby="merge-tab-recent"
-              className="flex-1 overflow-y-auto p-2"
-            >
-              {filteredItems.length === 0 ? (
-                <div
-                  className="p-4 text-center text-sm"
-                  style={{ color: theme.colors.textDim }}
-                  role="status"
-                >
-                  No recent sessions
-                </div>
-              ) : (
-                <div role="listbox" aria-label="Recent sessions">
-                  {filteredItems.map((item, index) => {
-                    const isSelected = index === selectedIndex;
-                    const isTarget = selectedTarget?.tabId === item.tabId;
-
-                    return (
-                      <button
-                        key={`${item.sessionId}-${item.tabId}`}
-                        ref={isSelected ? selectedItemRef : undefined}
-                        onClick={() => handleSelectItem(item)}
-                        role="option"
-                        aria-selected={isTarget}
-                        className={`w-full px-3 py-2.5 flex items-center gap-3 rounded-lg text-left transition-all duration-150 mb-1 ${isTarget ? 'animate-highlight-pulse' : ''}`}
-                        style={{
-                          backgroundColor: isTarget
-                            ? theme.colors.accent
-                            : isSelected
-                              ? `${theme.colors.accent}40`
-                              : 'transparent',
-                          color: isTarget
-                            ? theme.colors.accentForeground
-                            : theme.colors.textMain,
-                          '--pulse-color': `${theme.colors.accent}40`,
-                        } as React.CSSProperties}
-                      >
-                        {isTarget && (
-                          <Check className="w-4 h-4 shrink-0 animate-check-pop" aria-hidden="true" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium truncate">
-                              {item.sessionName}
-                            </span>
-                            <ChevronRight
-                              className="w-3 h-3 shrink-0"
-                              style={{
-                                color: isTarget
-                                  ? theme.colors.accentForeground
-                                  : theme.colors.textDim,
-                              }}
-                              aria-hidden="true"
-                            />
-                            <span
-                              className="text-sm truncate"
-                              style={{
-                                color: isTarget
-                                  ? theme.colors.accentForeground
-                                  : theme.colors.textDim,
-                              }}
-                            >
-                              {item.tabName}
-                            </span>
-                          </div>
-                        </div>
-                        <span
-                          className="text-xs shrink-0"
-                          style={{
-                            color: isTarget
-                              ? theme.colors.accentForeground
-                              : theme.colors.textDim,
-                          }}
-                          aria-label={`approximately ${formatTokensCompact(item.estimatedTokens)} tokens`}
-                        >
-                          ~{formatTokensCompact(item.estimatedTokens)}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         {/* Merge Preview & Options */}
@@ -1020,7 +920,7 @@ export function MergeSessionModal({
                 {options.groomContext && (
                   <div className="flex justify-between">
                     <span style={{ color: theme.colors.success }}>
-                      After grooming:
+                      After cleaning:
                     </span>
                     <span style={{ color: theme.colors.success }}>
                       ~{formatTokensCompact(estimatedGroomedTokens)} tokens (estimated)
@@ -1046,23 +946,7 @@ export function MergeSessionModal({
                 aria-describedby="groom-context-desc"
               />
               <span className="text-xs" id="groom-context-desc">
-                Groom context with AI (removes duplicates)
-              </span>
-            </label>
-
-            <label
-              className="flex items-center gap-2 cursor-pointer"
-              style={{ color: theme.colors.textMain }}
-            >
-              <input
-                type="checkbox"
-                checked={options.createNewSession}
-                onChange={(e) => setOptions(prev => ({ ...prev, createNewSession: e.target.checked }))}
-                className="rounded"
-                aria-describedby="create-new-session-desc"
-              />
-              <span className="text-xs" id="create-new-session-desc">
-                Create new session (vs. merge into current)
+                Clean context (remove duplicates, reduce size)
               </span>
             </label>
           </fieldset>
@@ -1094,7 +978,7 @@ export function MergeSessionModal({
               color: theme.colors.accentForeground,
             }}
           >
-            {isMerging ? 'Merging...' : 'Merge Contexts'}
+            {isMerging ? 'Merging...' : 'Merge Into'}
           </button>
         </div>
       </div>

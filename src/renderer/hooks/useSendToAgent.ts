@@ -591,7 +591,7 @@ export function useSendToAgentWithSessions(
       options,
     });
 
-    if (result.success && options.createNewSession && result.newSessionId) {
+    if (result.success && result.newSessionId) {
       // Create the session structure again to add to state
       // (The hook only creates the structure, we need to add it to app state)
       const sessionName = generateTransferredSessionName(

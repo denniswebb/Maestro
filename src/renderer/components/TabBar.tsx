@@ -449,7 +449,7 @@ function Tab({
               <div className="my-1 border-t" style={{ borderColor: theme.colors.border }} />
             )}
 
-            {/* Summarize Context */}
+            {/* Context: Summarize */}
             {(tab.logs?.length ?? 0) >= 5 && onSummarizeAndContinue && (
               <button
                 onClick={handleSummarizeAndContinueClick}
@@ -457,11 +457,11 @@ function Tab({
                 style={{ color: theme.colors.textMain }}
               >
                 <Minimize2 className="w-3.5 h-3.5" style={{ color: theme.colors.textDim }} />
-                Summarize Context
+                Context: Summarize
               </button>
             )}
 
-            {/* Merge Contexts */}
+            {/* Context: Merge Into */}
             {tab.agentSessionId && onMergeWith && (
               <button
                 onClick={handleMergeWithClick}
@@ -469,11 +469,11 @@ function Tab({
                 style={{ color: theme.colors.textMain }}
               >
                 <GitMerge className="w-3.5 h-3.5" style={{ color: theme.colors.textDim }} />
-                Merge Contexts
+                Context: Merge Into
               </button>
             )}
 
-            {/* Send Context to Agent */}
+            {/* Context: Send to Agent */}
             {tab.agentSessionId && onSendToAgent && (
               <button
                 onClick={handleSendToAgentClick}
@@ -481,7 +481,7 @@ function Tab({
                 style={{ color: theme.colors.textMain }}
               >
                 <ArrowRightCircle className="w-3.5 h-3.5" style={{ color: theme.colors.textDim }} />
-                Send Context to Agent
+                Context: Send to Agent
               </button>
             )}
           </div>

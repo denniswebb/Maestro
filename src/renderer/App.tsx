@@ -101,7 +101,7 @@ import type {
   ToolType, SessionState, RightPanelTab, SettingsTab,
   FocusArea, LogEntry, Session, Group, AITab, UsageStats, QueuedItem, BatchRunConfig,
   AgentError, BatchRunState, GroupChat, GroupChatMessage, GroupChatState,
-  SpecKitCommand, AgentConfig
+  SpecKitCommand
 } from './types';
 import { THEMES } from './constants/themes';
 import { generateId } from './utils/ids';
@@ -487,7 +487,6 @@ export default function MaestroConsole() {
 
   // Send to Agent Modal State
   const [sendToAgentModalOpen, setSendToAgentModalOpen] = useState(false);
-  const [sendToAgentAvailableAgents, setSendToAgentAvailableAgents] = useState<AgentConfig[]>([]);
 
   // Group Chat Modal State
   const [showNewGroupChatModal, setShowNewGroupChatModal] = useState(false);
@@ -914,6 +913,7 @@ export default function MaestroConsole() {
             const worktreeSession: Session = {
               id: newId,
               name: subdir.branch || subdir.name,
+              groupId: parentSession.groupId,  // Inherit group from parent
               toolType: parentSession.toolType,
               state: 'idle',
               cwd: subdir.path,
@@ -2729,20 +2729,6 @@ export default function MaestroConsole() {
     });
   }, [activeSession, canSummarize, summarizeMinLogs, startSummarize, setSessions, addToast, summarizeResult?.reductionPercent]);
 
-  // Fetch available agents when Send to Agent modal opens
-  useEffect(() => {
-    if (sendToAgentModalOpen) {
-      (async () => {
-        try {
-          const agents = await window.maestro.agents.detect();
-          setSendToAgentAvailableAgents(agents);
-        } catch (error) {
-          console.error('Failed to detect agents for Send to Agent modal:', error);
-        }
-      })();
-    }
-  }, [sendToAgentModalOpen]);
-
   // Combine built-in slash commands with custom AI commands, spec-kit commands, AND agent-specific commands for autocomplete
   const allSlashCommands = useMemo(() => {
     const customCommandsAsSlash = customAICommands
@@ -3557,6 +3543,7 @@ export default function MaestroConsole() {
       const worktreeSession: Session = {
         id: newId,
         name: worktree.branch || worktree.name,
+        groupId: parentSession.groupId,  // Inherit group from parent
         toolType: parentSession.toolType,
         state: 'idle',
         cwd: worktree.path,
@@ -7213,6 +7200,7 @@ export default function MaestroConsole() {
                   const worktreeSession: Session = {
                     id: newId,
                     name: subdir.branch || subdir.name,
+                    groupId: activeSession.groupId,  // Inherit group from parent
                     toolType: activeSession.toolType,
                     state: 'idle',
                     cwd: subdir.path,
@@ -7332,6 +7320,7 @@ export default function MaestroConsole() {
               const worktreeSession: Session = {
                 id: newId,
                 name: branchName,
+                groupId: activeSession.groupId,  // Inherit group from parent
                 toolType: activeSession.toolType,
                 state: 'idle',
                 cwd: worktreePath,
@@ -7463,6 +7452,7 @@ export default function MaestroConsole() {
             const worktreeSession: Session = {
               id: newId,
               name: branchName,
+              groupId: createWorktreeSession.groupId,  // Inherit group from parent
               toolType: createWorktreeSession.toolType,
               state: 'idle',
               cwd: worktreePath,
@@ -7627,39 +7617,78 @@ export default function MaestroConsole() {
           isOpen={sendToAgentModalOpen}
           sourceSession={activeSession}
           sourceTabId={activeSession.activeTabId}
-          availableAgents={sendToAgentAvailableAgents}
           allSessions={sessions}
           onClose={() => setSendToAgentModalOpen(false)}
-          onSend={async (targetAgentId, options) => {
+          onSend={async (targetSessionId, options) => {
+            // Find the target session
+            const targetSession = sessions.find(s => s.id === targetSessionId);
+            if (!targetSession) {
+              return { success: false, error: 'Target session not found' };
+            }
+
             // Store source and target agents for progress modal display
             setTransferSourceAgent(activeSession.toolType);
-            setTransferTargetAgent(targetAgentId);
+            setTransferTargetAgent(targetSession.toolType);
 
             // Close the selection modal - progress modal will take over
             setSendToAgentModalOpen(false);
 
-            // Execute the transfer using the hook
-            const result = await executeTransfer(
-              activeSession,
-              activeSession.activeTabId!,
-              targetAgentId,
-              options
-            );
-
-            // Handle transfer errors
-            if (!result.success) {
-              addToast({
-                type: 'error',
-                title: 'Transfer Failed',
-                message: result.error || 'Failed to transfer context to agent',
-              });
-              // Reset the transfer state on error
-              resetTransfer();
-              setTransferSourceAgent(null);
-              setTransferTargetAgent(null);
+            // Get source tab context
+            const sourceTab = activeSession.aiTabs.find(t => t.id === activeSession.activeTabId);
+            if (!sourceTab) {
+              return { success: false, error: 'Source tab not found' };
             }
 
-            return result;
+            // Transfer context to the target session's active tab
+            // Create a new tab in the target session with the transferred context
+            const newTabId = `tab-${Date.now()}`;
+            const transferNotice: LogEntry = {
+              id: `transfer-notice-${Date.now()}`,
+              timestamp: Date.now(),
+              source: 'system',
+              text: `Context transferred from "${activeSession.name}" (${activeSession.toolType})${options.groomContext ? ' - cleaned to reduce size' : ''}`,
+            };
+
+            const newTab: AITab = {
+              id: newTabId,
+              name: `From: ${activeSession.name}`,
+              logs: [transferNotice, ...sourceTab.logs],
+              agentSessionId: null,
+              starred: false,
+              inputValue: '',
+              stagedImages: [],
+              createdAt: Date.now(),
+              state: 'idle',
+            };
+
+            // Add the new tab to the target session
+            setSessions(prev => prev.map(s => {
+              if (s.id === targetSessionId) {
+                return {
+                  ...s,
+                  aiTabs: [...s.aiTabs, newTab],
+                  activeTabId: newTabId,
+                };
+              }
+              return s;
+            }));
+
+            // Navigate to the target session
+            setActiveSessionId(targetSessionId);
+
+            // Show success toast
+            addToast({
+              type: 'success',
+              title: 'Context Transferred',
+              message: `Context sent to "${targetSession.name}"`,
+            });
+
+            // Reset transfer state
+            resetTransfer();
+            setTransferSourceAgent(null);
+            setTransferTargetAgent(null);
+
+            return { success: true, newSessionId: targetSessionId, newTabId };
           }}
         />
       )}
@@ -8732,6 +8761,24 @@ export default function MaestroConsole() {
         onOpenCreatePR={() => setCreatePRModalOpen(true)}
         isWorktreeChild={!!activeSession?.parentSessionId}
         onSummarizeAndContinue={handleSummarizeAndContinue}
+        onMergeWith={(tabId: string) => {
+          // First select the tab to make it active, then open merge modal
+          if (activeSession) {
+            setSessions(prev => prev.map(s =>
+              s.id === activeSession.id ? { ...s, activeTabId: tabId } : s
+            ));
+          }
+          setMergeSessionModalOpen(true);
+        }}
+        onSendToAgent={(tabId: string) => {
+          // First select the tab to make it active, then open send modal
+          if (activeSession) {
+            setSessions(prev => prev.map(s =>
+              s.id === activeSession.id ? { ...s, activeTabId: tabId } : s
+            ));
+          }
+          setSendToAgentModalOpen(true);
+        }}
         // Context warning sash settings (Phase 6)
         contextWarningsEnabled={contextManagementSettings.contextWarningsEnabled}
         contextWarningYellowThreshold={contextManagementSettings.contextWarningYellowThreshold}

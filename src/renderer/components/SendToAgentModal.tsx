@@ -1,21 +1,21 @@
 /**
- * SendToAgentModal - Modal for sending session context to another agent
+ * SendToAgentModal - Modal for sending session context to another Maestro session
  *
  * Allows users to transfer context from the current session/tab to a different
- * AI agent (e.g., from Claude Code to Gemini CLI). The context is groomed to
- * remove agent-specific artifacts before transfer.
+ * Maestro session. The context can be groomed to remove agent-specific artifacts
+ * before transfer.
  *
  * Features:
- * - Agent selection grid with availability status
- * - Fuzzy search for agent names
+ * - Session selection list with availability status (idle, busy)
+ * - Fuzzy search for session names
  * - Real-time token estimation
  * - Option for AI-powered context grooming
  * - Keyboard navigation with arrow keys, Enter, Escape
  */
 
-import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
-import { Search, ArrowRight, Check, X, AlertCircle, Loader2 } from 'lucide-react';
-import type { Theme, Session, AITab, ToolType, AgentConfig } from '../types';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { Search, ArrowRight, Check, X, Loader2, Circle } from 'lucide-react';
+import type { Theme, Session, AITab, ToolType } from '../types';
 import type { MergeResult } from '../types/contextMerge';
 import { fuzzyMatchWithScore } from '../utils/search';
 import { useLayerStack } from '../contexts/LayerStackContext';
@@ -25,19 +25,19 @@ import { getAgentIcon } from '../constants/agentIcons';
 import { ScreenReaderAnnouncement, useAnnouncement } from './Wizard/ScreenReaderAnnouncement';
 
 /**
- * Agent availability status for display in the selection grid
+ * Session availability status for display in the selection list
  */
-export type AgentStatus = 'ready' | 'busy' | 'unavailable' | 'current';
+export type SessionStatus = 'idle' | 'busy' | 'current';
 
 /**
- * Available agent with status information for the selection grid
+ * Session option for display in the selection list
  */
-export interface AvailableAgent {
-  id: ToolType;
+export interface SessionOption {
+  id: string;
   name: string;
-  status: AgentStatus;
-  activeSessions: number;
-  available: boolean;
+  toolType: ToolType;
+  status: SessionStatus;
+  projectRoot: string;
 }
 
 /**
@@ -46,8 +46,8 @@ export interface AvailableAgent {
 export interface SendToAgentOptions {
   /** Use AI to groom/deduplicate context before sending */
   groomContext: boolean;
-  /** Create a new session for the target agent */
-  createNewSession: boolean;
+  /** Target session ID to send context to */
+  targetSessionId: string;
 }
 
 export interface SendToAgentModalProps {
@@ -57,35 +57,54 @@ export interface SendToAgentModalProps {
   sourceSession: Session;
   /** The specific tab ID within the source session */
   sourceTabId: string;
-  /** Available agent configurations from agent detector */
-  availableAgents: AgentConfig[];
-  /** All sessions for determining agent busy status */
-  allSessions?: Session[];
+  /** All sessions available as targets (will exclude source session) */
+  allSessions: Session[];
   /** Callback when modal is closed */
   onClose: () => void;
   /** Callback when send is initiated */
   onSend: (
-    targetAgentId: ToolType,
+    targetSessionId: string,
     options: SendToAgentOptions
   ) => Promise<MergeResult>;
 }
 
 /**
- * Get status label for an agent
+ * Get status label for a session
  */
-function getStatusLabel(status: AgentStatus): string {
+function getStatusLabel(status: SessionStatus): string {
   switch (status) {
-    case 'ready':
-      return 'Ready';
+    case 'idle':
+      return 'Idle';
     case 'busy':
       return 'Busy';
-    case 'unavailable':
-      return 'N/A';
     case 'current':
-      return 'Current';
+      return 'Source';
     default:
       return '';
   }
+}
+
+/**
+ * Get status color for a session
+ */
+function getStatusColor(status: SessionStatus, theme: Theme): string {
+  switch (status) {
+    case 'idle':
+      return theme.colors.success;
+    case 'busy':
+      return theme.colors.warning;
+    case 'current':
+      return theme.colors.textDim;
+    default:
+      return theme.colors.textDim;
+  }
+}
+
+/**
+ * Get display name for a session
+ */
+function getSessionDisplayName(session: Session): string {
+  return session.name || session.projectRoot.split('/').pop() || 'Unnamed Session';
 }
 
 /**
@@ -116,25 +135,21 @@ export function SendToAgentModal({
   isOpen,
   sourceSession,
   sourceTabId,
-  availableAgents,
-  allSessions = [],
+  allSessions,
   onClose,
   onSend,
 }: SendToAgentModalProps) {
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Selected target agent
-  const [selectedAgentId, setSelectedAgentId] = useState<ToolType | null>(null);
+  // Selected target session
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
 
   // Keyboard navigation index
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   // Send options
-  const [options, setOptions] = useState<SendToAgentOptions>({
-    groomContext: true,
-    createNewSession: true,
-  });
+  const [groomContext, setGroomContext] = useState(true);
 
   // Sending state
   const [isSending, setIsSending] = useState(false);
@@ -195,7 +210,7 @@ export function SendToAgentModal({
   useEffect(() => {
     if (isOpen) {
       setSearchQuery('');
-      setSelectedAgentId(null);
+      setSelectedSessionId(null);
       setSelectedIndex(0);
       setIsSending(false);
     }
@@ -211,70 +226,56 @@ export function SendToAgentModal({
     return estimateTokens(sourceTab.logs);
   }, [sourceTab]);
 
-  // Calculate session counts per agent
-  const sessionCountsByAgent = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const session of allSessions) {
-      const toolType = session.toolType;
-      counts[toolType] = (counts[toolType] || 0) + 1;
-    }
-    return counts;
-  }, [allSessions]);
+  // Build list of sessions with status (excluding the source session and terminal-only sessions)
+  const sessionOptions = useMemo((): SessionOption[] => {
+    return allSessions
+      .filter(session => {
+        // Exclude the source session
+        if (session.id === sourceSession.id) return false;
+        // Exclude terminal-only sessions
+        if (session.toolType === 'terminal') return false;
+        return true;
+      })
+      .map(session => {
+        let status: SessionStatus;
 
-  // Calculate busy agents (those with sessions in busy state)
-  const busyAgents = useMemo(() => {
-    const busy = new Set<string>();
-    for (const session of allSessions) {
-      if (session.state === 'busy') {
-        busy.add(session.toolType);
-      }
-    }
-    return busy;
-  }, [allSessions]);
-
-  // Build list of agents with status
-  const agents = useMemo((): AvailableAgent[] => {
-    return availableAgents
-      .filter(agent => !agent.hidden)
-      .map(agent => {
-        let status: AgentStatus;
-
-        if (agent.id === sourceSession.toolType) {
+        if (session.id === sourceSession.id) {
           status = 'current';
-        } else if (!agent.available) {
-          status = 'unavailable';
-        } else if (busyAgents.has(agent.id)) {
+        } else if (session.state === 'busy') {
           status = 'busy';
         } else {
-          status = 'ready';
+          status = 'idle';
         }
 
         return {
-          id: agent.id as ToolType,
-          name: agent.name,
+          id: session.id,
+          name: getSessionDisplayName(session),
+          toolType: session.toolType,
           status,
-          activeSessions: sessionCountsByAgent[agent.id] || 0,
-          available: agent.available,
+          projectRoot: session.projectRoot,
         };
       });
-  }, [availableAgents, sourceSession.toolType, busyAgents, sessionCountsByAgent]);
+  }, [allSessions, sourceSession.id]);
 
-  // Filter agents based on search query
-  const filteredAgents = useMemo((): AvailableAgent[] => {
+  // Filter sessions based on search query
+  const filteredSessions = useMemo((): SessionOption[] => {
     if (!searchQuery.trim()) {
-      return agents;
+      return sessionOptions;
     }
 
     const query = searchQuery.trim();
-    return agents
-      .map(agent => {
-        const result = fuzzyMatchWithScore(agent.name, query);
-        return { agent, score: result.score };
+    return sessionOptions
+      .map(session => {
+        // Search by session name and project path
+        const nameScore = fuzzyMatchWithScore(session.name, query).score;
+        const pathScore = fuzzyMatchWithScore(session.projectRoot, query).score;
+        const score = Math.max(nameScore, pathScore);
+        return { session, score };
       })
       .filter(r => r.score > 0)
       .sort((a, b) => b.score - a.score)
-      .map(r => r.agent);
-  }, [agents, searchQuery]);
+      .map(r => r.session);
+  }, [sessionOptions, searchQuery]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -289,76 +290,69 @@ export function SendToAgentModal({
   // Announce search results to screen readers
   useEffect(() => {
     if (isOpen) {
-      const availableCount = filteredAgents.filter(
-        a => a.status !== 'current' && a.status !== 'unavailable'
-      ).length;
+      const availableCount = filteredSessions.length;
       if (searchQuery) {
         announce(
-          `Found ${availableCount} available agent${availableCount !== 1 ? 's' : ''} matching "${searchQuery}"`
+          `Found ${availableCount} session${availableCount !== 1 ? 's' : ''} matching "${searchQuery}"`
         );
-      } else if (filteredAgents.length > 0) {
+      } else if (filteredSessions.length > 0) {
         announce(
-          `${availableCount} agent${availableCount !== 1 ? 's' : ''} available for transfer`
+          `${availableCount} session${availableCount !== 1 ? 's' : ''} available for transfer`
         );
       }
     }
-  }, [filteredAgents, searchQuery, isOpen, announce]);
+  }, [filteredSessions, searchQuery, isOpen, announce]);
 
-  // Announce agent selection
+  // Announce session selection
   useEffect(() => {
-    if (selectedAgentId) {
-      const agent = agents.find(a => a.id === selectedAgentId);
-      if (agent) {
-        announce(`Selected: ${agent.name}`);
+    if (selectedSessionId) {
+      const session = sessionOptions.find(s => s.id === selectedSessionId);
+      if (session) {
+        announce(`Selected: ${session.name}`);
       }
     }
-  }, [selectedAgentId, agents, announce]);
+  }, [selectedSessionId, sessionOptions, announce]);
 
   // Announce sending status
   useEffect(() => {
     if (isSending) {
-      announce('Sending context to agent, please wait...', 'assertive');
+      announce('Sending context to session, please wait...', 'assertive');
     }
   }, [isSending, announce]);
 
-  // Handle agent selection
-  const handleSelectAgent = useCallback((agentId: ToolType) => {
-    const agent = agents.find(a => a.id === agentId);
-    if (agent && agent.status !== 'current' && agent.status !== 'unavailable') {
-      setSelectedAgentId(agentId);
+  // Handle session selection
+  const handleSelectSession = useCallback((sessionId: string) => {
+    const session = sessionOptions.find(s => s.id === sessionId);
+    if (session && session.status !== 'current') {
+      setSelectedSessionId(sessionId);
     }
-  }, [agents]);
+  }, [sessionOptions]);
 
   // Handle send action
   const handleSend = useCallback(async () => {
-    if (!selectedAgentId) return;
+    if (!selectedSessionId) return;
 
     setIsSending(true);
     try {
-      await onSend(selectedAgentId, options);
+      await onSend(selectedSessionId, {
+        groomContext,
+        targetSessionId: selectedSessionId,
+      });
       onClose();
     } catch (error) {
-      console.error('Send to agent failed:', error);
+      console.error('Send to session failed:', error);
     } finally {
       setIsSending(false);
     }
-  }, [selectedAgentId, options, onSend, onClose]);
+  }, [selectedSessionId, groomContext, onSend, onClose]);
 
-  // Handle key down
+  // Handle key down - list navigation (up/down only)
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    const selectableAgents = filteredAgents.filter(
-      a => a.status !== 'current' && a.status !== 'unavailable'
-    );
-
-    // Arrow navigation in grid (3 columns)
-    const cols = 3;
-    const rows = Math.ceil(filteredAgents.length / cols);
-
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       setSelectedIndex(prev => {
-        const nextIndex = prev + cols;
-        return nextIndex < filteredAgents.length ? nextIndex : prev;
+        const nextIndex = prev + 1;
+        return nextIndex < filteredSessions.length ? nextIndex : prev;
       });
       return;
     }
@@ -366,38 +360,8 @@ export function SendToAgentModal({
     if (e.key === 'ArrowUp') {
       e.preventDefault();
       setSelectedIndex(prev => {
-        const nextIndex = prev - cols;
-        return nextIndex >= 0 ? nextIndex : prev;
-      });
-      return;
-    }
-
-    if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      setSelectedIndex(prev => {
-        const nextIndex = prev + 1;
-        // Don't wrap to next row
-        const currentRow = Math.floor(prev / cols);
-        const nextRow = Math.floor(nextIndex / cols);
-        if (nextRow !== currentRow || nextIndex >= filteredAgents.length) {
-          return prev;
-        }
-        return nextIndex;
-      });
-      return;
-    }
-
-    if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      setSelectedIndex(prev => {
         const nextIndex = prev - 1;
-        // Don't wrap to previous row
-        const currentRow = Math.floor(prev / cols);
-        const nextRow = Math.floor(nextIndex / cols);
-        if (nextRow !== currentRow || nextIndex < 0) {
-          return prev;
-        }
-        return nextIndex;
+        return nextIndex >= 0 ? nextIndex : prev;
       });
       return;
     }
@@ -405,21 +369,21 @@ export function SendToAgentModal({
     // Number keys for quick selection (1-9)
     if (e.key >= '1' && e.key <= '9') {
       const index = parseInt(e.key, 10) - 1;
-      if (index < filteredAgents.length) {
-        const agent = filteredAgents[index];
-        if (agent.status !== 'current' && agent.status !== 'unavailable') {
-          handleSelectAgent(agent.id);
+      if (index < filteredSessions.length) {
+        const session = filteredSessions[index];
+        if (session.status !== 'current') {
+          handleSelectSession(session.id);
         }
       }
       return;
     }
 
-    // Space to select highlighted agent
-    if (e.key === ' ' && !e.shiftKey && filteredAgents[selectedIndex]) {
+    // Space to select highlighted session
+    if (e.key === ' ' && !e.shiftKey && filteredSessions[selectedIndex]) {
       e.preventDefault();
-      const agent = filteredAgents[selectedIndex];
-      if (agent.status !== 'current' && agent.status !== 'unavailable') {
-        handleSelectAgent(agent.id);
+      const session = filteredSessions[selectedIndex];
+      if (session.status !== 'current') {
+        handleSelectSession(session.id);
       }
       return;
     }
@@ -428,36 +392,36 @@ export function SendToAgentModal({
     if (e.key === 'Enter') {
       e.preventDefault();
       e.stopPropagation();
-      if (selectedAgentId) {
+      if (selectedSessionId) {
         handleSend();
-      } else if (filteredAgents[selectedIndex]) {
-        const agent = filteredAgents[selectedIndex];
-        if (agent.status !== 'current' && agent.status !== 'unavailable') {
-          handleSelectAgent(agent.id);
+      } else if (filteredSessions[selectedIndex]) {
+        const session = filteredSessions[selectedIndex];
+        if (session.status !== 'current') {
+          handleSelectSession(session.id);
         }
       }
       return;
     }
-  }, [filteredAgents, selectedIndex, selectedAgentId, handleSelectAgent, handleSend]);
+  }, [filteredSessions, selectedIndex, selectedSessionId, handleSelectSession, handleSend]);
 
-  // Get selected agent details
-  const selectedAgent = useMemo(() => {
-    return agents.find(a => a.id === selectedAgentId);
-  }, [agents, selectedAgentId]);
+  // Get selected session details
+  const selectedSession = useMemo(() => {
+    return sessionOptions.find(s => s.id === selectedSessionId);
+  }, [sessionOptions, selectedSessionId]);
 
   // Estimate groomed tokens (rough 25-30% reduction)
   const estimatedGroomedTokens = useMemo(() => {
-    if (!options.groomContext) return sourceTokens;
+    if (!groomContext) return sourceTokens;
     return Math.round(sourceTokens * 0.73);
-  }, [sourceTokens, options.groomContext]);
+  }, [sourceTokens, groomContext]);
 
   // Determine if send is possible
   const canSend = useMemo(() => {
     if (isSending) return false;
-    if (!selectedAgentId) return false;
-    const agent = agents.find(a => a.id === selectedAgentId);
-    return agent && agent.status !== 'current' && agent.status !== 'unavailable';
-  }, [selectedAgentId, agents, isSending]);
+    if (!selectedSessionId) return false;
+    const session = sessionOptions.find(s => s.id === selectedSessionId);
+    return session && session.status !== 'current';
+  }, [selectedSessionId, sessionOptions, isSending]);
 
   if (!isOpen) return null;
 
@@ -511,7 +475,7 @@ export function SendToAgentModal({
 
         {/* Description for screen readers */}
         <p id="send-to-agent-description" className="sr-only">
-          Select an AI agent to transfer your current context to. Use arrow keys to navigate the grid and Enter or Space to select.
+          Select a session to transfer your current context to. Use arrow keys to navigate and Enter or Space to select.
         </p>
 
         {/* Content Area */}
@@ -524,17 +488,17 @@ export function SendToAgentModal({
                 style={{ color: theme.colors.textDim }}
                 aria-hidden="true"
               />
-              <label htmlFor="search-agents-input" className="sr-only">
-                Search agents
+              <label htmlFor="search-sessions-input" className="sr-only">
+                Search sessions
               </label>
               <input
-                id="search-agents-input"
+                id="search-sessions-input"
                 ref={inputRef}
                 type="text"
-                placeholder="Search agents..."
+                placeholder="Search sessions..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                aria-controls="agent-grid"
+                aria-controls="session-list"
                 className="w-full pl-9 pr-3 py-2 rounded-lg border text-sm outline-none"
                 style={{
                   backgroundColor: theme.colors.bgMain,
@@ -545,39 +509,39 @@ export function SendToAgentModal({
             </div>
           </div>
 
-          {/* Agent Grid */}
+          {/* Session List */}
           <div
-            id="agent-grid"
+            id="session-list"
             className="flex-1 overflow-y-auto px-4 pb-4"
             role="listbox"
-            aria-label="Available agents"
+            aria-label="Available sessions"
           >
-            {filteredAgents.length === 0 ? (
+            {filteredSessions.length === 0 ? (
               <div
                 className="p-4 text-center text-sm"
                 style={{ color: theme.colors.textDim }}
                 role="status"
               >
-                {searchQuery ? 'No matching agents found' : 'No agents available'}
+                {searchQuery ? 'No matching sessions found' : 'No other sessions available'}
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-2" role="presentation">
-                {filteredAgents.map((agent, index) => {
+              <div className="space-y-1" role="presentation">
+                {filteredSessions.map((session, index) => {
                   const isHighlighted = index === selectedIndex;
-                  const isSelected = selectedAgentId === agent.id;
-                  const isDisabled = agent.status === 'current' || agent.status === 'unavailable';
+                  const isSelected = selectedSessionId === session.id;
+                  const isDisabled = session.status === 'current';
 
                   return (
                     <button
-                      key={agent.id}
+                      key={session.id}
                       ref={isHighlighted ? selectedItemRef : undefined}
-                      onClick={() => !isDisabled && handleSelectAgent(agent.id)}
+                      onClick={() => !isDisabled && handleSelectSession(session.id)}
                       disabled={isDisabled}
                       role="option"
                       aria-selected={isSelected}
                       aria-disabled={isDisabled}
-                      aria-label={`${agent.name}, ${getStatusLabel(agent.status)}${index < 9 ? `, press ${index + 1} to select` : ''}`}
-                      className={`p-3 rounded-lg border text-center transition-all duration-150 disabled:cursor-not-allowed ${isSelected ? 'animate-highlight-pulse' : ''}`}
+                      aria-label={`${session.name}, ${getStatusLabel(session.status)}${index < 9 ? `, press ${index + 1} to select` : ''}`}
+                      className={`w-full p-3 rounded-lg border text-left transition-all duration-150 disabled:cursor-not-allowed flex items-center gap-3 ${isSelected ? 'animate-highlight-pulse' : ''}`}
                       style={{
                         backgroundColor: isSelected
                           ? theme.colors.accent
@@ -594,50 +558,61 @@ export function SendToAgentModal({
                       } as React.CSSProperties}
                     >
                       {/* Agent Icon */}
-                      <div className="text-2xl mb-1" aria-hidden="true">
-                        {getAgentIcon(agent.id)}
+                      <div className="text-xl shrink-0" aria-hidden="true">
+                        {getAgentIcon(session.toolType)}
                       </div>
 
-                      {/* Agent Name */}
-                      <div
-                        className="text-sm font-medium truncate"
-                        style={{
-                          color: isSelected
-                            ? theme.colors.accentForeground
-                            : theme.colors.textMain,
-                        }}
-                      >
-                        {agent.name}
+                      {/* Session Info */}
+                      <div className="flex-1 min-w-0">
+                        {/* Session Name */}
+                        <div
+                          className="text-sm font-medium truncate"
+                          style={{
+                            color: isSelected
+                              ? theme.colors.accentForeground
+                              : theme.colors.textMain,
+                          }}
+                        >
+                          {session.name}
+                        </div>
+
+                        {/* Project Path */}
+                        <div
+                          className="text-xs truncate"
+                          style={{
+                            color: isSelected
+                              ? theme.colors.accentForeground
+                              : theme.colors.textDim,
+                            opacity: isSelected ? 0.8 : 1,
+                          }}
+                        >
+                          {session.projectRoot}
+                        </div>
                       </div>
 
                       {/* Status Badge */}
                       <div
-                        className="text-xs mt-1 flex items-center justify-center gap-1"
+                        className="text-xs flex items-center gap-1 shrink-0"
                         style={{
                           color: isSelected
                             ? theme.colors.accentForeground
-                            : agent.status === 'ready'
-                              ? theme.colors.success
-                              : agent.status === 'busy'
-                                ? theme.colors.warning
-                                : theme.colors.textDim,
+                            : getStatusColor(session.status, theme),
                         }}
                         aria-hidden="true"
                       >
-                        {agent.status === 'ready' && <Check className="w-3 h-3" />}
-                        {agent.status === 'busy' && <Loader2 className="w-3 h-3 animate-spin" />}
-                        {agent.status === 'unavailable' && <AlertCircle className="w-3 h-3" />}
-                        {getStatusLabel(agent.status)}
+                        {session.status === 'idle' && <Circle className="w-2 h-2 fill-current" />}
+                        {session.status === 'busy' && <Loader2 className="w-3 h-3 animate-spin" />}
+                        {getStatusLabel(session.status)}
                       </div>
 
                       {/* Quick Select Number */}
                       {index < 9 && !isDisabled && (
                         <div
-                          className="text-[10px] mt-1 opacity-50"
+                          className="text-[10px] opacity-50 shrink-0"
                           style={{ color: isSelected ? theme.colors.accentForeground : theme.colors.textDim }}
                           aria-hidden="true"
                         >
-                          Press {index + 1}
+                          {index + 1}
                         </div>
                       )}
                     </button>
@@ -665,32 +640,32 @@ export function SendToAgentModal({
           >
             <div className="flex justify-between">
               <span style={{ color: theme.colors.textDim }}>
-                Source: {sourceTab ? getTabDisplayName(sourceTab) : 'Unknown'} ({sourceSession.toolType})
+                Source: {sourceTab ? getTabDisplayName(sourceTab) : 'Unknown'}
               </span>
               <span style={{ color: theme.colors.textMain }}>
                 ~{formatTokensCompact(sourceTokens)} tokens
               </span>
             </div>
 
-            {selectedAgent && (
+            {selectedSession && (
               <div className="flex justify-between">
                 <span style={{ color: theme.colors.textDim }}>
-                  Target: {selectedAgent.name}
+                  Target: {selectedSession.name}
                 </span>
                 <span
                   className="flex items-center gap-1"
                   style={{ color: theme.colors.textMain }}
                 >
                   <ArrowRight className="w-3 h-3" aria-hidden="true" />
-                  New session
+                  {getAgentIcon(selectedSession.toolType)}
                 </span>
               </div>
             )}
 
-            {options.groomContext && (
+            {groomContext && (
               <div className="flex justify-between">
                 <span style={{ color: theme.colors.success }}>
-                  After grooming:
+                  After cleaning:
                 </span>
                 <span style={{ color: theme.colors.success }}>
                   ~{formatTokensCompact(estimatedGroomedTokens)} tokens (estimated)
@@ -708,29 +683,13 @@ export function SendToAgentModal({
             >
               <input
                 type="checkbox"
-                checked={options.groomContext}
-                onChange={(e) => setOptions(prev => ({ ...prev, groomContext: e.target.checked }))}
+                checked={groomContext}
+                onChange={(e) => setGroomContext(e.target.checked)}
                 className="rounded"
                 aria-describedby="groom-context-send-desc"
               />
               <span className="text-xs" id="groom-context-send-desc">
-                Groom context for target agent
-              </span>
-            </label>
-
-            <label
-              className="flex items-center gap-2 cursor-pointer"
-              style={{ color: theme.colors.textMain }}
-            >
-              <input
-                type="checkbox"
-                checked={options.createNewSession}
-                onChange={(e) => setOptions(prev => ({ ...prev, createNewSession: e.target.checked }))}
-                className="rounded"
-                aria-describedby="create-new-session-send-desc"
-              />
-              <span className="text-xs" id="create-new-session-send-desc">
-                Create new session
+                Clean context (remove duplicates, reduce size)
               </span>
             </label>
           </fieldset>
@@ -771,7 +730,7 @@ export function SendToAgentModal({
             ) : (
               <>
                 <ArrowRight className="w-4 h-4" aria-hidden="true" />
-                Send to Agent
+                Send to Session
               </>
             )}
           </button>

@@ -190,8 +190,10 @@ interface MainPanelProps {
   /** True if this session is a worktree child (has parentSessionId) */
   isWorktreeChild?: boolean;
 
-  // Context summarization
+  // Context management
   onSummarizeAndContinue?: (tabId: string) => void;
+  onMergeWith?: (tabId: string) => void;
+  onSendToAgent?: (tabId: string) => void;
 
   // Context warning sash settings (Phase 6)
   contextWarningsEnabled?: boolean;
@@ -224,6 +226,8 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
     onOpenCreatePR,
     isWorktreeChild,
     onSummarizeAndContinue,
+    onMergeWith,
+    onSendToAgent,
     // Context warning sash settings (Phase 6)
     contextWarningsEnabled = false,
     contextWarningYellowThreshold = 60,
@@ -846,6 +850,8 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
               onTabReorder={onTabReorder}
               onTabStar={onTabStar}
               onTabMarkUnread={onTabMarkUnread}
+              onMergeWith={onMergeWith}
+              onSendToAgent={onSendToAgent}
               onSummarizeAndContinue={onSummarizeAndContinue}
               showUnreadOnly={showUnreadOnly}
               onToggleUnreadFilter={onToggleUnreadFilter}
