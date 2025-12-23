@@ -2808,4 +2808,212 @@ export function Component() {
       expect(cliDetection.setCachedGhStatus).not.toHaveBeenCalled();
     });
   });
+
+  describe('git:getDefaultBranch', () => {
+    it('should return branch from remote when HEAD branch is available', async () => {
+      vi.mocked(execFile.execFileNoThrow).mockResolvedValueOnce({
+        // git remote show origin
+        stdout: `* remote origin
+  Fetch URL: git@github.com:user/repo.git
+  Push  URL: git@github.com:user/repo.git
+  HEAD branch: main
+  Remote branches:
+    develop tracked
+    main    tracked`,
+        stderr: '',
+        exitCode: 0,
+      });
+
+      const handler = handlers.get('git:getDefaultBranch');
+      const result = await handler!({} as any, '/test/repo');
+
+      expect(execFile.execFileNoThrow).toHaveBeenCalledWith(
+        'git',
+        ['remote', 'show', 'origin'],
+        '/test/repo'
+      );
+      // createIpcHandler wraps with success: true
+      expect(result).toEqual({
+        success: true,
+        branch: 'main',
+      });
+    });
+
+    it('should return master when remote reports master as HEAD branch', async () => {
+      vi.mocked(execFile.execFileNoThrow).mockResolvedValueOnce({
+        // git remote show origin
+        stdout: `* remote origin
+  Fetch URL: git@github.com:user/repo.git
+  Push  URL: git@github.com:user/repo.git
+  HEAD branch: master
+  Remote branches:
+    master tracked`,
+        stderr: '',
+        exitCode: 0,
+      });
+
+      const handler = handlers.get('git:getDefaultBranch');
+      const result = await handler!({} as any, '/test/repo');
+
+      expect(result).toEqual({
+        success: true,
+        branch: 'master',
+      });
+    });
+
+    it('should fallback to main branch when remote check fails but main exists locally', async () => {
+      vi.mocked(execFile.execFileNoThrow)
+        .mockResolvedValueOnce({
+          // git remote show origin - fails (no remote or network error)
+          stdout: '',
+          stderr: 'fatal: unable to access remote',
+          exitCode: 128,
+        })
+        .mockResolvedValueOnce({
+          // git rev-parse --verify main - succeeds
+          stdout: 'abc123def456\n',
+          stderr: '',
+          exitCode: 0,
+        });
+
+      const handler = handlers.get('git:getDefaultBranch');
+      const result = await handler!({} as any, '/test/repo');
+
+      expect(execFile.execFileNoThrow).toHaveBeenCalledWith(
+        'git',
+        ['remote', 'show', 'origin'],
+        '/test/repo'
+      );
+      expect(execFile.execFileNoThrow).toHaveBeenCalledWith(
+        'git',
+        ['rev-parse', '--verify', 'main'],
+        '/test/repo'
+      );
+      expect(result).toEqual({
+        success: true,
+        branch: 'main',
+      });
+    });
+
+    it('should fallback to master branch when remote fails and main does not exist', async () => {
+      vi.mocked(execFile.execFileNoThrow)
+        .mockResolvedValueOnce({
+          // git remote show origin - fails
+          stdout: '',
+          stderr: 'fatal: unable to access remote',
+          exitCode: 128,
+        })
+        .mockResolvedValueOnce({
+          // git rev-parse --verify main - fails (main doesn't exist)
+          stdout: '',
+          stderr: "fatal: Needed a single revision",
+          exitCode: 128,
+        })
+        .mockResolvedValueOnce({
+          // git rev-parse --verify master - succeeds
+          stdout: 'abc123def456\n',
+          stderr: '',
+          exitCode: 0,
+        });
+
+      const handler = handlers.get('git:getDefaultBranch');
+      const result = await handler!({} as any, '/test/repo');
+
+      expect(execFile.execFileNoThrow).toHaveBeenCalledWith(
+        'git',
+        ['rev-parse', '--verify', 'master'],
+        '/test/repo'
+      );
+      expect(result).toEqual({
+        success: true,
+        branch: 'master',
+      });
+    });
+
+    it('should return error when neither main nor master exist and remote fails', async () => {
+      vi.mocked(execFile.execFileNoThrow)
+        .mockResolvedValueOnce({
+          // git remote show origin - fails
+          stdout: '',
+          stderr: 'fatal: no remote',
+          exitCode: 128,
+        })
+        .mockResolvedValueOnce({
+          // git rev-parse --verify main - fails
+          stdout: '',
+          stderr: "fatal: Needed a single revision",
+          exitCode: 128,
+        })
+        .mockResolvedValueOnce({
+          // git rev-parse --verify master - fails
+          stdout: '',
+          stderr: "fatal: Needed a single revision",
+          exitCode: 128,
+        });
+
+      const handler = handlers.get('git:getDefaultBranch');
+      const result = await handler!({} as any, '/test/repo');
+
+      // createIpcHandler wraps error with success: false and error prefix
+      expect(result).toEqual({
+        success: false,
+        error: 'Error: Could not determine default branch',
+      });
+    });
+
+    it('should handle custom default branch names from remote', async () => {
+      vi.mocked(execFile.execFileNoThrow).mockResolvedValueOnce({
+        // git remote show origin - with custom default branch
+        stdout: `* remote origin
+  Fetch URL: git@github.com:user/repo.git
+  HEAD branch: develop
+  Remote branches:
+    develop tracked`,
+        stderr: '',
+        exitCode: 0,
+      });
+
+      const handler = handlers.get('git:getDefaultBranch');
+      const result = await handler!({} as any, '/test/repo');
+
+      expect(result).toEqual({
+        success: true,
+        branch: 'develop',
+      });
+    });
+
+    it('should fallback when remote output does not contain HEAD branch line', async () => {
+      vi.mocked(execFile.execFileNoThrow)
+        .mockResolvedValueOnce({
+          // git remote show origin - succeeds but no HEAD branch line
+          stdout: `* remote origin
+  Fetch URL: git@github.com:user/repo.git
+  Push  URL: git@github.com:user/repo.git
+  Remote branches:
+    main tracked`,
+          stderr: '',
+          exitCode: 0,
+        })
+        .mockResolvedValueOnce({
+          // git rev-parse --verify main - succeeds
+          stdout: 'abc123\n',
+          stderr: '',
+          exitCode: 0,
+        });
+
+      const handler = handlers.get('git:getDefaultBranch');
+      const result = await handler!({} as any, '/test/repo');
+
+      // Should fallback to local main branch check
+      expect(execFile.execFileNoThrow).toHaveBeenCalledWith(
+        'git',
+        ['rev-parse', '--verify', 'main'],
+        '/test/repo'
+      );
+      expect(result).toEqual({
+        success: true,
+        branch: 'main',
+      });
+    });
+  });
 });
