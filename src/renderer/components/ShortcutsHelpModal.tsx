@@ -1,11 +1,12 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { X } from 'lucide-react';
-import type { Theme, Shortcut } from '../types';
+import { X, Award, CheckCircle } from 'lucide-react';
+import type { Theme, Shortcut, KeyboardMasteryStats } from '../types';
 import { fuzzyMatch } from '../utils/search';
 import { MODAL_PRIORITIES } from '../constants/modalPriorities';
 import { FIXED_SHORTCUTS } from '../constants/shortcuts';
 import { formatShortcutKeys } from '../utils/shortcutFormatter';
 import { Modal } from './ui/Modal';
+import { KEYBOARD_MASTERY_LEVELS, getLevelForPercentage } from '../constants/keyboardMastery';
 
 interface ShortcutsHelpModalProps {
   theme: Theme;
@@ -13,9 +14,10 @@ interface ShortcutsHelpModalProps {
   tabShortcuts: Record<string, Shortcut>;
   onClose: () => void;
   hasNoAgents?: boolean;
+  keyboardMasteryStats?: KeyboardMasteryStats;
 }
 
-export function ShortcutsHelpModal({ theme, shortcuts, tabShortcuts, onClose, hasNoAgents }: ShortcutsHelpModalProps) {
+export function ShortcutsHelpModal({ theme, shortcuts, tabShortcuts, onClose, hasNoAgents, keyboardMasteryStats }: ShortcutsHelpModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -27,6 +29,12 @@ export function ShortcutsHelpModal({ theme, shortcuts, tabShortcuts, onClose, ha
   }), [shortcuts, tabShortcuts]);
 
   const totalShortcuts = Object.values(allShortcuts).length;
+
+  // Calculate mastery progress
+  const usedShortcutsCount = keyboardMasteryStats?.usedShortcuts.length ?? 0;
+  const masteryPercentage = totalShortcuts > 0 ? Math.round((usedShortcutsCount / totalShortcuts) * 100) : 0;
+  const currentLevel = keyboardMasteryStats ? getLevelForPercentage(masteryPercentage) : KEYBOARD_MASTERY_LEVELS[0];
+  const usedShortcutIds = new Set(keyboardMasteryStats?.usedShortcuts ?? []);
   const filteredShortcuts = Object.values(allShortcuts)
     .filter(sc =>
       fuzzyMatch(sc.label, searchQuery) ||
@@ -35,7 +43,7 @@ export function ShortcutsHelpModal({ theme, shortcuts, tabShortcuts, onClose, ha
     .sort((a, b) => a.label.localeCompare(b.label));
   const filteredCount = filteredShortcuts.length;
 
-  // Custom header with title, badge, search input, and close button
+  // Custom header with title, badge, mastery progress, search input, and close button
   const customHeader = (
     <div className="p-4 border-b" style={{ borderColor: theme.colors.border }}>
       <div className="flex items-center justify-between mb-3">
@@ -49,6 +57,33 @@ export function ShortcutsHelpModal({ theme, shortcuts, tabShortcuts, onClose, ha
           <X className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Keyboard Mastery Progress */}
+      {keyboardMasteryStats && (
+        <div className="mb-3 p-2 rounded" style={{ backgroundColor: theme.colors.bgActivity }}>
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center gap-1.5">
+              <Award className="w-4 h-4" style={{ color: theme.colors.accent }} />
+              <span className="text-xs font-medium" style={{ color: theme.colors.textMain }}>
+                {currentLevel.name}
+              </span>
+            </div>
+            <span className="text-xs" style={{ color: theme.colors.textDim }}>
+              {usedShortcutsCount} / {totalShortcuts} mastered ({masteryPercentage}%)
+            </span>
+          </div>
+          <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: theme.colors.border }}>
+            <div
+              className="h-full rounded-full transition-all duration-300"
+              style={{
+                width: `${masteryPercentage}%`,
+                backgroundColor: theme.colors.accent,
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       {hasNoAgents && (
         <p className="text-xs mb-3 px-2 py-1.5 rounded" style={{ backgroundColor: theme.colors.accent + '20', color: theme.colors.accent }}>
           Note: Most functionality is unavailable until you've created your first agent.
@@ -84,14 +119,36 @@ export function ShortcutsHelpModal({ theme, shortcuts, tabShortcuts, onClose, ha
       initialFocusRef={searchInputRef}
     >
       <div className="space-y-2 max-h-[400px] overflow-y-auto scrollbar-thin -my-2">
-        {filteredShortcuts.map((sc, i) => (
-          <div key={i} className="flex justify-between items-center text-sm">
-            <span style={{ color: theme.colors.textDim }}>{sc.label}</span>
-            <kbd className="px-2 py-1 rounded border font-mono text-xs font-bold" style={{ backgroundColor: theme.colors.bgActivity, borderColor: theme.colors.border, color: theme.colors.textMain }}>
-              {formatShortcutKeys(sc.keys)}
-            </kbd>
-          </div>
-        ))}
+        {filteredShortcuts.map((sc, i) => {
+          const isUsed = usedShortcutIds.has(sc.id);
+          return (
+            <div key={i} className="flex justify-between items-center text-sm gap-2">
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                {keyboardMasteryStats && (
+                  <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center">
+                    {isUsed ? (
+                      <CheckCircle className="w-3.5 h-3.5" style={{ color: theme.colors.accent }} />
+                    ) : (
+                      <span
+                        className="w-3 h-3 rounded-full border"
+                        style={{ borderColor: theme.colors.border }}
+                      />
+                    )}
+                  </span>
+                )}
+                <span
+                  className="truncate"
+                  style={{ color: isUsed ? theme.colors.textMain : theme.colors.textDim }}
+                >
+                  {sc.label}
+                </span>
+              </div>
+              <kbd className="px-2 py-1 rounded border font-mono text-xs font-bold flex-shrink-0" style={{ backgroundColor: theme.colors.bgActivity, borderColor: theme.colors.border, color: theme.colors.textMain }}>
+                {formatShortcutKeys(sc.keys)}
+              </kbd>
+            </div>
+          );
+        })}
         {filteredCount === 0 && (
           <div className="text-center text-sm opacity-50" style={{ color: theme.colors.textDim }}>
             No shortcuts found

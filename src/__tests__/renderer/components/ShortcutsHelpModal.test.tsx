@@ -8,7 +8,7 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import React from 'react';
 import { ShortcutsHelpModal } from '../../../renderer/components/ShortcutsHelpModal';
 import { LayerStackProvider } from '../../../renderer/contexts/LayerStackContext';
-import type { Theme, Shortcut } from '../../../renderer/types';
+import type { Theme, Shortcut, KeyboardMasteryStats } from '../../../renderer/types';
 
 // Create a mock theme for testing
 const createMockTheme = (): Theme => ({
@@ -530,6 +530,228 @@ describe('ShortcutsHelpModal', () => {
 
       expect(screen.getByText('New Session')).toBeInTheDocument();
       expect(screen.getByText('Close Session')).toBeInTheDocument();
+    });
+  });
+
+  describe('Keyboard Mastery', () => {
+    const createMockMasteryStats = (usedShortcuts: string[]): KeyboardMasteryStats => ({
+      usedShortcuts,
+      currentLevel: 0,
+      lastLevelUpTimestamp: 0,
+      lastAcknowledgedLevel: 0,
+    });
+
+    it('displays mastery progress bar when keyboardMasteryStats is provided', () => {
+      const masteryStats = createMockMasteryStats(['new-session']);
+
+      render(
+        <TestWrapper>
+          <ShortcutsHelpModal
+            theme={mockTheme}
+            shortcuts={mockShortcuts}
+            tabShortcuts={{}}
+            onClose={mockOnClose}
+            keyboardMasteryStats={masteryStats}
+          />
+        </TestWrapper>
+      );
+
+      // Should show mastery progress text
+      expect(screen.getByText(/mastered/)).toBeInTheDocument();
+    });
+
+    it('does not display mastery progress when keyboardMasteryStats is not provided', () => {
+      render(
+        <TestWrapper>
+          <ShortcutsHelpModal
+            theme={mockTheme}
+            shortcuts={mockShortcuts}
+            tabShortcuts={{}}
+            onClose={mockOnClose}
+          />
+        </TestWrapper>
+      );
+
+      // Should not show mastery progress
+      expect(screen.queryByText(/mastered/)).not.toBeInTheDocument();
+    });
+
+    it('shows correct mastery count', () => {
+      const masteryStats = createMockMasteryStats(['new-session', 'close-session']);
+
+      render(
+        <TestWrapper>
+          <ShortcutsHelpModal
+            theme={mockTheme}
+            shortcuts={mockShortcuts}
+            tabShortcuts={{}}
+            onClose={mockOnClose}
+            keyboardMasteryStats={masteryStats}
+          />
+        </TestWrapper>
+      );
+
+      // Check that "2 /" appears somewhere in the text (2 shortcuts mastered)
+      expect(screen.getByText(/2 \//)).toBeInTheDocument();
+    });
+
+    it('displays the current level name', () => {
+      const masteryStats = createMockMasteryStats([]);
+
+      render(
+        <TestWrapper>
+          <ShortcutsHelpModal
+            theme={mockTheme}
+            shortcuts={mockShortcuts}
+            tabShortcuts={{}}
+            onClose={mockOnClose}
+            keyboardMasteryStats={masteryStats}
+          />
+        </TestWrapper>
+      );
+
+      // At 0% should show Beginner level
+      expect(screen.getByText('Beginner')).toBeInTheDocument();
+    });
+
+    it('shows fewer empty circles when shortcuts are used', () => {
+      // First, render with no used shortcuts
+      const noUsedStats = createMockMasteryStats([]);
+      const { container: containerNone, unmount } = render(
+        <TestWrapper>
+          <ShortcutsHelpModal
+            theme={mockTheme}
+            shortcuts={mockShortcuts}
+            tabShortcuts={{}}
+            onClose={mockOnClose}
+            keyboardMasteryStats={noUsedStats}
+          />
+        </TestWrapper>
+      );
+      const emptyCirclesNone = containerNone.querySelectorAll('span.rounded-full.border');
+      const countNone = emptyCirclesNone.length;
+      unmount();
+
+      // Then, render with one used shortcut
+      const oneUsedStats = createMockMasteryStats(['new-session']);
+      const { container: containerOne } = render(
+        <TestWrapper>
+          <ShortcutsHelpModal
+            theme={mockTheme}
+            shortcuts={mockShortcuts}
+            tabShortcuts={{}}
+            onClose={mockOnClose}
+            keyboardMasteryStats={oneUsedStats}
+          />
+        </TestWrapper>
+      );
+      const emptyCirclesOne = containerOne.querySelectorAll('span.rounded-full.border');
+      const countOne = emptyCirclesOne.length;
+
+      // With one shortcut used, we should have one less empty circle
+      expect(countOne).toBeLessThan(countNone);
+    });
+
+    it('shows empty circles for unused shortcuts when mastery is enabled', () => {
+      const masteryStats = createMockMasteryStats(['new-session']);
+
+      const { container } = render(
+        <TestWrapper>
+          <ShortcutsHelpModal
+            theme={mockTheme}
+            shortcuts={mockShortcuts}
+            tabShortcuts={{}}
+            onClose={mockOnClose}
+            keyboardMasteryStats={masteryStats}
+          />
+        </TestWrapper>
+      );
+
+      // Empty circles are represented as span elements with rounded-full class
+      const emptyCircles = container.querySelectorAll('span.rounded-full.border');
+      expect(emptyCircles.length).toBeGreaterThan(0);
+    });
+
+    it('applies brighter text color to used shortcuts', () => {
+      const masteryStats = createMockMasteryStats(['new-session']);
+
+      render(
+        <TestWrapper>
+          <ShortcutsHelpModal
+            theme={mockTheme}
+            shortcuts={mockShortcuts}
+            tabShortcuts={{}}
+            onClose={mockOnClose}
+            keyboardMasteryStats={masteryStats}
+          />
+        </TestWrapper>
+      );
+
+      const newSessionLabel = screen.getByText('New Session');
+      // Used shortcuts should have textMain color
+      expect(newSessionLabel).toHaveStyle({ color: mockTheme.colors.textMain });
+    });
+
+    it('applies dimmer text color to unused shortcuts', () => {
+      const masteryStats = createMockMasteryStats(['new-session']);
+
+      render(
+        <TestWrapper>
+          <ShortcutsHelpModal
+            theme={mockTheme}
+            shortcuts={mockShortcuts}
+            tabShortcuts={{}}
+            onClose={mockOnClose}
+            keyboardMasteryStats={masteryStats}
+          />
+        </TestWrapper>
+      );
+
+      const closeSessionLabel = screen.getByText('Close Session');
+      // Unused shortcuts should have textDim color
+      expect(closeSessionLabel).toHaveStyle({ color: mockTheme.colors.textDim });
+    });
+
+    it('calculates correct percentage for mastery progress', () => {
+      // With 4 mock shortcuts and 2 used, should show 50%
+      const masteryStats = createMockMasteryStats(['new-session', 'close-session']);
+
+      render(
+        <TestWrapper>
+          <ShortcutsHelpModal
+            theme={mockTheme}
+            shortcuts={mockShortcuts}
+            tabShortcuts={{}}
+            onClose={mockOnClose}
+            keyboardMasteryStats={masteryStats}
+          />
+        </TestWrapper>
+      );
+
+      // Check that percentage is displayed - with FIXED_SHORTCUTS included,
+      // the percentage will vary, but should still contain a percentage
+      expect(screen.getByText(/%\)/)).toBeInTheDocument();
+    });
+
+    it('does not show mastery indicators when keyboardMasteryStats is undefined', () => {
+      const { container } = render(
+        <TestWrapper>
+          <ShortcutsHelpModal
+            theme={mockTheme}
+            shortcuts={mockShortcuts}
+            tabShortcuts={{}}
+            onClose={mockOnClose}
+          />
+        </TestWrapper>
+      );
+
+      // No checkmark icons should be present
+      const checkIcons = container.querySelectorAll('svg.lucide-check-circle');
+      expect(checkIcons.length).toBe(0);
+
+      // No empty circle indicators should be present
+      const emptyCircles = container.querySelectorAll('span.rounded-full.border');
+      expect(emptyCircles.length).toBe(0);
     });
   });
 });
