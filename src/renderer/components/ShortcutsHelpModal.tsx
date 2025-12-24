@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { X, Award, CheckCircle } from 'lucide-react';
+import { X, Award, CheckCircle, Trophy } from 'lucide-react';
 import type { Theme, Shortcut, KeyboardMasteryStats } from '../types';
 import { fuzzyMatch } from '../utils/search';
 import { MODAL_PRIORITIES } from '../constants/modalPriorities';
@@ -34,6 +34,9 @@ export function ShortcutsHelpModal({ theme, shortcuts, tabShortcuts, onClose, ha
   const usedShortcutsCount = keyboardMasteryStats?.usedShortcuts.length ?? 0;
   const masteryPercentage = totalShortcuts > 0 ? Math.round((usedShortcutsCount / totalShortcuts) * 100) : 0;
   const currentLevel = keyboardMasteryStats ? getLevelForPercentage(masteryPercentage) : KEYBOARD_MASTERY_LEVELS[0];
+  const nextLevel = useMemo(() => {
+    return KEYBOARD_MASTERY_LEVELS.find(l => l.threshold > masteryPercentage);
+  }, [masteryPercentage]);
   const usedShortcutIds = new Set(keyboardMasteryStats?.usedShortcuts ?? []);
   const filteredShortcuts = Object.values(allShortcuts)
     .filter(sc =>
@@ -81,6 +84,28 @@ export function ShortcutsHelpModal({ theme, shortcuts, tabShortcuts, onClose, ha
               }}
             />
           </div>
+          {/* Next level hint */}
+          {masteryPercentage < 100 && nextLevel && (
+            <p className="text-xs mt-1.5" style={{ color: theme.colors.textDim }}>
+              {nextLevel.threshold - masteryPercentage}% more to reach {nextLevel.name}
+            </p>
+          )}
+          {/* Special 100% completion styling */}
+          {masteryPercentage === 100 && (
+            <div
+              className="flex items-center justify-center gap-2 mt-2 py-1.5 px-3 rounded-lg"
+              style={{
+                backgroundColor: `${theme.colors.accent}20`,
+                border: `1px solid ${theme.colors.accent}40`,
+              }}
+            >
+              <Trophy className="w-4 h-4" style={{ color: '#FFD700' }} />
+              <span className="text-xs font-medium" style={{ color: theme.colors.accent }}>
+                Keyboard Maestro - Complete Mastery!
+              </span>
+              <Trophy className="w-4 h-4" style={{ color: '#FFD700' }} />
+            </div>
+          )}
         </div>
       )}
 
