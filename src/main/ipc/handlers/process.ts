@@ -313,4 +313,51 @@ export function registerProcessHandlers(deps: ProcessHandlerDependencies): void 
       );
     })
   );
+
+  // Write tool result to Claude Code (for AskUserQuestion responses)
+  ipcMain.handle(
+    'process:writeToolResult',
+    withIpcErrorLogging(handlerOpts('writeToolResult'), async (
+      sessionId: string,
+      toolUseId: string,
+      answers: Record<string, string | string[]>
+    ) => {
+      const processManager = requireProcessManager(getProcessManager);
+
+      // Format tool_result as proper stream-json message
+      // Claude Code expects: {"type":"user","content":[{"type":"tool_result","tool_use_id":"...","content":"..."}]}
+      const toolResult = {
+        type: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: toolUseId,
+          content: JSON.stringify(answers)
+        }]
+      };
+
+      // Convert to newline-delimited JSON format for Claude Code's stream-json input
+      const toolResultJson = JSON.stringify(toolResult) + '\n';
+
+      logger.info(`Writing tool result to Claude Code`, LOG_CONTEXT, {
+        sessionId,
+        toolUseId,
+        answerCount: Object.keys(answers).length,
+        messageLength: toolResultJson.length
+      });
+
+      logger.debug(`Tool result content`, LOG_CONTEXT, {
+        toolResult: toolResultJson.trim()
+      });
+
+      // Write to Claude Code stdin using processManager.write()
+      const success = processManager.write(sessionId, toolResultJson);
+
+      if (!success) {
+        logger.error(`Failed to write tool result to session`, LOG_CONTEXT, { sessionId, toolUseId });
+        throw new Error(`Failed to write tool result to session ${sessionId}`);
+      }
+
+      return { success: true };
+    })
+  );
 }
