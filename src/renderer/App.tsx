@@ -9434,6 +9434,8 @@ export default function MaestroConsole() {
         setShellEnvVars={setShellEnvVars}
         ghPath={ghPath}
         setGhPath={setGhPath}
+        webInterfaceAutoStart={settings.webInterfaceAutoStart}
+        setWebInterfaceAutoStart={settings.setWebInterfaceAutoStart}
         enterToSendAI={enterToSendAI}
         setEnterToSendAI={setEnterToSendAI}
         enterToSendTerminal={enterToSendTerminal}

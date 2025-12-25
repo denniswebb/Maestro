@@ -365,6 +365,14 @@ interface MaestroAPI {
   webserver: {
     getUrl: () => Promise<string>;
     getConnectedClients: () => Promise<number>;
+    getToken: () => Promise<string | null>;
+    rotateToken: () => Promise<{
+      success: boolean;
+      token?: string;
+      url?: string;
+      restarted?: boolean;
+      error?: string;
+    }>;
   };
   live: {
     toggle: (sessionId: string, agentSessionId?: string) => Promise<{ live: boolean; url: string | null }>;

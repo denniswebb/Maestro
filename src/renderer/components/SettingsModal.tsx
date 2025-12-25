@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, memo } from 'react';
-import { X, Key, Moon, Sun, Keyboard, Check, Terminal, Bell, Cpu, Settings, Palette, Sparkles, History, Download, Bug, Cloud, FolderSync, RotateCcw, Folder, ChevronDown, Plus, Trash2, Brain, AlertTriangle } from 'lucide-react';
+import { X, Key, Moon, Sun, Keyboard, Check, Terminal, Bell, Cpu, Settings, Palette, Sparkles, History, Download, Bug, Cloud, FolderSync, RotateCcw, Folder, ChevronDown, Plus, Trash2, Brain, AlertTriangle, Globe, Copy } from 'lucide-react';
 import { useSettings } from '../hooks/useSettings';
 import type { Theme, ThemeColors, ThemeId, Shortcut, ShellInfo, CustomAICommand, LLMProvider } from '../types';
 import { CustomThemeBuilder } from './CustomThemeBuilder';
@@ -194,6 +194,8 @@ interface SettingsModalProps {
   setShellEnvVars: (vars: Record<string, string>) => void;
   ghPath: string;
   setGhPath: (path: string) => void;
+  webInterfaceAutoStart: boolean;
+  setWebInterfaceAutoStart: (value: boolean) => void;
   enterToSendAI: boolean;
   setEnterToSendAI: (value: boolean) => void;
   enterToSendTerminal: boolean;
@@ -251,6 +253,13 @@ export const SettingsModal = memo(function SettingsModal(props: SettingsModalPro
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncMigratedCount, setSyncMigratedCount] = useState<number | null>(null);
 
+  // Web interface state
+  const [webInterfaceToken, setWebInterfaceToken] = useState<string | null>(null);
+  const [webTokenLoading, setWebTokenLoading] = useState(false);
+  const [webTokenError, setWebTokenError] = useState<string | null>(null);
+  const [webTokenCopied, setWebTokenCopied] = useState(false);
+  const [webTokenRotating, setWebTokenRotating] = useState(false);
+
   // Layer stack integration
   const { registerLayer, unregisterLayer, updateLayerHandler } = useLayerStack();
   const layerIdRef = useRef<string>();
@@ -278,6 +287,18 @@ export const SettingsModal = memo(function SettingsModal(props: SettingsModalPro
       }).catch((err) => {
         console.error('Failed to load sync settings:', err);
         setSyncError('Failed to load storage settings');
+      });
+
+      // Load web interface token
+      setWebTokenLoading(true);
+      window.maestro.webserver.getToken().then((token) => {
+        setWebInterfaceToken(token);
+        setWebTokenLoading(false);
+        setWebTokenError(null);
+      }).catch((err) => {
+        console.error('Failed to load web interface token:', err);
+        setWebTokenError('Failed to load token');
+        setWebTokenLoading(false);
       });
     }
   }, [isOpen, initialTab]);
@@ -1268,6 +1289,124 @@ export const SettingsModal = memo(function SettingsModal(props: SettingsModalPro
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* Web Interface Auto-Start */}
+              <div>
+                <label className="block text-xs font-bold opacity-70 uppercase mb-2 flex items-center gap-2">
+                  <Globe className="w-3 h-3" />
+                  Web Interface
+                </label>
+                <label
+                  className="flex items-center gap-3 p-3 rounded border cursor-pointer hover:bg-opacity-10"
+                  style={{ borderColor: theme.colors.border, backgroundColor: theme.colors.bgMain }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={props.webInterfaceAutoStart}
+                    onChange={(e) => {
+                      props.setWebInterfaceAutoStart(e.target.checked);
+                      // Reload token after auto-start change
+                      if (e.target.checked) {
+                        setWebTokenLoading(true);
+                        window.maestro.webserver.getToken().then((token) => {
+                          setWebInterfaceToken(token);
+                          setWebTokenLoading(false);
+                        }).catch(() => setWebTokenLoading(false));
+                      }
+                    }}
+                    className="w-4 h-4"
+                    style={{ accentColor: theme.colors.accent }}
+                  />
+                  <div className="flex-1">
+                    <div className="font-medium" style={{ color: theme.colors.textMain }}>
+                      Auto-start web interface on app launch
+                    </div>
+                    <div className="text-xs opacity-50 mt-0.5" style={{ color: theme.colors.textDim }}>
+                      When enabled, web interface starts automatically with a persistent security token
+                    </div>
+                  </div>
+                </label>
+
+                {/* Token Display and Rotation (only show if auto-start enabled) */}
+                {props.webInterfaceAutoStart && (
+                  <div className="mt-3 p-3 rounded border space-y-3" style={{ borderColor: theme.colors.border, backgroundColor: theme.colors.bgActivity }}>
+                    {/* Current Token Display */}
+                    <div>
+                      <label className="block text-xs opacity-60 mb-1">Current Security Token</label>
+                      {webTokenLoading ? (
+                        <div className="text-xs opacity-50 p-2">Loading token...</div>
+                      ) : webTokenError ? (
+                        <div className="text-xs p-2 rounded" style={{ backgroundColor: theme.colors.error + '20', color: theme.colors.error }}>
+                          {webTokenError}
+                        </div>
+                      ) : webInterfaceToken ? (
+                        <div className="flex gap-2 items-center">
+                          <div className="flex-1 p-2 rounded border bg-transparent font-mono text-xs truncate" style={{ borderColor: theme.colors.border, color: theme.colors.textMain }}>
+                            {webInterfaceToken.substring(0, 8)}...{webInterfaceToken.substring(webInterfaceToken.length - 4)}
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (webInterfaceToken) {
+                                navigator.clipboard.writeText(webInterfaceToken);
+                                setWebTokenCopied(true);
+                                setTimeout(() => setWebTokenCopied(false), 2000);
+                              }
+                            }}
+                            className="p-2 rounded hover:bg-white/10 transition-colors"
+                            title="Copy token to clipboard"
+                            style={{ color: webTokenCopied ? theme.colors.success : theme.colors.textDim }}
+                          >
+                            {webTokenCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="text-xs opacity-50 p-2">No token available</div>
+                      )}
+                      <p className="text-xs opacity-50 mt-1">
+                        This token is required to access the web interface and persists across app restarts.
+                      </p>
+                    </div>
+
+                    {/* Rotate Token Button */}
+                    <div>
+                      <button
+                        onClick={async () => {
+                          if (window.confirm('This will rotate the security token and restart the web server. All existing URLs will be invalidated. Continue?')) {
+                            setWebTokenRotating(true);
+                            setWebTokenError(null);
+                            try {
+                              const result = await window.maestro.webserver.rotateToken();
+                              if (result.success && result.token) {
+                                setWebInterfaceToken(result.token);
+                                // Show success toast or notification
+                                console.log('Token rotated successfully:', result.restarted ? 'Server restarted' : 'Token updated');
+                              } else {
+                                setWebTokenError(result.error || 'Failed to rotate token');
+                              }
+                            } catch (err: any) {
+                              setWebTokenError(err.message || 'Failed to rotate token');
+                            } finally {
+                              setWebTokenRotating(false);
+                            }
+                          }
+                        }}
+                        disabled={webTokenRotating}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-medium transition-colors disabled:opacity-50"
+                        style={{
+                          backgroundColor: theme.colors.warning,
+                          color: theme.colors.bgMain,
+                        }}
+                      >
+                        <RotateCcw className={`w-3 h-3 ${webTokenRotating ? 'animate-spin' : ''}`} />
+                        {webTokenRotating ? 'Rotating Token...' : 'Rotate Security Token'}
+                      </button>
+                      <p className="text-xs opacity-50 mt-1">
+                        Generate a new security token. Use this if you suspect the current token has been compromised.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Settings Storage Location */}
