@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { LLMProvider, ThemeId, ThemeColors, Shortcut, CustomAICommand, GlobalStats, AutoRunStats, OnboardingStats, LeaderboardRegistration, ContextManagementSettings, KeyboardMasteryStats } from '../types';
 import { DEFAULT_CUSTOM_THEME_COLORS } from '../constants/themes';
 import { DEFAULT_SHORTCUTS, TAB_SHORTCUTS, FIXED_SHORTCUTS } from '../constants/shortcuts';
@@ -358,6 +358,12 @@ export function useSettings(): UseSettingsReturn {
 
   // Keyboard Mastery stats (persistent gamification)
   const [keyboardMasteryStats, setKeyboardMasteryStatsState] = useState<KeyboardMasteryStats>(DEFAULT_KEYBOARD_MASTERY_STATS);
+  // Ref to read current stats synchronously for level-up detection
+  const keyboardMasteryStatsRef = useRef<KeyboardMasteryStats>(DEFAULT_KEYBOARD_MASTERY_STATS);
+  // Keep ref in sync with state
+  useEffect(() => {
+    keyboardMasteryStatsRef.current = keyboardMasteryStats;
+  }, [keyboardMasteryStats]);
 
   // Wrapper functions that persist to electron-store
   // PERF: All wrapped in useCallback to prevent re-renders
@@ -938,41 +944,42 @@ export function useSettings(): UseSettingsReturn {
   // Keyboard Mastery setters and functions
   const setKeyboardMasteryStats = useCallback((value: KeyboardMasteryStats) => {
     setKeyboardMasteryStatsState(value);
+    keyboardMasteryStatsRef.current = value; // Update ref immediately
     window.maestro.settings.set('keyboardMasteryStats', value);
   }, []);
 
   // Record usage of a shortcut - returns newLevel if user leveled up
+  // Note: We read current state synchronously to return the correct level-up info
   const recordShortcutUsage = useCallback((shortcutId: string): { newLevel: number | null } => {
-    let newLevel: number | null = null;
+    // Read current state synchronously to calculate level-up before setState
+    const currentStats = keyboardMasteryStatsRef.current;
 
-    setKeyboardMasteryStatsState(prev => {
-      // Skip if already tracked
-      if (prev.usedShortcuts.includes(shortcutId)) {
-        return prev;
-      }
+    // Skip if already tracked
+    if (currentStats.usedShortcuts.includes(shortcutId)) {
+      return { newLevel: null };
+    }
 
-      // Add new shortcut to the list
-      const updatedShortcuts = [...prev.usedShortcuts, shortcutId];
+    // Add new shortcut to the list
+    const updatedShortcuts = [...currentStats.usedShortcuts, shortcutId];
 
-      // Calculate new percentage and level
-      const percentage = (updatedShortcuts.length / TOTAL_SHORTCUTS_COUNT) * 100;
-      const newLevelIndex = getLevelIndex(percentage);
+    // Calculate new percentage and level
+    const percentage = (updatedShortcuts.length / TOTAL_SHORTCUTS_COUNT) * 100;
+    const newLevelIndex = getLevelIndex(percentage);
 
-      // Check if user leveled up
-      if (newLevelIndex > prev.currentLevel) {
-        newLevel = newLevelIndex;
-      }
+    // Check if user leveled up
+    const newLevel = newLevelIndex > currentStats.currentLevel ? newLevelIndex : null;
 
-      const updated: KeyboardMasteryStats = {
-        usedShortcuts: updatedShortcuts,
-        currentLevel: newLevelIndex,
-        lastLevelUpTimestamp: newLevel !== null ? Date.now() : prev.lastLevelUpTimestamp,
-        lastAcknowledgedLevel: prev.lastAcknowledgedLevel,
-      };
+    const updated: KeyboardMasteryStats = {
+      usedShortcuts: updatedShortcuts,
+      currentLevel: newLevelIndex,
+      lastLevelUpTimestamp: newLevel !== null ? Date.now() : currentStats.lastLevelUpTimestamp,
+      lastAcknowledgedLevel: currentStats.lastAcknowledgedLevel,
+    };
 
-      window.maestro.settings.set('keyboardMasteryStats', updated);
-      return updated;
-    });
+    // Update state, ref, and persist
+    setKeyboardMasteryStatsState(updated);
+    keyboardMasteryStatsRef.current = updated; // Update ref immediately for next call
+    window.maestro.settings.set('keyboardMasteryStats', updated);
 
     return { newLevel };
   }, []);

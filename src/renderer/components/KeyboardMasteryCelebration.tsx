@@ -276,7 +276,7 @@ export function KeyboardMasteryCelebration({
             <p className="text-lg" style={{ color: theme.colors.textMain }}>
               You've reached{' '}
               <span style={{ color: isMaestro ? goldColor : musicPurple, fontWeight: 600 }}>
-                {levelInfo.name}
+                {isMaestro ? 'the highest level' : levelInfo.name}
               </span>
             </p>
           </div>

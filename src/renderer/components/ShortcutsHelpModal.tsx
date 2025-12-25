@@ -61,54 +61,6 @@ export function ShortcutsHelpModal({ theme, shortcuts, tabShortcuts, onClose, ha
         </button>
       </div>
 
-      {/* Keyboard Mastery Progress */}
-      {keyboardMasteryStats && (
-        <div className="mb-3 p-2 rounded" style={{ backgroundColor: theme.colors.bgActivity }}>
-          <div className="flex items-center justify-between mb-1.5">
-            <div className="flex items-center gap-1.5">
-              <Award className="w-4 h-4" style={{ color: theme.colors.accent }} />
-              <span className="text-xs font-medium" style={{ color: theme.colors.textMain }}>
-                {currentLevel.name}
-              </span>
-            </div>
-            <span className="text-xs" style={{ color: theme.colors.textDim }}>
-              {usedShortcutsCount} / {totalShortcuts} mastered ({masteryPercentage}%)
-            </span>
-          </div>
-          <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: theme.colors.border }}>
-            <div
-              className="h-full rounded-full transition-all duration-300"
-              style={{
-                width: `${masteryPercentage}%`,
-                backgroundColor: theme.colors.accent,
-              }}
-            />
-          </div>
-          {/* Next level hint */}
-          {masteryPercentage < 100 && nextLevel && (
-            <p className="text-xs mt-1.5" style={{ color: theme.colors.textDim }}>
-              {nextLevel.threshold - masteryPercentage}% more to reach {nextLevel.name}
-            </p>
-          )}
-          {/* Special 100% completion styling */}
-          {masteryPercentage === 100 && (
-            <div
-              className="flex items-center justify-center gap-2 mt-2 py-1.5 px-3 rounded-lg"
-              style={{
-                backgroundColor: `${theme.colors.accent}20`,
-                border: `1px solid ${theme.colors.accent}40`,
-              }}
-            >
-              <Trophy className="w-4 h-4" style={{ color: '#FFD700' }} />
-              <span className="text-xs font-medium" style={{ color: theme.colors.accent }}>
-                Keyboard Maestro - Complete Mastery!
-              </span>
-              <Trophy className="w-4 h-4" style={{ color: '#FFD700' }} />
-            </div>
-          )}
-        </div>
-      )}
-
       {hasNoAgents && (
         <p className="text-xs mb-3 px-2 py-1.5 rounded" style={{ backgroundColor: theme.colors.accent + '20', color: theme.colors.accent }}>
           Note: Most functionality is unavailable until you've created your first agent.
@@ -123,15 +75,62 @@ export function ShortcutsHelpModal({ theme, shortcuts, tabShortcuts, onClose, ha
         className="w-full px-3 py-2 rounded border bg-transparent outline-none text-sm"
         style={{ borderColor: theme.colors.border, color: theme.colors.textMain }}
       />
+      <p className="text-xs mt-2" style={{ color: theme.colors.textDim }}>
+        Many shortcuts can be customized from Settings → Shortcuts.
+      </p>
     </div>
   );
 
-  // Footer with info text
-  const footer = (
-    <p className="text-xs w-full text-left" style={{ color: theme.colors.textDim }}>
-      Many shortcuts can be customized from Settings → Shortcuts.
-    </p>
-  );
+  // Footer with mastery progress
+  const footer = keyboardMasteryStats ? (
+    <div className="w-full space-y-2">
+      {/* Keyboard Mastery Progress */}
+      <div className="p-2 rounded" style={{ backgroundColor: theme.colors.bgActivity }}>
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center gap-1.5">
+            <Award className="w-4 h-4" style={{ color: theme.colors.accent }} />
+            <span className="text-xs font-medium" style={{ color: theme.colors.textMain }}>
+              {currentLevel.name}
+            </span>
+          </div>
+          <span className="text-xs" style={{ color: theme.colors.textDim }}>
+            {usedShortcutsCount} / {totalShortcuts} mastered ({masteryPercentage}%)
+          </span>
+        </div>
+        <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: theme.colors.border }}>
+          <div
+            className="h-full rounded-full transition-all duration-300"
+            style={{
+              width: `${masteryPercentage}%`,
+              backgroundColor: theme.colors.accent,
+            }}
+          />
+        </div>
+        {/* Next level hint */}
+        {masteryPercentage < 100 && nextLevel && (
+          <p className="text-xs mt-1.5" style={{ color: theme.colors.textDim }}>
+            {nextLevel.threshold - masteryPercentage}% more to reach {nextLevel.name}
+          </p>
+        )}
+      </div>
+      {/* Special 100% completion badge - standalone below the progress box */}
+      {masteryPercentage === 100 && (
+        <div
+          className="flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg"
+          style={{
+            backgroundColor: `${theme.colors.accent}20`,
+            border: `1px solid ${theme.colors.accent}40`,
+          }}
+        >
+          <Trophy className="w-4 h-4" style={{ color: '#FFD700' }} />
+          <span className="text-xs font-medium" style={{ color: theme.colors.accent }}>
+            Keyboard Maestro - Complete Mastery!
+          </span>
+          <Trophy className="w-4 h-4" style={{ color: '#FFD700' }} />
+        </div>
+      )}
+    </div>
+  ) : undefined;
 
   return (
     <Modal
