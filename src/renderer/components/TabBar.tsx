@@ -640,33 +640,72 @@ export function TabBar({
   }, [tabs.length, displayedTabs.length]);
 
   // Build context menu items for the selected tab
-  const contextMenuItems: ContextMenuItem[] = contextMenuTab ? [
-    // Placeholder items - actual functionality will be added in Phase 2
-    {
-      label: 'Close Tab',
-      icon: <X className="w-3.5 h-3.5" />,
-      onClick: () => {
-        // Placeholder - will be implemented in Phase 2
-        console.log('Close tab:', contextMenuTab.id);
-      }
-    },
-    {
-      label: 'Close Other Tabs',
-      icon: <X className="w-3.5 h-3.5" />,
-      onClick: () => {
-        // Placeholder - will be implemented in Phase 2
-        console.log('Close other tabs except:', contextMenuTab.id);
-      }
-    },
-    {
-      label: 'Close Tabs to the Right',
-      icon: <X className="w-3.5 h-3.5" />,
-      onClick: () => {
-        // Placeholder - will be implemented in Phase 2
-        console.log('Close tabs to the right of:', contextMenuTab.id);
-      }
-    },
-  ] : [];
+  const contextMenuItems: ContextMenuItem[] = contextMenuTab ? (() => {
+    const clickedTabIndex = tabs.findIndex(t => t.id === contextMenuTab.id);
+    const isFirstTab = clickedTabIndex === 0;
+    const isLastTab = clickedTabIndex === tabs.length - 1;
+    const hasOnlyOneTab = tabs.length === 1;
+
+    return [
+      {
+        label: 'Close',
+        icon: <X className="w-3.5 h-3.5" />,
+        onClick: () => {
+          onTabClose(contextMenuTab.id);
+        },
+        disabled: hasOnlyOneTab // Can't close the last tab
+      },
+      {
+        label: 'Close Others',
+        icon: <X className="w-3.5 h-3.5" />,
+        onClick: () => {
+          // Close all tabs except the clicked one
+          tabs.forEach(tab => {
+            if (tab.id !== contextMenuTab.id) {
+              onTabClose(tab.id);
+            }
+          });
+          // Set the clicked tab as active if it wasn't already
+          if (activeTabId !== contextMenuTab.id) {
+            onTabSelect(contextMenuTab.id);
+          }
+        },
+        disabled: hasOnlyOneTab // Only enable when there are other tabs to close
+      },
+      {
+        label: 'Close Tabs to the Left',
+        icon: <X className="w-3.5 h-3.5" />,
+        onClick: () => {
+          // Close all tabs to the left of the clicked tab
+          for (let i = 0; i < clickedTabIndex; i++) {
+            onTabClose(tabs[i].id);
+          }
+          // Set the clicked tab as active if the active tab was to the left
+          const activeTabIndex = tabs.findIndex(t => t.id === activeTabId);
+          if (activeTabIndex < clickedTabIndex) {
+            onTabSelect(contextMenuTab.id);
+          }
+        },
+        disabled: isFirstTab // Can't close tabs to the left if this is the first tab
+      },
+      {
+        label: 'Close Tabs to the Right',
+        icon: <X className="w-3.5 h-3.5" />,
+        onClick: () => {
+          // Close all tabs to the right of the clicked tab
+          for (let i = tabs.length - 1; i > clickedTabIndex; i--) {
+            onTabClose(tabs[i].id);
+          }
+          // Set the clicked tab as active if the active tab was to the right
+          const activeTabIndex = tabs.findIndex(t => t.id === activeTabId);
+          if (activeTabIndex > clickedTabIndex) {
+            onTabSelect(contextMenuTab.id);
+          }
+        },
+        disabled: isLastTab // Can't close tabs to the right if this is the last tab
+      },
+    ];
+  })() : [];
 
   return (
     <div
