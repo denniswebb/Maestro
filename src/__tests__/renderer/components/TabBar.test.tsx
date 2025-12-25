@@ -1786,6 +1786,368 @@ describe('TabBar', () => {
     });
   });
 
+  describe('tab context menu', () => {
+    const mockOnCloseOthers = vi.fn();
+    const mockOnCloseTabsToLeft = vi.fn();
+    const mockOnCloseTabsToRight = vi.fn();
+
+    beforeEach(() => {
+      mockOnCloseOthers.mockClear();
+      mockOnCloseTabsToLeft.mockClear();
+      mockOnCloseTabsToRight.mockClear();
+    });
+
+    it('opens context menu on right-click', () => {
+      const tabs = [
+        createTab({ id: 'tab-1', name: 'Tab 1' }),
+        createTab({ id: 'tab-2', name: 'Tab 2' }),
+      ];
+
+      render(
+        <TabBar
+          tabs={tabs}
+          activeTabId="tab-1"
+          theme={mockTheme}
+          onTabSelect={mockOnTabSelect}
+          onTabClose={mockOnTabClose}
+          onNewTab={mockOnNewTab}
+          onCloseOthers={mockOnCloseOthers}
+        />
+      );
+
+      const tab = screen.getByText('Tab 1').closest('[data-tab-id]')!;
+      fireEvent.contextMenu(tab, { clientX: 100, clientY: 200 });
+
+      // Context menu should appear
+      expect(screen.getByText('Close')).toBeInTheDocument();
+    });
+
+    it('shows all context menu items', () => {
+      const tabs = [
+        createTab({ id: 'tab-1', name: 'Tab 1' }),
+        createTab({ id: 'tab-2', name: 'Tab 2' }),
+        createTab({ id: 'tab-3', name: 'Tab 3' }),
+      ];
+
+      render(
+        <TabBar
+          tabs={tabs}
+          activeTabId="tab-2"
+          theme={mockTheme}
+          onTabSelect={mockOnTabSelect}
+          onTabClose={mockOnTabClose}
+          onNewTab={mockOnNewTab}
+          onCloseOthers={mockOnCloseOthers}
+        />
+      );
+
+      const tab = screen.getByText('Tab 2').closest('[data-tab-id]')!;
+      fireEvent.contextMenu(tab, { clientX: 100, clientY: 200 });
+
+      expect(screen.getByText('Close')).toBeInTheDocument();
+      expect(screen.getByText('Close Others')).toBeInTheDocument();
+      expect(screen.getByText('Close Tabs to the Left')).toBeInTheDocument();
+      expect(screen.getByText('Close Tabs to the Right')).toBeInTheDocument();
+    });
+
+    it('disables "Close" when only one tab exists', () => {
+      const tabs = [createTab({ id: 'tab-1', name: 'Tab 1' })];
+
+      render(
+        <TabBar
+          tabs={tabs}
+          activeTabId="tab-1"
+          theme={mockTheme}
+          onTabSelect={mockOnTabSelect}
+          onTabClose={mockOnTabClose}
+          onNewTab={mockOnNewTab}
+          onCloseOthers={mockOnCloseOthers}
+        />
+      );
+
+      const tab = screen.getByText('Tab 1').closest('[data-tab-id]')!;
+      fireEvent.contextMenu(tab);
+
+      const closeItem = screen.getByText('Close').closest('[role="menuitem"]');
+      expect(closeItem).toHaveAttribute('aria-disabled', 'true');
+      expect(closeItem).toHaveClass('opacity-40');
+    });
+
+    it('disables "Close Others" when only one tab exists', () => {
+      const tabs = [createTab({ id: 'tab-1', name: 'Tab 1' })];
+
+      render(
+        <TabBar
+          tabs={tabs}
+          activeTabId="tab-1"
+          theme={mockTheme}
+          onTabSelect={mockOnTabSelect}
+          onTabClose={mockOnTabClose}
+          onNewTab={mockOnNewTab}
+          onCloseOthers={mockOnCloseOthers}
+        />
+      );
+
+      const tab = screen.getByText('Tab 1').closest('[data-tab-id]')!;
+      fireEvent.contextMenu(tab);
+
+      const closeOthersItem = screen.getByText('Close Others').closest('[role="menuitem"]');
+      expect(closeOthersItem).toHaveAttribute('aria-disabled', 'true');
+    });
+
+    it('disables "Close Tabs to the Left" when clicking first tab', () => {
+      const tabs = [
+        createTab({ id: 'tab-1', name: 'Tab 1' }),
+        createTab({ id: 'tab-2', name: 'Tab 2' }),
+      ];
+
+      render(
+        <TabBar
+          tabs={tabs}
+          activeTabId="tab-1"
+          theme={mockTheme}
+          onTabSelect={mockOnTabSelect}
+          onTabClose={mockOnTabClose}
+          onNewTab={mockOnNewTab}
+        />
+      );
+
+      const tab = screen.getByText('Tab 1').closest('[data-tab-id]')!;
+      fireEvent.contextMenu(tab);
+
+      const closeLeftItem = screen.getByText('Close Tabs to the Left').closest('[role="menuitem"]');
+      expect(closeLeftItem).toHaveAttribute('aria-disabled', 'true');
+    });
+
+    it('disables "Close Tabs to the Right" when clicking last tab', () => {
+      const tabs = [
+        createTab({ id: 'tab-1', name: 'Tab 1' }),
+        createTab({ id: 'tab-2', name: 'Tab 2' }),
+      ];
+
+      render(
+        <TabBar
+          tabs={tabs}
+          activeTabId="tab-1"
+          theme={mockTheme}
+          onTabSelect={mockOnTabSelect}
+          onTabClose={mockOnTabClose}
+          onNewTab={mockOnNewTab}
+        />
+      );
+
+      const tab = screen.getByText('Tab 2').closest('[data-tab-id]')!;
+      fireEvent.contextMenu(tab);
+
+      const closeRightItem = screen.getByText('Close Tabs to the Right').closest('[role="menuitem"]');
+      expect(closeRightItem).toHaveAttribute('aria-disabled', 'true');
+    });
+
+    it('closes tab when "Close" is clicked', () => {
+      const tabs = [
+        createTab({ id: 'tab-1', name: 'Tab 1' }),
+        createTab({ id: 'tab-2', name: 'Tab 2' }),
+      ];
+
+      render(
+        <TabBar
+          tabs={tabs}
+          activeTabId="tab-1"
+          theme={mockTheme}
+          onTabSelect={mockOnTabSelect}
+          onTabClose={mockOnTabClose}
+          onNewTab={mockOnNewTab}
+        />
+      );
+
+      const tab = screen.getByText('Tab 1').closest('[data-tab-id]')!;
+      fireEvent.contextMenu(tab);
+
+      fireEvent.click(screen.getByText('Close'));
+
+      expect(mockOnTabClose).toHaveBeenCalledWith('tab-1');
+    });
+
+    it('closes other tabs when "Close Others" is clicked', () => {
+      const tabs = [
+        createTab({ id: 'tab-1', name: 'Tab 1' }),
+        createTab({ id: 'tab-2', name: 'Tab 2' }),
+        createTab({ id: 'tab-3', name: 'Tab 3' }),
+      ];
+
+      render(
+        <TabBar
+          tabs={tabs}
+          activeTabId="tab-2"
+          theme={mockTheme}
+          onTabSelect={mockOnTabSelect}
+          onTabClose={mockOnTabClose}
+          onNewTab={mockOnNewTab}
+        />
+      );
+
+      const tab = screen.getByText('Tab 2').closest('[data-tab-id]')!;
+      fireEvent.contextMenu(tab);
+
+      fireEvent.click(screen.getByText('Close Others'));
+
+      // Should close tab-1 and tab-3, but not tab-2
+      expect(mockOnTabClose).toHaveBeenCalledWith('tab-1');
+      expect(mockOnTabClose).toHaveBeenCalledWith('tab-3');
+      expect(mockOnTabClose).not.toHaveBeenCalledWith('tab-2');
+    });
+
+    it('closes tabs to the left when clicked', () => {
+      const tabs = [
+        createTab({ id: 'tab-1', name: 'Tab 1' }),
+        createTab({ id: 'tab-2', name: 'Tab 2' }),
+        createTab({ id: 'tab-3', name: 'Tab 3' }),
+      ];
+
+      render(
+        <TabBar
+          tabs={tabs}
+          activeTabId="tab-1"
+          theme={mockTheme}
+          onTabSelect={mockOnTabSelect}
+          onTabClose={mockOnTabClose}
+          onNewTab={mockOnNewTab}
+        />
+      );
+
+      const tab = screen.getByText('Tab 3').closest('[data-tab-id]')!;
+      fireEvent.contextMenu(tab);
+
+      fireEvent.click(screen.getByText('Close Tabs to the Left'));
+
+      // Should close tab-1 and tab-2
+      expect(mockOnTabClose).toHaveBeenCalledWith('tab-1');
+      expect(mockOnTabClose).toHaveBeenCalledWith('tab-2');
+    });
+
+    it('closes tabs to the right when clicked', () => {
+      const tabs = [
+        createTab({ id: 'tab-1', name: 'Tab 1' }),
+        createTab({ id: 'tab-2', name: 'Tab 2' }),
+        createTab({ id: 'tab-3', name: 'Tab 3' }),
+      ];
+
+      render(
+        <TabBar
+          tabs={tabs}
+          activeTabId="tab-3"
+          theme={mockTheme}
+          onTabSelect={mockOnTabSelect}
+          onTabClose={mockOnTabClose}
+          onNewTab={mockOnNewTab}
+        />
+      );
+
+      const tab = screen.getByText('Tab 1').closest('[data-tab-id]')!;
+      fireEvent.contextMenu(tab);
+
+      fireEvent.click(screen.getByText('Close Tabs to the Right'));
+
+      // Should close tab-2 and tab-3
+      expect(mockOnTabClose).toHaveBeenCalledWith('tab-2');
+      expect(mockOnTabClose).toHaveBeenCalledWith('tab-3');
+    });
+
+    it('closes context menu after action', () => {
+      const tabs = [
+        createTab({ id: 'tab-1', name: 'Tab 1' }),
+        createTab({ id: 'tab-2', name: 'Tab 2' }),
+      ];
+
+      render(
+        <TabBar
+          tabs={tabs}
+          activeTabId="tab-1"
+          theme={mockTheme}
+          onTabSelect={mockOnTabSelect}
+          onTabClose={mockOnTabClose}
+          onNewTab={mockOnNewTab}
+        />
+      );
+
+      const tab = screen.getByText('Tab 1').closest('[data-tab-id]')!;
+      fireEvent.contextMenu(tab);
+
+      expect(screen.getByText('Close')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('Close'));
+
+      // Menu should be closed
+      expect(screen.queryByText('Close Others')).not.toBeInTheDocument();
+    });
+
+    it('handles context menu on different tabs', () => {
+      const tabs = [
+        createTab({ id: 'tab-1', name: 'Tab 1' }),
+        createTab({ id: 'tab-2', name: 'Tab 2' }),
+        createTab({ id: 'tab-3', name: 'Tab 3' }),
+      ];
+
+      render(
+        <TabBar
+          tabs={tabs}
+          activeTabId="tab-1"
+          theme={mockTheme}
+          onTabSelect={mockOnTabSelect}
+          onTabClose={mockOnTabClose}
+          onNewTab={mockOnNewTab}
+        />
+      );
+
+      // Open context menu on Tab 1 (first tab)
+      const tab1 = screen.getByText('Tab 1').closest('[data-tab-id]')!;
+      fireEvent.contextMenu(tab1);
+
+      const closeLeft1 = screen.getByText('Close Tabs to the Left').closest('[role="menuitem"]');
+      expect(closeLeft1).toHaveAttribute('aria-disabled', 'true');
+
+      // Close menu
+      fireEvent.mouseDown(document.body);
+
+      // Open context menu on Tab 3 (last tab)
+      const tab3 = screen.getByText('Tab 3').closest('[data-tab-id]')!;
+      fireEvent.contextMenu(tab3);
+
+      const closeRight3 = screen.getByText('Close Tabs to the Right').closest('[role="menuitem"]');
+      expect(closeRight3).toHaveAttribute('aria-disabled', 'true');
+    });
+
+    it('context menu works with many tabs', () => {
+      const tabs = Array.from({ length: 20 }, (_, i) =>
+        createTab({ id: `tab-${i}`, name: `Tab ${i + 1}` })
+      );
+
+      render(
+        <TabBar
+          tabs={tabs}
+          activeTabId="tab-10"
+          theme={mockTheme}
+          onTabSelect={mockOnTabSelect}
+          onTabClose={mockOnTabClose}
+          onNewTab={mockOnNewTab}
+        />
+      );
+
+      const tab = screen.getByText('Tab 11').closest('[data-tab-id]')!;
+      fireEvent.contextMenu(tab);
+
+      expect(screen.getByText('Close')).toBeInTheDocument();
+      expect(screen.getByText('Close Others')).toBeInTheDocument();
+
+      // Middle tab should have enabled left and right actions
+      const closeLeft = screen.getByText('Close Tabs to the Left').closest('[role="menuitem"]');
+      const closeRight = screen.getByText('Close Tabs to the Right').closest('[role="menuitem"]');
+
+      expect(closeLeft).not.toHaveAttribute('aria-disabled', 'true');
+      expect(closeRight).not.toHaveAttribute('aria-disabled', 'true');
+    });
+  });
+
   describe('Send to Agent', () => {
     const mockOnSendToAgent = vi.fn();
 
