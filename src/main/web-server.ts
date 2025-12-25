@@ -254,7 +254,7 @@ export class WebServer {
   private staticRoutes: StaticRoutes;
   private wsRoute: WsRoute;
 
-  constructor(port: number = 0) {
+  constructor(port: number = 0, token?: string) {
     // Use port 0 to let OS assign a random available port
     this.port = port;
     this.server = Fastify({
@@ -263,9 +263,14 @@ export class WebServer {
       },
     });
 
-    // Generate a new security token (UUID v4)
-    this.securityToken = randomUUID();
-    logger.debug('Security token generated', LOG_CONTEXT);
+    // Use provided token or generate a new security token (UUID v4)
+    this.securityToken = token || randomUUID();
+    logger.debug(
+      token
+        ? 'Using provided security token'
+        : 'Generated new security token',
+      LOG_CONTEXT,
+    );
 
     // Determine web assets path (production vs development)
     this.webAssetsPath = this.resolveWebAssetsPath();
