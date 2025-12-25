@@ -249,6 +249,8 @@ export interface UseSettingsReturn {
   setWebInterfaceUseCustomPort: (value: boolean) => void;
   webInterfaceCustomPort: number;
   setWebInterfaceCustomPort: (value: number) => void;
+  webInterfaceAutoStart: boolean;
+  setWebInterfaceAutoStart: (value: boolean) => void;
 
   // Context Management settings
   contextManagementSettings: ContextManagementSettings;
@@ -352,6 +354,7 @@ export function useSettings(): UseSettingsReturn {
   // Web Interface settings (persistent)
   const [webInterfaceUseCustomPort, setWebInterfaceUseCustomPortState] = useState(false);
   const [webInterfaceCustomPort, setWebInterfaceCustomPortState] = useState(8080);
+  const [webInterfaceAutoStart, setWebInterfaceAutoStartState] = useState(false);
 
   // Context Management settings (persistent)
   const [contextManagementSettings, setContextManagementSettingsState] = useState<ContextManagementSettings>(DEFAULT_CONTEXT_MANAGEMENT_SETTINGS);
@@ -926,6 +929,11 @@ export function useSettings(): UseSettingsReturn {
     }
   }, []);
 
+  const setWebInterfaceAutoStart = useCallback((value: boolean) => {
+    setWebInterfaceAutoStartState(value);
+    window.maestro.settings.set('webInterfaceAutoStart', value);
+  }, []);
+
   // Context Management settings setters
   const setContextManagementSettings = useCallback((value: ContextManagementSettings) => {
     setContextManagementSettingsState(value);
@@ -1055,6 +1063,7 @@ export function useSettings(): UseSettingsReturn {
       const savedLeaderboardRegistration = await window.maestro.settings.get('leaderboardRegistration');
       const savedWebInterfaceUseCustomPort = await window.maestro.settings.get('webInterfaceUseCustomPort');
       const savedWebInterfaceCustomPort = await window.maestro.settings.get('webInterfaceCustomPort');
+      const savedWebInterfaceAutoStart = await window.maestro.settings.get('webInterfaceAutoStart');
       const savedContextManagementSettings = await window.maestro.settings.get('contextManagementSettings');
       const savedKeyboardMasteryStats = await window.maestro.settings.get('keyboardMasteryStats');
 
@@ -1259,6 +1268,7 @@ export function useSettings(): UseSettingsReturn {
       // Load web interface settings
       if (savedWebInterfaceUseCustomPort !== undefined) setWebInterfaceUseCustomPortState(savedWebInterfaceUseCustomPort as boolean);
       if (savedWebInterfaceCustomPort !== undefined) setWebInterfaceCustomPortState(savedWebInterfaceCustomPort as number);
+      if (savedWebInterfaceAutoStart !== undefined) setWebInterfaceAutoStartState(savedWebInterfaceAutoStart as boolean);
 
       // Load context management settings
       if (savedContextManagementSettings !== undefined) {
@@ -1389,6 +1399,8 @@ export function useSettings(): UseSettingsReturn {
     setWebInterfaceUseCustomPort,
     webInterfaceCustomPort,
     setWebInterfaceCustomPort,
+    webInterfaceAutoStart,
+    setWebInterfaceAutoStart,
     contextManagementSettings,
     setContextManagementSettings,
     updateContextManagementSettings,
@@ -1503,6 +1515,8 @@ export function useSettings(): UseSettingsReturn {
     setWebInterfaceUseCustomPort,
     webInterfaceCustomPort,
     setWebInterfaceCustomPort,
+    webInterfaceAutoStart,
+    setWebInterfaceAutoStart,
     contextManagementSettings,
     setContextManagementSettings,
     updateContextManagementSettings,
