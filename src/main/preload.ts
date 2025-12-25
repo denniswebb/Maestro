@@ -1006,6 +1006,28 @@ contextBridge.exposeInMainWorld('maestro', {
       ipcRenderer.invoke('autorun:deleteBackups', folderPath),
   },
 
+  // Auto Run Duplication API (automatic agent duplication during batch runs)
+  duplication: {
+    getConfig: (sessionId: string) =>
+      ipcRenderer.invoke('duplication:getConfig', sessionId),
+    setConfig: (sessionId: string, config: any) =>
+      ipcRenderer.invoke('duplication:setConfig', sessionId, config),
+    addTrigger: (sessionId: string, trigger: any) =>
+      ipcRenderer.invoke('duplication:addTrigger', sessionId, trigger),
+    updateTrigger: (sessionId: string, triggerId: string, updates: any) =>
+      ipcRenderer.invoke('duplication:updateTrigger', sessionId, triggerId, updates),
+    removeTrigger: (sessionId: string, triggerId: string) =>
+      ipcRenderer.invoke('duplication:removeTrigger', sessionId, triggerId),
+    deleteConfig: (sessionId: string) =>
+      ipcRenderer.invoke('duplication:deleteConfig', sessionId),
+    createDefaultTrigger: (triggerType: string) =>
+      ipcRenderer.invoke('duplication:createDefaultTrigger', triggerType),
+    getAllConfigs: () =>
+      ipcRenderer.invoke('duplication:getAllConfigs'),
+    clearAll: () =>
+      ipcRenderer.invoke('duplication:clearAll'),
+  },
+
   // Playbooks API (saved batch run configurations)
   playbooks: {
     list: (sessionId: string) =>
@@ -1867,6 +1889,17 @@ export interface MaestroAPI {
     createBackup: (folderPath: string, filename: string) => Promise<{ success: boolean; backupFilename?: string; error?: string }>;
     restoreBackup: (folderPath: string, filename: string) => Promise<{ success: boolean; error?: string }>;
     deleteBackups: (folderPath: string) => Promise<{ success: boolean; deletedCount?: number; error?: string }>;
+  };
+  duplication: {
+    getConfig: (sessionId: string) => Promise<{ success: boolean; config?: any; error?: string }>;
+    setConfig: (sessionId: string, config: any) => Promise<{ success: boolean; error?: string }>;
+    addTrigger: (sessionId: string, trigger: any) => Promise<{ success: boolean; error?: string }>;
+    updateTrigger: (sessionId: string, triggerId: string, updates: any) => Promise<{ success: boolean; error?: string }>;
+    removeTrigger: (sessionId: string, triggerId: string) => Promise<{ success: boolean; error?: string }>;
+    deleteConfig: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
+    createDefaultTrigger: (triggerType: string) => Promise<{ success: boolean; trigger?: any; error?: string }>;
+    getAllConfigs: () => Promise<{ success: boolean; configs?: Record<string, any>; error?: string }>;
+    clearAll: () => Promise<{ success: boolean; error?: string }>;
   };
   playbooks: {
     list: (sessionId: string) => Promise<{
