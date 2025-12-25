@@ -324,8 +324,29 @@ export function registerProcessHandlers(deps: ProcessHandlerDependencies): void 
     ) => {
       const processManager = requireProcessManager(getProcessManager);
 
-      // Format tool_result as proper stream-json message
-      // Claude Code expects: {"type":"user","content":[{"type":"tool_result","tool_use_id":"...","content":"..."}]}
+      /**
+       * Format tool_result as proper stream-json message
+       *
+       * Claude Code expects tool_result messages in this exact format:
+       * {
+       *   "type": "user",                    // Message type (user-sent message)
+       *   "content": [                        // Content array (can contain multiple blocks)
+       *     {
+       *       "type": "tool_result",          // Content block type (tool execution result)
+       *       "tool_use_id": "toolu_abc123",  // ID matching the original tool_use block
+       *       "content": "{...}"              // JSON-stringified answer data
+       *     }
+       *   ]
+       * }
+       *
+       * The answers object is JSON-stringified into the content field:
+       * - Single-select: { "Question Header": "Selected Answer" }
+       * - Multi-select: { "Question Header": ["Answer A", "Answer B"] }
+       * - Mixed: { "Q1": "Answer", "Q2": ["A", "B"], "Q3": "Custom text" }
+       *
+       * This format follows the Anthropic Messages API specification for tool results.
+       * See: https://docs.anthropic.com/en/docs/build-with-claude/tool-use
+       */
       const toolResult = {
         type: 'user',
         content: [{
@@ -335,7 +356,14 @@ export function registerProcessHandlers(deps: ProcessHandlerDependencies): void 
         }]
       };
 
-      // Convert to newline-delimited JSON format for Claude Code's stream-json input
+      /**
+       * Convert to newline-delimited JSON (NDJSON) format for Claude Code's stream-json input
+       *
+       * Claude Code's --output-format stream-json expects input in the same format:
+       * - Each message is a single JSON object on one line
+       * - Messages are separated by newline characters (\n)
+       * - This allows streaming both input and output without buffering entire conversations
+       */
       const toolResultJson = JSON.stringify(toolResult) + '\n';
 
       logger.info(`Writing tool result to Claude Code`, LOG_CONTEXT, {

@@ -27,6 +27,11 @@ interface AskUserQuestionCardProps {
 }
 
 /**
+ * Submission states for visual feedback
+ */
+type SubmissionState = 'idle' | 'submitting' | 'success' | 'error';
+
+/**
  * AskUserQuestionCard - Interactive UI for Claude Code's AskUserQuestion tool
  *
  * Features:
@@ -51,6 +56,8 @@ export const AskUserQuestionCard = memo(function AskUserQuestionCard({
   const [otherText, setOtherText] = useState<Record<string, string>>({});
   // Active question index for multi-question navigation
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
+  // Submission state for loading/success feedback
+  const [submissionState, setSubmissionState] = useState<SubmissionState>('idle');
 
   const activeQuestion = questions[activeQuestionIndex];
   const containerRef = useRef<HTMLDivElement>(null);
@@ -93,8 +100,8 @@ export const AskUserQuestionCard = memo(function AskUserQuestionCard({
   }, []);
 
   // Handle form submission
-  const handleSubmit = useCallback(() => {
-    if (!allQuestionsAnswered) return;
+  const handleSubmit = useCallback(async () => {
+    if (!allQuestionsAnswered || submissionState === 'submitting') return;
 
     // Replace "Other" in answers with actual text from otherText
     const finalAnswers: Record<string, string | string[]> = {};
@@ -108,8 +115,19 @@ export const AskUserQuestionCard = memo(function AskUserQuestionCard({
       }
     });
 
-    onSubmit(toolUseId, finalAnswers);
-  }, [allQuestionsAnswered, answers, otherText, onSubmit, toolUseId]);
+    try {
+      setSubmissionState('submitting');
+      await onSubmit(toolUseId, finalAnswers);
+      setSubmissionState('success');
+      // Auto-hide success state after 2 seconds
+      setTimeout(() => setSubmissionState('idle'), 2000);
+    } catch (error) {
+      console.error('Failed to submit answers:', error);
+      setSubmissionState('error');
+      // Auto-hide error state after 3 seconds
+      setTimeout(() => setSubmissionState('idle'), 3000);
+    }
+  }, [allQuestionsAnswered, submissionState, answers, otherText, onSubmit, toolUseId]);
 
   // Navigation handlers
   const handleNext = useCallback(() => {
@@ -175,6 +193,8 @@ export const AskUserQuestionCard = memo(function AskUserQuestionCard({
       ref={containerRef}
       tabIndex={-1}
       className="rounded-lg p-4 mb-3 outline-none"
+      role="form"
+      aria-label="Answer Claude's questions"
       style={{
         backgroundColor: theme.colors.bgActivity,
         border: `1px solid ${theme.colors.border}`,
@@ -182,21 +202,74 @@ export const AskUserQuestionCard = memo(function AskUserQuestionCard({
     >
       {/* Header */}
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-lg">🤔</span>
+        <span className="text-lg" role="img" aria-label="thinking">🤔</span>
         <span className="font-medium" style={{ color: theme.colors.textMain }}>
           Claude has {questions.length > 1 ? `${questions.length} questions` : 'a question'}
         </span>
       </div>
 
+      {/* Submission state feedback */}
+      {submissionState !== 'idle' && (
+        <div
+          className="mb-3 px-3 py-2 rounded text-sm flex items-center gap-2"
+          role="status"
+          aria-live="polite"
+          style={{
+            backgroundColor:
+              submissionState === 'success'
+                ? 'rgba(34, 197, 94, 0.1)'
+                : submissionState === 'error'
+                ? 'rgba(239, 68, 68, 0.1)'
+                : theme.colors.bgSidebar,
+            color:
+              submissionState === 'success'
+                ? '#22c55e'
+                : submissionState === 'error'
+                ? '#ef4444'
+                : theme.colors.textMain,
+            border: `1px solid ${
+              submissionState === 'success'
+                ? '#22c55e'
+                : submissionState === 'error'
+                ? '#ef4444'
+                : theme.colors.border
+            }`,
+          }}
+        >
+          {submissionState === 'submitting' && (
+            <>
+              <span className="animate-spin">⏳</span>
+              <span>Submitting answers...</span>
+            </>
+          )}
+          {submissionState === 'success' && (
+            <>
+              <span>✓</span>
+              <span>Answers submitted successfully!</span>
+            </>
+          )}
+          {submissionState === 'error' && (
+            <>
+              <span>✗</span>
+              <span>Failed to submit answers. Please try again.</span>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Question tabs (if multiple questions) */}
       {questions.length > 1 && (
-        <div className="flex gap-2 mb-4 overflow-x-auto">
+        <div className="flex gap-2 mb-4 overflow-x-auto" role="tablist" aria-label="Questions">
           {questions.map((q, index) => {
             const answered = isQuestionAnswered(q);
             const isActive = index === activeQuestionIndex;
             return (
               <button
                 key={index}
+                role="tab"
+                aria-selected={isActive}
+                aria-controls={`question-panel-${index}`}
+                aria-label={`Question ${index + 1}${answered ? ' (answered)' : ''}`}
                 onClick={() => setActiveQuestionIndex(index)}
                 className="px-3 py-1.5 rounded text-sm whitespace-nowrap flex items-center gap-1.5"
                 style={{
@@ -205,7 +278,7 @@ export const AskUserQuestionCard = memo(function AskUserQuestionCard({
                   opacity: isActive ? 1 : 0.7,
                 }}
               >
-                {answered && <Check className="w-3.5 h-3.5" />}
+                {answered && <Check className="w-3.5 h-3.5" aria-hidden="true" />}
                 Question {index + 1}
               </button>
             );
@@ -214,7 +287,12 @@ export const AskUserQuestionCard = memo(function AskUserQuestionCard({
       )}
 
       {/* Question header */}
-      <div className="mb-2">
+      <div
+        className="mb-2"
+        role="tabpanel"
+        id={`question-panel-${activeQuestionIndex}`}
+        aria-labelledby={`question-tab-${activeQuestionIndex}`}
+      >
         <div
           className="text-xs font-medium uppercase tracking-wide mb-1"
           style={{ color: theme.colors.textDim }}
@@ -231,7 +309,11 @@ export const AskUserQuestionCard = memo(function AskUserQuestionCard({
       </div>
 
       {/* Options */}
-      <div className="space-y-2 mt-3">
+      <div
+        className="space-y-2 mt-3"
+        role="group"
+        aria-label={activeQuestion.multiSelect ? 'Select one or more options' : 'Select one option'}
+      >
         {activeQuestion.options.map((option, index) => {
           const isOtherOption = option.label === 'Other' || option.label.startsWith('Tell Claude');
           const answer = answers[activeQuestion.header];
@@ -259,6 +341,8 @@ export const AskUserQuestionCard = memo(function AskUserQuestionCard({
                       handleRadioChange(activeQuestion.header, option.label);
                     }
                   }}
+                  aria-label={option.label}
+                  aria-describedby={option.description ? `option-desc-${index}` : undefined}
                   className="mt-0.5 flex-shrink-0"
                   style={{ accentColor: theme.colors.accent }}
                 />
@@ -272,7 +356,11 @@ export const AskUserQuestionCard = memo(function AskUserQuestionCard({
                     />
                   </div>
                   {option.description && (
-                    <div className="text-xs mt-0.5" style={{ color: theme.colors.textDim }}>
+                    <div
+                      id={`option-desc-${index}`}
+                      className="text-xs mt-0.5"
+                      style={{ color: theme.colors.textDim }}
+                    >
                       <MarkdownRenderer
                         content={option.description}
                         theme={theme}
@@ -291,6 +379,7 @@ export const AskUserQuestionCard = memo(function AskUserQuestionCard({
                     value={otherText[activeQuestion.header] || ''}
                     onChange={(e) => handleOtherTextChange(activeQuestion.header, e.target.value)}
                     placeholder="Enter your response..."
+                    aria-label="Custom response for Other option"
                     className="w-full px-3 py-2 rounded text-sm outline-none"
                     style={{
                       backgroundColor: theme.colors.bgSidebar,
@@ -376,14 +465,16 @@ export const AskUserQuestionCard = memo(function AskUserQuestionCard({
           )}
           <button
             onClick={handleSubmit}
-            disabled={!allQuestionsAnswered}
+            disabled={!allQuestionsAnswered || submissionState === 'submitting'}
+            aria-busy={submissionState === 'submitting'}
+            aria-disabled={!allQuestionsAnswered || submissionState === 'submitting'}
             className="px-4 py-1.5 rounded text-sm disabled:opacity-30 disabled:cursor-not-allowed"
             style={{
               backgroundColor: theme.colors.accent,
               color: theme.colors.bgActivity,
             }}
           >
-            Submit Answers
+            {submissionState === 'submitting' ? 'Submitting...' : 'Submit Answers'}
           </button>
         </div>
       </div>

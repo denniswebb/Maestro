@@ -562,3 +562,82 @@ firstAutoRunCompleted: boolean  // Triggers celebration modal
 ### Modal Escape Not Working
 1. Register with layer stack (don't handle Escape locally)
 2. Check priority is set correctly
+
+## AskUserQuestion Tool Integration
+
+Claude Code's `AskUserQuestion` tool allows the AI to ask interactive questions during read-only/plan mode. Maestro provides inline chat UI for answering these questions.
+
+### Architecture
+
+```
+Claude Code → tool_use block → Parser → Event → LogEntry → UI → User Response → tool_result → Claude Code
+```
+
+### Key Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| Type definitions | `src/renderer/types/index.ts` | `pendingQuestion` field on LogEntry |
+| UI component | `src/renderer/components/AskUserQuestionCard.tsx` | Interactive question UI |
+| IPC handler | `src/main/ipc/handlers/process.ts` | `process:writeToolResult` handler |
+| Event detection | `src/renderer/App.tsx` | `onToolExecution` listener |
+| Rendering | `src/renderer/components/TerminalOutput.tsx` | Conditional rendering logic |
+
+### Tool Result Format
+
+Tool results must match Claude Code's stream-json format exactly:
+
+```typescript
+// Message structure
+{
+  "type": "user",                    // User-sent message
+  "content": [{
+    "type": "tool_result",           // Tool execution result
+    "tool_use_id": "toolu_abc123",   // ID from original tool_use
+    "content": "{...}"               // JSON-stringified answers
+  }]
+}
+
+// Answer format examples
+// Single-select: { "Question Header": "Selected Answer" }
+// Multi-select: { "Question Header": ["Answer A", "Answer B"] }
+// Mixed: { "Q1": "Answer", "Q2": ["A", "B"], "Q3": "Custom text" }
+```
+
+### Workflow
+
+1. **Detection**: Claude Code emits `tool_use` block with `name: "AskUserQuestion"`
+2. **Event**: Process manager emits `tool-execution` event
+3. **LogEntry**: App.tsx creates LogEntry with `pendingQuestion` metadata
+4. **Blocking**: Session state set to 'idle', input blocked with message
+5. **User Interaction**: AskUserQuestionCard renders inline in chat
+6. **Submission**: User answers → `handleQuestionResponse()` → IPC call
+7. **Tool Result**: IPC handler formats and writes to Claude Code stdin
+8. **Resume**: Claude Code receives answer and continues processing
+
+### Features
+
+- **Single-select**: Radio buttons for mutually exclusive options
+- **Multi-select**: Checkboxes for multiple selections
+- **Other option**: Conditional text input when "Other" selected
+- **Multi-question**: Tab navigation between multiple questions
+- **Validation**: Submit disabled until all questions answered
+- **Keyboard shortcuts**: Enter to submit, Tab/Shift+Tab to navigate
+- **Loading state**: Spinner during submission
+- **Success feedback**: Visual confirmation after submission
+- **Accessibility**: ARIA labels, keyboard navigation, screen reader support
+
+### Adding Question Handling to New Agents
+
+When adding support for other agents (OpenCode, etc.):
+
+1. **Parser**: Extract `tool_use` blocks with question data
+2. **Event**: Emit `tool-execution` event with standardized structure
+3. **Format**: Ensure tool_result format matches agent's expectations
+4. **Capabilities**: Set `supportsJsonOutput: true` in agent capabilities
+
+### Testing
+
+- Automated tests: `src/renderer/components/__tests__/AskUserQuestionCard.test.tsx` (23 passing)
+- Manual test plan: `Auto Run Docs/Working/test-ask-user-question.md`
+- Test IPC handler: `Auto Run Docs/Working/test-writeToolResult.ts`

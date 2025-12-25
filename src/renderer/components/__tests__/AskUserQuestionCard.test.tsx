@@ -461,7 +461,7 @@ describe('AskUserQuestionCard', () => {
       fireEvent.click(radios[0]);
 
       // Question 1 tab should have checkmark (via svg check icon)
-      const question1Tab = screen.getByRole('button', { name: /Question 1/i });
+      const question1Tab = screen.getByRole('tab', { name: /Question 1/i });
       expect(question1Tab.querySelector('svg')).toBeInTheDocument();
     });
 
@@ -510,7 +510,7 @@ describe('AskUserQuestionCard', () => {
       );
 
       // Click Question 3 tab
-      const question3Tab = screen.getByRole('button', { name: /Question 3/i });
+      const question3Tab = screen.getByRole('tab', { name: /Question 3/i });
       fireEvent.click(question3Tab);
 
       // Should jump to Question 3
@@ -548,7 +548,7 @@ describe('AskUserQuestionCard', () => {
       );
 
       // Navigate to last question
-      const question3Tab = screen.getByRole('button', { name: /Question 3/i });
+      const question3Tab = screen.getByRole('tab', { name: /Question 3/i });
       fireEvent.click(question3Tab);
 
       const nextButton = screen.getByText('Next');
