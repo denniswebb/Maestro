@@ -87,6 +87,8 @@ interface InputAreaProps {
   tabShowThinking?: boolean;
   onToggleTabShowThinking?: () => void;
   supportsThinking?: boolean; // From agent capabilities
+  // AskUserQuestion blocking
+  hasPendingQuestion?: boolean;
 }
 
 export const InputArea = React.memo(function InputArea(props: InputAreaProps) {
@@ -115,7 +117,8 @@ export const InputArea = React.memo(function InputArea(props: InputAreaProps) {
     tabSaveToHistory = false, onToggleTabSaveToHistory,
     onOpenPromptComposer,
     showFlashNotification,
-    tabShowThinking = false, onToggleTabShowThinking, supportsThinking = false
+    tabShowThinking = false, onToggleTabShowThinking, supportsThinking = false,
+    hasPendingQuestion = false
   } = props;
 
   // Get agent capabilities for conditional feature rendering
@@ -556,6 +559,16 @@ export const InputArea = React.memo(function InputArea(props: InputAreaProps) {
             backgroundColor: showQueueingBorder ? `${theme.colors.warning}15` : theme.colors.bgMain
           }}
         >
+          {/* Blocking message when question is pending (AI mode only) */}
+          {!isTerminalMode && hasPendingQuestion && (
+            <div
+              className="flex items-center gap-2 px-3 py-2.5 text-sm font-medium"
+              style={{ color: theme.colors.accent }}
+            >
+              <span>🤔</span>
+              <span>Answer the question above to continue</span>
+            </div>
+          )}
           <div className="flex items-start">
             {/* Terminal mode prefix */}
             {isTerminalMode && (
@@ -568,7 +581,8 @@ export const InputArea = React.memo(function InputArea(props: InputAreaProps) {
             )}
             <textarea
               ref={inputRef}
-              className={`flex-1 bg-transparent text-sm outline-none ${isTerminalMode ? 'pl-1.5' : 'pl-3'} pt-3 pr-3 resize-none min-h-[2.5rem] scrollbar-thin`}
+              disabled={!isTerminalMode && hasPendingQuestion}
+              className={`flex-1 bg-transparent text-sm outline-none ${isTerminalMode ? 'pl-1.5' : 'pl-3'} pt-3 pr-3 resize-none min-h-[2.5rem] scrollbar-thin ${!isTerminalMode && hasPendingQuestion ? 'opacity-50 cursor-not-allowed' : ''}`}
               style={{ color: theme.colors.textMain, maxHeight: '7rem' }}
               placeholder={isTerminalMode ? "Run shell command..." : `Talking to ${session.name} powered by ${getProviderDisplayName(session.toolType)}`}
               value={inputValue}
@@ -784,7 +798,8 @@ export const InputArea = React.memo(function InputArea(props: InputAreaProps) {
           <button
             type="button"
             onClick={() => processInput()}
-            className="p-2 rounded-md shadow-sm transition-all hover:opacity-90 cursor-pointer"
+            disabled={!isTerminalMode && hasPendingQuestion}
+            className={`p-2 rounded-md shadow-sm transition-all ${!isTerminalMode && hasPendingQuestion ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90 cursor-pointer'}`}
             style={{
               backgroundColor: theme.colors.accent,
               color: theme.colors.accentForeground

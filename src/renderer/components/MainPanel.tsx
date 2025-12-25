@@ -280,6 +280,12 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
   }, [configuredContextWindow, activeTab?.usageStats?.contextWindow]);
 
   // Compute context usage percentage from active tab's usage stats
+  // Detect if active tab has a pending question awaiting user response
+  const hasPendingQuestion = useMemo(() => {
+    if (!activeTab?.logs) return false;
+    return activeTab.logs.some(log => log.pendingQuestion !== undefined);
+  }, [activeTab?.logs]);
+
   const activeTabContextUsage = useMemo(() => {
     if (!activeTab?.usageStats) return 0;
     const { inputTokens, outputTokens } = activeTab.usageStats;
@@ -1039,6 +1045,7 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
                 supportsThinking={hasCapability('supportsThinkingDisplay')}
                 onOpenPromptComposer={props.onOpenPromptComposer}
                 showFlashNotification={showFlashNotification}
+                hasPendingQuestion={hasPendingQuestion}
               />
               </div>
               )}
