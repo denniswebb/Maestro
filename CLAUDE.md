@@ -367,8 +367,42 @@ The `window.maestro` API exposes:
 ### Web & Live Sessions
 - `web` - Broadcast user input, Auto Run state, tab changes to web clients
 - `live` - Toggle live sessions, get status, dashboard URL, connected clients
-- `webserver` - Get URL, connected client count
+- `webserver` - Get URL, connected client count, token management (getToken, rotateToken)
 - `tunnel` - Cloudflare tunnel: isCloudflaredInstalled, start, stop, getStatus
+
+#### Web Interface Auto-Start
+
+The web interface can automatically start on app launch with a persistent security token:
+
+**Settings** (in `useSettings.ts`):
+- `webInterfaceAutoStart: boolean` - Enable/disable auto-start (default: `false`)
+- `webInterfacePersistentToken: string | null` - Persistent token for auto-start mode (default: `null`)
+
+**Token Management API** (`window.maestro.webserver`):
+```typescript
+// Get current token (from running server or settings)
+getToken: () => Promise<string | null>
+
+// Rotate security token
+rotateToken: () => Promise<{
+  success: boolean;
+  token?: string;
+  url?: string;
+  restarted?: boolean;
+  error?: string;
+}>
+```
+
+**Behavior**:
+- **Auto-start disabled** (default): Token generated fresh on each server start (ephemeral)
+- **Auto-start enabled**: Token persists across app restarts in `~/Library/Application Support/Maestro/maestro-settings.json`
+- **Token rotation**: Available anytime via Settings UI or API, restarts server if running
+
+**Security Notes**:
+- Persistent token stored in electron-store (same security level as API keys)
+- Token rotation available for compromised token scenarios
+- Auto-start disabled by default (opt-in security model)
+- Token validation performed at router level (string comparison)
 
 ### Automation
 - `autorun` - Document and image management for Auto Run
