@@ -629,8 +629,9 @@ ${docList}
         customPrompt: prompt !== '' ? prompt : undefined,
         sessionIds: [],
         startTime: batchStartTime,
-        // Time tracking (excludes sleep/suspend time)
-        accumulatedElapsedMs: 0,
+        // Time tracking
+        cumulativeTaskTimeMs: 0, // Sum of actual task durations (most accurate)
+        accumulatedElapsedMs: 0, // Visibility-based time (excludes sleep/suspend)
         lastActiveTimestamp: batchStartTime
       }
     }), true); // immediate: critical state change (isRunning: true)
@@ -728,14 +729,49 @@ ${docList}
 
     // Helper to restore current reset doc and clean up (for interruption)
     const handleInterruptionCleanup = async () => {
-      // If we were mid-processing a reset doc, restore it from backup
-      if (currentResetDocFilename && activeBackups.has(currentResetDocFilename)) {
+      // If we were mid-processing a reset doc, restore it to original state
+      if (currentResetDocFilename) {
         console.log(`[BatchProcessor] Restoring interrupted reset document: ${currentResetDocFilename}`);
-        try {
-          await window.maestro.autorun.restoreBackup(folderPath, currentResetDocFilename);
-          activeBackups.delete(currentResetDocFilename);
-        } catch (err) {
-          console.error(`[BatchProcessor] Failed to restore backup for ${currentResetDocFilename}:`, err);
+
+        // Find the document entry to check if it's reset-on-completion
+        const docEntry = documents.find(d => d.filename === currentResetDocFilename);
+        const isResetOnCompletion = docEntry?.resetOnCompletion ?? false;
+
+        if (isResetOnCompletion) {
+          // Try to restore from backup first
+          if (activeBackups.has(currentResetDocFilename)) {
+            try {
+              await window.maestro.autorun.restoreBackup(folderPath, currentResetDocFilename);
+              activeBackups.delete(currentResetDocFilename);
+              console.log(`[BatchProcessor] Restored ${currentResetDocFilename} from backup`);
+            } catch (err) {
+              console.error(`[BatchProcessor] Failed to restore backup for ${currentResetDocFilename}, falling back to uncheckAllTasks:`, err);
+              // Fallback: uncheck all tasks in the document
+              try {
+                const { content } = await readDocAndCountTasks(folderPath, currentResetDocFilename);
+                if (content) {
+                  const resetContent = uncheckAllTasks(content);
+                  await window.maestro.autorun.writeDoc(folderPath, currentResetDocFilename + '.md', resetContent);
+                  console.log(`[BatchProcessor] Reset ${currentResetDocFilename} by unchecking all tasks`);
+                }
+              } catch (resetErr) {
+                console.error(`[BatchProcessor] Failed to reset ${currentResetDocFilename}:`, resetErr);
+              }
+            }
+          } else {
+            // No backup available - use uncheckAllTasks to reset
+            console.log(`[BatchProcessor] No backup for ${currentResetDocFilename}, using uncheckAllTasks`);
+            try {
+              const { content } = await readDocAndCountTasks(folderPath, currentResetDocFilename);
+              if (content) {
+                const resetContent = uncheckAllTasks(content);
+                await window.maestro.autorun.writeDoc(folderPath, currentResetDocFilename + '.md', resetContent);
+                console.log(`[BatchProcessor] Reset ${currentResetDocFilename} by unchecking all tasks`);
+              }
+            } catch (err) {
+              console.error(`[BatchProcessor] Failed to reset ${currentResetDocFilename}:`, err);
+            }
+          }
         }
       }
       // Clean up any remaining backups
@@ -998,6 +1034,8 @@ ${docList}
                   currentDocTasksTotal: docTasksTotal,
                   completedTasksAcrossAllDocs: totalCompletedTasks,
                   totalTasksAcrossAllDocs: nextTotalAcrossAllDocs,
+                  // Accumulate actual task duration (most accurate work time tracking)
+                  cumulativeTaskTimeMs: (prevState.cumulativeTaskTimeMs || 0) + elapsedTimeMs,
                   // Legacy fields
                   completedTasks: totalCompletedTasks,
                   totalTasks: nextTotalTasks,

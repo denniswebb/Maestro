@@ -44,7 +44,7 @@ interface AutoRunExpandedModalProps {
   documentTaskCounts?: Map<string, DocumentTaskCount>;  // Task counts per document
   batchRunState?: BatchRunState;
   onOpenBatchRunner?: () => void;
-  onStopBatchRun?: () => void;
+  onStopBatchRun?: (sessionId?: string) => void;
   // Error handling callbacks (Phase 5.10)
   onSkipCurrentDocument?: () => void;
   onAbortBatchOnError?: () => void;
@@ -68,6 +68,7 @@ export function AutoRunExpandedModal({
   onResumeAfterError,
   sessionState,
   shortcuts,
+  sessionId,
   ...autoRunProps
 }: AutoRunExpandedModalProps) {
   const { registerLayer, unregisterLayer, updateLayerHandler } = useLayerStack();
@@ -308,7 +309,7 @@ export function AutoRunExpandedModal({
             {/* Run / Stop button */}
             {isLocked ? (
               <button
-                onClick={onStopBatchRun}
+                onClick={() => onStopBatchRun?.(sessionId)}
                 disabled={isStopping}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs transition-colors font-semibold ${isStopping ? 'opacity-50 cursor-not-allowed' : ''}`}
                 style={{
@@ -385,6 +386,7 @@ export function AutoRunExpandedModal({
             onAbortBatchOnError={onAbortBatchOnError}
             onResumeAfterError={onResumeAfterError}
             sessionState={sessionState}
+            sessionId={sessionId}
             hideTopControls
             {...autoRunProps}
           />

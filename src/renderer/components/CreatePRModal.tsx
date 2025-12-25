@@ -251,15 +251,14 @@ export function CreatePRModal({
                 <p style={{ color: theme.colors.warning }}>GitHub CLI not installed</p>
                 <p className="mt-1" style={{ color: theme.colors.textDim }}>
                   Install{' '}
-                  <a
-                    href="https://cli.github.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
                     className="underline hover:opacity-80"
                     style={{ color: theme.colors.accent }}
+                    onClick={() => window.maestro.shell.openExternal('https://cli.github.com')}
                   >
                     GitHub CLI
-                  </a>
+                  </button>
                   {' '}to create pull requests.
                 </p>
               </div>

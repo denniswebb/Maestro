@@ -218,15 +218,14 @@ function MessageBubble({
                   </pre>
                 ),
                 a: ({ href, children }) => (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
                     className="underline"
                     style={{ color: theme.colors.accent }}
+                    onClick={() => href && window.maestro.shell.openExternal(href)}
                   >
                     {children}
-                  </a>
+                  </button>
                 ),
                 h1: ({ children }) => <h1 className="text-lg font-bold mb-2">{children}</h1>,
                 h2: ({ children }) => <h2 className="text-base font-bold mb-2">{children}</h2>,

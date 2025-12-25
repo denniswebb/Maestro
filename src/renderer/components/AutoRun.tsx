@@ -67,7 +67,7 @@ interface AutoRunProps {
   // Batch processing props
   batchRunState?: BatchRunState;
   onOpenBatchRunner?: () => void;
-  onStopBatchRun?: () => void;
+  onStopBatchRun?: (sessionId?: string) => void;
   // Error handling callbacks (Phase 5.10)
   onSkipCurrentDocument?: () => void;
   onAbortBatchOnError?: () => void;
@@ -1104,6 +1104,8 @@ const AutoRunInner = forwardRef<AutoRunHandle, AutoRunProps>(function AutoRunInn
       customLanguageRenderers: {
         mermaid: ({ code, theme: t }) => <MermaidRenderer chart={code} theme={t} />,
       },
+      // Open external links in system browser
+      onExternalLinkClick: (href) => window.maestro.shell.openExternal(href),
       // Add search highlighting when search is active with matches
       searchHighlight: searchOpen && searchQuery.trim() && totalMatches > 0
         ? {
@@ -1247,7 +1249,7 @@ const AutoRunInner = forwardRef<AutoRunHandle, AutoRunProps>(function AutoRunInn
         {/* Run / Stop button */}
         {isLocked ? (
           <button
-            onClick={onStopBatchRun}
+            onClick={() => onStopBatchRun?.(sessionId)}
             disabled={isStopping}
             className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs transition-colors font-semibold ${isStopping ? 'opacity-50 cursor-not-allowed' : ''}`}
             style={{

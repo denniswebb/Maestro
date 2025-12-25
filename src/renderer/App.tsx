@@ -862,6 +862,74 @@ export default function MaestroConsole() {
     }
   }, [settingsLoaded, sessionsLoaded]); // Only run once on startup
 
+  // Check for unacknowledged badges when user returns to the app
+  // Uses multiple triggers: visibility change, window focus, and mouse activity
+  // This catches badges earned during overnight Auto Runs when display was off
+  useEffect(() => {
+    if (!settingsLoaded || !sessionsLoaded) return;
+
+    // Debounce to avoid showing multiple times
+    let checkPending = false;
+
+    const checkForUnacknowledgedBadge = () => {
+      // Don't show if there's already an ovation displayed
+      if (standingOvationData) return;
+      if (checkPending) return;
+
+      const unacknowledgedLevel = getUnacknowledgedBadgeLevel();
+      if (unacknowledgedLevel !== null) {
+        const badge = CONDUCTOR_BADGES.find(b => b.level === unacknowledgedLevel);
+        if (badge) {
+          checkPending = true;
+          // Small delay to let the UI stabilize
+          setTimeout(() => {
+            // Double-check in case it was acknowledged in the meantime
+            if (!standingOvationData) {
+              setStandingOvationData({
+                badge,
+                isNewRecord: false,
+                recordTimeMs: autoRunStats.longestRunMs,
+              });
+            }
+            checkPending = false;
+          }, 500);
+        }
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      // Only check when becoming visible
+      if (!document.hidden) {
+        checkForUnacknowledgedBadge();
+      }
+    };
+
+    const handleWindowFocus = () => {
+      // Window gained focus - user is actively looking at the app
+      checkForUnacknowledgedBadge();
+    };
+
+    // Mouse move handler with heavy debounce - only triggers once per 30 seconds
+    let lastMouseCheck = 0;
+    const handleMouseMove = () => {
+      const now = Date.now();
+      if (now - lastMouseCheck > 30000) { // 30 second debounce
+        lastMouseCheck = now;
+        checkForUnacknowledgedBadge();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('mousemove', handleMouseMove, { passive: true });
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('mousemove', handleMouseMove);
+    };
+  }, [settingsLoaded, sessionsLoaded, standingOvationData, getUnacknowledgedBadgeLevel, autoRunStats.longestRunMs]);
+
   // Check for unacknowledged keyboard mastery levels on startup
   useEffect(() => {
     if (settingsLoaded && sessionsLoaded) {
@@ -3950,12 +4018,12 @@ export default function MaestroConsole() {
   }, [activeSession]);
 
   // Handler to stop batch run (with confirmation)
-  // Stops the first active batch run, or falls back to active session
-  const handleStopBatchRun = useCallback(() => {
-    // Use the first session with an active batch run, or fall back to active session
-    const sessionId = activeBatchSessionIds.length > 0
-      ? activeBatchSessionIds[0]
-      : activeSession?.id;
+  // If targetSessionId is provided, stops that specific session's batch run.
+  // Otherwise, stops the first active batch run or falls back to active session.
+  const handleStopBatchRun = useCallback((targetSessionId?: string) => {
+    // Use provided targetSessionId, or fall back to first active batch, or active session
+    const sessionId = targetSessionId
+      ?? (activeBatchSessionIds.length > 0 ? activeBatchSessionIds[0] : activeSession?.id);
     if (!sessionId) return;
     setConfirmModalMessage('Stop Auto Run after the current task completes?');
     setConfirmModalOnConfirm(() => () => stopBatchRun(sessionId));

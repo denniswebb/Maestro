@@ -652,6 +652,18 @@ function DocumentEditor({
           {...props}
         />
       ),
+      a: ({ href, children }: any) => (
+        <a
+          href={href}
+          onClick={(e) => {
+            e.preventDefault();
+            if (href) window.maestro.shell.openExternal(href);
+          }}
+          style={{ color: theme.colors.accent, textDecoration: 'underline', cursor: 'pointer' }}
+        >
+          {children}
+        </a>
+      ),
     }),
     [theme, folderPath]
   );

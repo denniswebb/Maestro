@@ -84,7 +84,7 @@ interface RightPanelProps {
   batchRunState?: BatchRunState;  // For progress display (may be from any session)
   currentSessionBatchState?: BatchRunState | null;  // For locking editor (current session only)
   onOpenBatchRunner?: () => void;
-  onStopBatchRun?: () => void;
+  onStopBatchRun?: (sessionId?: string) => void;
   // Error handling callbacks (Phase 5.10)
   onSkipCurrentDocument?: () => void;
   onAbortBatchOnError?: () => void;
@@ -120,7 +120,8 @@ export const RightPanel = forwardRef<RightPanelHandle, RightPanelProps>(function
   const historyPanelRef = useRef<HistoryPanelHandle>(null);
   const autoRunRef = useRef<AutoRunHandle>(null);
 
-  // Elapsed time for Auto Run display (updates every second when current session is running)
+  // Elapsed time for Auto Run display - uses cumulative task time (sum of actual task durations)
+  // This is the most accurate measure of actual work time, unaffected by display sleep
   const [elapsedTime, setElapsedTime] = useState<string>('');
 
   // Shared draft state for Auto Run (shared between panel and expanded modal)
@@ -173,94 +174,33 @@ export const RightPanel = forwardRef<RightPanelHandle, RightPanelProps>(function
     });
   }, []);
 
-  // Track accumulated elapsed time with visibility-aware pausing
-  // This prevents counting time when laptop is closed/suspended
-  const accumulatedTimeRef = useRef<number>(0);
-  const lastActiveTimestampRef = useRef<number | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Format elapsed time from milliseconds
+  const formatElapsed = useCallback((ms: number) => {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
 
+    if (hours > 0) {
+      return `${hours}h ${minutes % 60}m`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds % 60}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  }, []);
+
+  // Update elapsed time display when cumulative task time changes
+  // This is simply reading from the batch state - no complex tracking needed
   useEffect(() => {
-    if (!currentSessionBatchState?.isRunning || !currentSessionBatchState?.startTime) {
+    if (!currentSessionBatchState?.isRunning) {
       setElapsedTime('');
-      accumulatedTimeRef.current = 0;
-      lastActiveTimestampRef.current = null;
       return;
     }
 
-    // Initialize from batch state
-    accumulatedTimeRef.current = currentSessionBatchState.accumulatedElapsedMs || 0;
-    lastActiveTimestampRef.current = currentSessionBatchState.lastActiveTimestamp || Date.now();
-
-    const formatElapsed = (ms: number) => {
-      const seconds = Math.floor(ms / 1000);
-      const minutes = Math.floor(seconds / 60);
-      const hours = Math.floor(minutes / 60);
-
-      if (hours > 0) {
-        return `${hours}h ${minutes % 60}m`;
-      } else if (minutes > 0) {
-        return `${minutes}m ${seconds % 60}s`;
-      } else {
-        return `${seconds}s`;
-      }
-    };
-
-    const updateElapsed = () => {
-      if (document.hidden || lastActiveTimestampRef.current === null) {
-        // When hidden, just display the accumulated time without adding more
-        setElapsedTime(formatElapsed(accumulatedTimeRef.current));
-        return;
-      }
-
-      const now = Date.now();
-      const currentSessionTime = now - lastActiveTimestampRef.current;
-      const totalElapsed = accumulatedTimeRef.current + currentSessionTime;
-      setElapsedTime(formatElapsed(totalElapsed));
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        // Going hidden: accumulate the time since last active timestamp
-        if (lastActiveTimestampRef.current !== null) {
-          const now = Date.now();
-          accumulatedTimeRef.current += now - lastActiveTimestampRef.current;
-          lastActiveTimestampRef.current = null;
-        }
-        // Stop the interval to save resources
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-          intervalRef.current = null;
-        }
-      } else {
-        // Becoming visible: reset the last active timestamp to now
-        lastActiveTimestampRef.current = Date.now();
-        // Restart the interval
-        if (!intervalRef.current) {
-          intervalRef.current = setInterval(updateElapsed, 3000); // Quick Win 3: reduced from 1s to 3s
-        }
-      }
-      updateElapsed();
-    };
-
-    // Initial update
-    updateElapsed();
-
-    // Start interval only if visible (Quick Win 3: reduced from 1s to 3s for performance)
-    if (!document.hidden) {
-      intervalRef.current = setInterval(updateElapsed, 3000);
-    }
-
-    // Listen for visibility changes
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-  }, [currentSessionBatchState?.isRunning, currentSessionBatchState?.startTime, currentSessionBatchState?.accumulatedElapsedMs, currentSessionBatchState?.lastActiveTimestamp]);
+    // Use cumulative task time (sum of actual task durations) as primary display
+    const cumulativeMs = currentSessionBatchState.cumulativeTaskTimeMs || 0;
+    setElapsedTime(cumulativeMs > 0 ? formatElapsed(cumulativeMs) : '');
+  }, [currentSessionBatchState?.isRunning, currentSessionBatchState?.cumulativeTaskTimeMs, formatElapsed]);
 
   // Expose methods to parent
   useImperativeHandle(ref, () => ({
@@ -510,9 +450,13 @@ export const RightPanel = forwardRef<RightPanelHandle, RightPanelProps>(function
                 </span>
               )}
             </div>
-            {/* Elapsed time */}
+            {/* Elapsed time - shows sum of actual task durations */}
             {elapsedTime && !currentSessionBatchState.isStopping && (
-              <span className="text-xs font-mono" style={{ color: theme.colors.textDim }}>
+              <span
+                className="text-xs font-mono"
+                style={{ color: theme.colors.textDim }}
+                title="Total task time"
+              >
                 {elapsedTime}
               </span>
             )}

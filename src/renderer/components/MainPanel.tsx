@@ -131,7 +131,7 @@ interface MainPanelProps {
   // Auto mode props
   batchRunState?: BatchRunState;  // For display (may be from any session with active batch)
   currentSessionBatchState?: BatchRunState | null;  // For current session only (input highlighting)
-  onStopBatchRun?: () => void;
+  onStopBatchRun?: (sessionId?: string) => void;
   showConfirmation?: (message: string, onConfirm: () => void) => void;
 
   // TTS settings
@@ -680,11 +680,11 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
               <button
                 onClick={() => {
                   if (isCurrentSessionStopping) return;
-                  // Call onStopBatchRun directly - it handles its own confirmation modal
-                  onStopBatchRun?.();
+                  // Call onStopBatchRun with the active session's ID to stop THIS session's batch
+                  onStopBatchRun?.(activeSession.id);
                 }}
                 disabled={isCurrentSessionStopping}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all ${isCurrentSessionStopping ? 'cursor-not-allowed' : 'hover:opacity-90 cursor-pointer'}`}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-bold text-xs transition-all ${isCurrentSessionStopping ? 'cursor-not-allowed' : 'hover:opacity-90 cursor-pointer'}`}
                 style={{
                   backgroundColor: theme.colors.error,
                   color: 'white'
@@ -692,21 +692,21 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
                 title={isCurrentSessionStopping ? 'Stopping after current task...' : 'Click to stop batch run'}
               >
                 {isCurrentSessionStopping ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  <Wand2 className="w-5 h-5" />
+                  <Wand2 className="w-4 h-4" />
                 )}
                 <span className="uppercase tracking-wider">
                   {isCurrentSessionStopping ? 'Stopping...' : 'Auto'}
                 </span>
                 {currentSessionBatchState && (
-                  <span className="text-xs opacity-80">
+                  <span className="text-[10px] opacity-80">
                     {currentSessionBatchState.completedTasks}/{currentSessionBatchState.totalTasks}
                   </span>
                 )}
                 {currentSessionBatchState?.worktreeActive && (
                   <span title={`Worktree: ${currentSessionBatchState.worktreeBranch || 'active'}`}>
-                    <GitBranch className="w-4 h-4 ml-1" />
+                    <GitBranch className="w-3.5 h-3.5 ml-0.5" />
                   </span>
                 )}
               </button>

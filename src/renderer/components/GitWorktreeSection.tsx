@@ -134,16 +134,17 @@ export function GitWorktreeSection({
             <AlertTriangle className="w-4 h-4 shrink-0" style={{ color: theme.colors.warning }} />
             <span>
               Install{' '}
-              <a
-                href="https://cli.github.com"
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
                 className="underline hover:opacity-80"
                 style={{ color: theme.colors.accent }}
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.maestro.shell.openExternal('https://cli.github.com');
+                }}
               >
                 GitHub CLI
-              </a>
+              </button>
               {' '}to enable worktree features
             </span>
           </div>
