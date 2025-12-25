@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Plus, Star, Copy, Edit2, Mail, Pencil, Search, GitMerge, ArrowRightCircle, Minimize2 } from 'lucide-react';
 import type { AITab, Theme } from '../types';
 import { hasDraft } from '../utils/tabHelpers';
+import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 
 interface TabBarProps {
   tabs: AITab[];
@@ -49,6 +50,8 @@ interface TabProps {
   onSendToAgent?: () => void;
   /** Handler to summarize and continue in a new tab */
   onSummarizeAndContinue?: () => void;
+  /** Handler for right-click context menu */
+  onContextMenu?: (e: React.MouseEvent, tabId: string) => void;
   shortcutHint?: number | null;
   registerRef?: (el: HTMLDivElement | null) => void;
   hasDraft?: boolean;
@@ -118,6 +121,7 @@ function Tab({
   onMergeWith,
   onSendToAgent,
   onSummarizeAndContinue,
+  onContextMenu,
   shortcutHint,
   registerRef,
   hasDraft
@@ -228,6 +232,15 @@ function Tab({
     setOverlayOpen(false);
   };
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Close the hover overlay when opening context menu
+    setOverlayOpen(false);
+    setIsHovered(false);
+    onContextMenu?.(e, tab.id);
+  };
+
   const displayName = getTabDisplayName(tab);
 
   // Browser-style tab: all tabs have borders, active tab "connects" to content
@@ -267,6 +280,7 @@ function Tab({
       onMouseDown={handleMouseDown}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      onContextMenu={handleContextMenu}
       draggable
       onDragStart={onDragStart}
       onDragOver={onDragOver}
@@ -526,6 +540,10 @@ export function TabBar({
   const tabRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const [isOverflowing, setIsOverflowing] = useState(false);
 
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
+  const contextMenuTab = contextMenu ? tabs.find(t => t.id === contextMenu.tabId) : null;
+
   // Center the active tab in the scrollable area when activeTabId changes or filter is toggled
   useEffect(() => {
     requestAnimationFrame(() => {
@@ -585,6 +603,12 @@ export function TabBar({
     }
   }, [onRequestRename]);
 
+  const handleContextMenu = useCallback((e: React.MouseEvent, tabId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, tabId });
+  }, []);
+
   // Count unread tabs for the filter toggle tooltip
   const unreadCount = tabs.filter(t => t.hasUnread).length;
 
@@ -614,6 +638,35 @@ export function TabBar({
       window.removeEventListener('resize', checkOverflow);
     };
   }, [tabs.length, displayedTabs.length]);
+
+  // Build context menu items for the selected tab
+  const contextMenuItems: ContextMenuItem[] = contextMenuTab ? [
+    // Placeholder items - actual functionality will be added in Phase 2
+    {
+      label: 'Close Tab',
+      icon: <X className="w-3.5 h-3.5" />,
+      onClick: () => {
+        // Placeholder - will be implemented in Phase 2
+        console.log('Close tab:', contextMenuTab.id);
+      }
+    },
+    {
+      label: 'Close Other Tabs',
+      icon: <X className="w-3.5 h-3.5" />,
+      onClick: () => {
+        // Placeholder - will be implemented in Phase 2
+        console.log('Close other tabs except:', contextMenuTab.id);
+      }
+    },
+    {
+      label: 'Close Tabs to the Right',
+      icon: <X className="w-3.5 h-3.5" />,
+      onClick: () => {
+        // Placeholder - will be implemented in Phase 2
+        console.log('Close tabs to the right of:', contextMenuTab.id);
+      }
+    },
+  ] : [];
 
   return (
     <div
@@ -708,6 +761,7 @@ export function TabBar({
               onMergeWith={onMergeWith && tab.agentSessionId ? () => onMergeWith(tab.id) : undefined}
               onSendToAgent={onSendToAgent && tab.agentSessionId ? () => onSendToAgent(tab.id) : undefined}
               onSummarizeAndContinue={onSummarizeAndContinue && (tab.logs?.length ?? 0) >= 5 ? () => onSummarizeAndContinue(tab.id) : undefined}
+              onContextMenu={handleContextMenu}
               shortcutHint={!showUnreadOnly && originalIndex < 9 ? originalIndex + 1 : null}
               hasDraft={hasDraft(tab)}
               registerRef={(el) => {
@@ -740,6 +794,17 @@ export function TabBar({
         </button>
       </div>
 
+      {/* Context Menu */}
+      {contextMenu && contextMenuTab && createPortal(
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          theme={theme}
+          items={contextMenuItems}
+          onClose={() => setContextMenu(null)}
+        />,
+        document.body
+      )}
     </div>
   );
 }
