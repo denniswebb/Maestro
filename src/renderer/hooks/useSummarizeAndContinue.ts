@@ -7,13 +7,14 @@
  * - Running the summarization process
  * - Creating a new compacted tab with the summarized context
  * - Tracking progress and errors throughout the process
+ * - Per-tab state tracking (allows other tabs to remain interactive)
  *
  * The new tab is created immediately to the right of the source tab
  * with the name format: "{original name} Compacted YYYY-MM-DD"
  */
 
-import { useState, useRef, useCallback } from 'react';
-import type { Session } from '../types';
+import { useState, useRef, useCallback, useMemo } from 'react';
+import type { Session, LogEntry } from '../types';
 import type { SummarizeProgress, SummarizeResult } from '../types/contextMerge';
 import { contextSummarizationService } from '../services/contextSummarizer';
 import { createTabAtPosition } from '../utils/tabHelpers';
@@ -24,24 +25,46 @@ import { createTabAtPosition } from '../utils/tabHelpers';
 export type SummarizeState = 'idle' | 'summarizing' | 'complete' | 'error';
 
 /**
+ * Per-tab summarization state
+ */
+export interface TabSummarizeState {
+  state: SummarizeState;
+  progress: SummarizeProgress | null;
+  result: SummarizeResult | null;
+  error: string | null;
+  startTime: number;
+}
+
+/**
  * Result of the useSummarizeAndContinue hook.
  */
 export interface UseSummarizeAndContinueResult {
-  /** Current state of the summarization process */
+  /** Current state of the summarization process (for the active tab) */
   summarizeState: SummarizeState;
-  /** Progress information during summarization */
+  /** Progress information during summarization (for the active tab) */
   progress: SummarizeProgress | null;
-  /** Result after successful summarization */
+  /** Result after successful summarization (for the active tab) */
   result: SummarizeResult | null;
-  /** Error message if summarization failed */
+  /** Error message if summarization failed (for the active tab) */
   error: string | null;
+  /** Start time for elapsed time display */
+  startTime: number;
+  /** Get summarization state for a specific tab */
+  getTabSummarizeState: (tabId: string) => TabSummarizeState | null;
+  /** Check if any tab is currently summarizing */
+  isAnySummarizing: boolean;
   /** Start the summarization process for a specific tab */
   startSummarize: (sourceTabId: string) => Promise<{
     newTabId: string;
     updatedSession: Session;
+    systemLogEntry: LogEntry;
   } | null>;
-  /** Cancel the current summarization operation */
+  /** Cancel the current summarization operation for a specific tab */
+  cancelTab: (tabId: string) => void;
+  /** Cancel all summarization operations */
   cancel: () => void;
+  /** Clear the state for a specific tab (call after handling completion) */
+  clearTabState: (tabId: string) => void;
   /** Check if summarization is allowed based on context usage */
   canSummarize: (contextUsage: number) => boolean;
   /** Get the minimum context usage percentage required for summarization */
@@ -51,12 +74,14 @@ export interface UseSummarizeAndContinueResult {
 /**
  * Hook for managing the "Summarize & Continue" workflow.
  *
+ * Tracks per-tab state to allow non-blocking operations. While one tab is
+ * summarizing, other tabs remain fully interactive.
+ *
  * @param session - The Maestro session containing the tabs
- * @param onSessionUpdate - Callback to update the session state
  * @returns Object with summarization state and control functions
  *
  * @example
- * function MyComponent({ session, onSessionUpdate }) {
+ * function MyComponent({ session }) {
  *   const {
  *     summarizeState,
  *     progress,
@@ -64,22 +89,27 @@ export interface UseSummarizeAndContinueResult {
  *     error,
  *     startSummarize,
  *     canSummarize,
- *   } = useSummarizeAndContinue(session, onSessionUpdate);
+ *     getTabSummarizeState,
+ *   } = useSummarizeAndContinue(session);
  *
  *   const handleSummarize = async () => {
  *     const activeTab = getActiveTab(session);
  *     if (activeTab && canSummarize(session.contextUsage)) {
  *       const result = await startSummarize(activeTab.id);
  *       if (result) {
- *         // Switch to the new tab
+ *         // Update session and add system log entry
  *         onSessionUpdate(result.updatedSession);
  *       }
  *     }
  *   };
  *
+ *   // Check if current tab is summarizing
+ *   const tabState = getTabSummarizeState(session.activeTabId);
+ *   const isTabSummarizing = tabState?.state === 'summarizing';
+ *
  *   return (
- *     <button onClick={handleSummarize} disabled={summarizeState === 'summarizing'}>
- *       {summarizeState === 'summarizing' ? `${progress?.progress}%` : 'Summarize & Continue'}
+ *     <button onClick={handleSummarize} disabled={isTabSummarizing}>
+ *       {isTabSummarizing ? `${tabState.progress?.progress}%` : 'Summarize & Continue'}
  *     </button>
  *   );
  * }
@@ -87,42 +117,91 @@ export interface UseSummarizeAndContinueResult {
 export function useSummarizeAndContinue(
   session: Session | null
 ): UseSummarizeAndContinueResult {
-  const [state, setState] = useState<SummarizeState>('idle');
-  const [progress, setProgress] = useState<SummarizeProgress | null>(null);
-  const [result, setResult] = useState<SummarizeResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const cancelRef = useRef(false);
+  // Per-tab state tracking: Map<tabId, TabSummarizeState>
+  const [tabStates, setTabStates] = useState<Map<string, TabSummarizeState>>(new Map());
+  const cancelRefs = useRef<Map<string, boolean>>(new Map());
+
+  // Get state for the active tab (for backwards compatibility)
+  const activeTabId = session?.activeTabId;
+  const activeTabState = activeTabId ? tabStates.get(activeTabId) : null;
+
+  /**
+   * Get summarization state for a specific tab
+   */
+  const getTabSummarizeState = useCallback((tabId: string): TabSummarizeState | null => {
+    return tabStates.get(tabId) || null;
+  }, [tabStates]);
+
+  /**
+   * Check if any tab is currently summarizing
+   */
+  const isAnySummarizing = useMemo(() => {
+    for (const state of tabStates.values()) {
+      if (state.state === 'summarizing') return true;
+    }
+    return false;
+  }, [tabStates]);
+
+  /**
+   * Create a system log entry for the chat history
+   */
+  const createSystemLogEntry = useCallback((
+    message: string,
+    result?: SummarizeResult
+  ): LogEntry => {
+    let text = message;
+    if (result && result.success) {
+      text = `${message}\n\nToken reduction: ${result.reductionPercent}% (~${result.originalTokens.toLocaleString()} → ~${result.compactedTokens.toLocaleString()} tokens)`;
+    }
+    return {
+      id: `system-summarize-${Date.now()}`,
+      timestamp: Date.now(),
+      source: 'system',
+      text,
+    };
+  }, []);
 
   /**
    * Start the summarization process for a specific tab.
    */
   const startSummarize = useCallback(async (
     sourceTabId: string
-  ): Promise<{ newTabId: string; updatedSession: Session } | null> => {
+  ): Promise<{ newTabId: string; updatedSession: Session; systemLogEntry: LogEntry } | null> => {
     if (!session) {
-      setError('No active session');
-      setState('error');
       return null;
     }
 
     const sourceTab = session.aiTabs.find(t => t.id === sourceTabId);
     if (!sourceTab) {
-      setError('Source tab not found');
-      setState('error');
       return null;
     }
 
     // Check if context usage is high enough to warrant summarization
     if (!contextSummarizationService.canSummarize(session.contextUsage)) {
-      setError(`Context usage too low to summarize. Need at least ${contextSummarizationService.getMinContextUsagePercent()}% context usage.`);
-      setState('error');
       return null;
     }
 
-    setState('summarizing');
-    setError(null);
-    setResult(null);
-    cancelRef.current = false;
+    // Check if this tab is already summarizing
+    const existingState = tabStates.get(sourceTabId);
+    if (existingState?.state === 'summarizing') {
+      return null;
+    }
+
+    const startTime = Date.now();
+
+    // Initialize tab state
+    setTabStates(prev => {
+      const next = new Map(prev);
+      next.set(sourceTabId, {
+        state: 'summarizing',
+        progress: null,
+        result: null,
+        error: null,
+        startTime,
+      });
+      return next;
+    });
+    cancelRefs.current.set(sourceTabId, false);
 
     try {
       // Run the summarization
@@ -135,13 +214,20 @@ export function useSummarizeAndContinue(
         },
         sourceTab.logs,
         (p) => {
-          if (!cancelRef.current) {
-            setProgress(p);
+          if (!cancelRefs.current.get(sourceTabId)) {
+            setTabStates(prev => {
+              const next = new Map(prev);
+              const existing = next.get(sourceTabId);
+              if (existing) {
+                next.set(sourceTabId, { ...existing, progress: p });
+              }
+              return next;
+            });
           }
         }
       );
 
-      if (cancelRef.current) {
+      if (cancelRefs.current.get(sourceTabId)) {
         return null;
       }
 
@@ -176,13 +262,28 @@ export function useSummarizeAndContinue(
         ),
       };
 
-      setResult(finalResult);
-      setState('complete');
-      setProgress({
-        stage: 'complete',
-        progress: 100,
-        message: 'Complete!',
+      // Update tab state to complete
+      setTabStates(prev => {
+        const next = new Map(prev);
+        next.set(sourceTabId, {
+          state: 'complete',
+          progress: {
+            stage: 'complete',
+            progress: 100,
+            message: 'Complete!',
+          },
+          result: finalResult,
+          error: null,
+          startTime,
+        });
+        return next;
       });
+
+      // Create system log entry for the chat history
+      const systemLogEntry = createSystemLogEntry(
+        `Context summarized and continued in new tab "${compactedTabName}"`,
+        finalResult
+      );
 
       return {
         newTabId: tabResult.tab.id,
@@ -190,32 +291,69 @@ export function useSummarizeAndContinue(
           ...tabResult.session,
           activeTabId: tabResult.tab.id, // Switch to the new tab
         },
+        systemLogEntry,
       };
     } catch (err) {
-      if (!cancelRef.current) {
+      if (!cancelRefs.current.get(sourceTabId)) {
         const errorMessage = err instanceof Error ? err.message : 'Summarization failed';
-        setError(errorMessage);
-        setState('error');
-        setResult({
+        const errorResult: SummarizeResult = {
           success: false,
           originalTokens: 0,
           compactedTokens: 0,
           reductionPercent: 0,
           error: errorMessage,
+        };
+
+        setTabStates(prev => {
+          const next = new Map(prev);
+          next.set(sourceTabId, {
+            state: 'error',
+            progress: null,
+            result: errorResult,
+            error: errorMessage,
+            startTime,
+          });
+          return next;
         });
       }
       return null;
     }
-  }, [session]);
+  }, [session, tabStates, createSystemLogEntry]);
 
   /**
-   * Cancel the current summarization operation.
+   * Cancel the summarization operation for a specific tab.
+   */
+  const cancelTab = useCallback((tabId: string) => {
+    cancelRefs.current.set(tabId, true);
+    contextSummarizationService.cancelSummarization();
+    setTabStates(prev => {
+      const next = new Map(prev);
+      next.delete(tabId);
+      return next;
+    });
+  }, []);
+
+  /**
+   * Cancel all summarization operations.
    */
   const cancel = useCallback(() => {
-    cancelRef.current = true;
+    for (const tabId of tabStates.keys()) {
+      cancelRefs.current.set(tabId, true);
+    }
     contextSummarizationService.cancelSummarization();
-    setState('idle');
-    setProgress(null);
+    setTabStates(new Map());
+  }, [tabStates]);
+
+  /**
+   * Clear the state for a specific tab (call after handling completion)
+   */
+  const clearTabState = useCallback((tabId: string) => {
+    setTabStates(prev => {
+      const next = new Map(prev);
+      next.delete(tabId);
+      return next;
+    });
+    cancelRefs.current.delete(tabId);
   }, []);
 
   /**
@@ -226,12 +364,20 @@ export function useSummarizeAndContinue(
   }, []);
 
   return {
-    summarizeState: state,
-    progress,
-    result,
-    error,
+    // Active tab state (backwards compatibility)
+    summarizeState: activeTabState?.state || 'idle',
+    progress: activeTabState?.progress || null,
+    result: activeTabState?.result || null,
+    error: activeTabState?.error || null,
+    startTime: activeTabState?.startTime || 0,
+    // Per-tab state access
+    getTabSummarizeState,
+    isAnySummarizing,
+    // Actions
     startSummarize,
+    cancelTab,
     cancel,
+    clearTabState,
     canSummarize,
     minContextUsagePercent: contextSummarizationService.getMinContextUsagePercent(),
   };

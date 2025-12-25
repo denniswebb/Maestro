@@ -46,7 +46,6 @@ import { MergeSessionModal } from './components/MergeSessionModal';
 import { MergeProgressModal } from './components/MergeProgressModal';
 import { SendToAgentModal } from './components/SendToAgentModal';
 import { TransferProgressModal } from './components/TransferProgressModal';
-import { SummarizeProgressModal } from './components/SummarizeProgressModal';
 
 // Group Chat Components
 import { GroupChatPanel } from './components/GroupChatPanel';
@@ -2716,22 +2715,21 @@ export default function MaestroConsole() {
     },
   });
 
-  // Summarize & Continue hook for context compaction
+  // Summarize & Continue hook for context compaction (non-blocking, per-tab)
   const {
     summarizeState,
     progress: summarizeProgress,
     result: summarizeResult,
     error: summarizeError,
+    startTime,
     startSummarize,
-    cancel: cancelSummarize,
+    cancelTab,
+    clearTabState,
     canSummarize,
     minContextUsagePercent,
   } = useSummarizeAndContinue(activeSession ?? null);
 
-  // State for summarize progress modal visibility
-  const [summarizeModalOpen, setSummarizeModalOpen] = useState(false);
-
-  // Handler for starting summarization
+  // Handler for starting summarization (non-blocking - UI remains interactive)
   const handleSummarizeAndContinue = useCallback((tabId?: string) => {
     if (!activeSession || activeSession.inputMode !== 'ai') return;
 
@@ -2747,24 +2745,46 @@ export default function MaestroConsole() {
       return;
     }
 
-    setSummarizeModalOpen(true);
+    // Store session info for toast navigation
+    const sourceSessionId = activeSession.id;
+    const sourceSessionName = activeSession.name;
 
     startSummarize(targetTabId).then((result) => {
       if (result) {
         // Update session with the new tab
         setSessions(prev => prev.map(s =>
-          s.id === activeSession.id ? result.updatedSession : s
+          s.id === sourceSessionId ? result.updatedSession : s
         ));
 
-        // Show success notification
+        // Add system log entry to the SOURCE tab's history
+        setSessions(prev => prev.map(s => {
+          if (s.id !== sourceSessionId) return s;
+          return {
+            ...s,
+            aiTabs: s.aiTabs.map(tab =>
+              tab.id === targetTabId
+                ? { ...tab, logs: [...tab.logs, result.systemLogEntry] }
+                : tab
+            )
+          };
+        }));
+
+        // Show success notification with click-to-navigate
+        const reductionPercent = result.systemLogEntry.text.match(/(\d+)%/)?.[1] ?? '0';
         addToast({
           type: 'success',
           title: 'Context Compacted',
-          message: `Created compacted tab with ${summarizeResult?.reductionPercent ?? 0}% token reduction`,
+          message: `Reduced context by ${reductionPercent}%. Click to view the new tab.`,
+          sessionId: sourceSessionId,
+          tabId: result.newTabId,
+          project: sourceSessionName,
         });
+
+        // Clear the summarization state for this tab
+        clearTabState(targetTabId);
       }
     });
-  }, [activeSession, canSummarize, minContextUsagePercent, startSummarize, setSessions, addToast, summarizeResult?.reductionPercent]);
+  }, [activeSession, canSummarize, minContextUsagePercent, startSummarize, setSessions, addToast, clearTabState]);
 
   // Combine built-in slash commands with custom AI commands, spec-kit commands, AND agent-specific commands for autocomplete
   const allSlashCommands = useMemo(() => {
@@ -7675,23 +7695,6 @@ export default function MaestroConsole() {
         />
       )}
 
-      {/* --- SUMMARIZE PROGRESS MODAL --- */}
-      {summarizeModalOpen && summarizeState !== 'idle' && (
-        <SummarizeProgressModal
-          theme={theme}
-          isOpen={summarizeModalOpen}
-          progress={summarizeProgress}
-          result={summarizeResult}
-          onCancel={() => {
-            cancelSummarize();
-            setSummarizeModalOpen(false);
-          }}
-          onComplete={() => {
-            setSummarizeModalOpen(false);
-          }}
-        />
-      )}
-
       {/* --- SEND TO AGENT MODAL --- */}
       {sendToAgentModalOpen && activeSession && activeSession.activeTabId && (
         <SendToAgentModal
@@ -8869,6 +8872,16 @@ export default function MaestroConsole() {
         contextWarningsEnabled={contextManagementSettings.contextWarningsEnabled}
         contextWarningYellowThreshold={contextManagementSettings.contextWarningYellowThreshold}
         contextWarningRedThreshold={contextManagementSettings.contextWarningRedThreshold}
+        // Summarization progress props (non-blocking, per-tab)
+        summarizeProgress={summarizeProgress}
+        summarizeResult={summarizeResult}
+        summarizeStartTime={startTime}
+        isSummarizing={summarizeState === 'summarizing'}
+        onCancelSummarize={() => {
+          if (activeSession?.activeTabId) {
+            cancelTab(activeSession.activeTabId);
+          }
+        }}
         onShortcutUsed={(shortcutId: string) => {
           const result = recordShortcutUsage(shortcutId);
           if (result.newLevel !== null) {

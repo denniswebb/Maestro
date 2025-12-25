@@ -59,7 +59,6 @@ const MAX_SUMMARIZE_TOKENS = 50000;
  */
 export class ContextSummarizationService {
   private config: Required<SummarizationConfig>;
-  private activeSummarizationSessionId: string | null = null;
 
   constructor(config: SummarizationConfig = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -118,27 +117,21 @@ export class ContextSummarizationService {
         );
       }
 
-      // Stage 2: Create summarization session
+      // Stage 2: Send to AI for summarization using the single-call groomContext API
       onProgress({
         stage: 'summarizing',
         progress: 30,
-        message: 'Starting summarization session...',
-      });
-
-      console.log('[ContextSummarizer] Creating summarization session for project:', request.projectRoot);
-      const summarizationSessionId = await this.createSummarizationSession(request.projectRoot);
-      console.log('[ContextSummarizer] Session created:', summarizationSessionId);
-
-      onProgress({
-        stage: 'summarizing',
-        progress: 40,
         message: 'Sending context for compaction...',
       });
 
-      // Stage 3: Send summarization prompt and get response
       const prompt = this.buildSummarizationPrompt(formattedContext);
-      console.log('[ContextSummarizer] Sending prompt, length:', prompt.length);
-      const summarizedText = await this.sendSummarizationPrompt(summarizationSessionId, prompt);
+      console.log('[ContextSummarizer] Calling groomContext API, prompt length:', prompt.length);
+
+      const summarizedText = await window.maestro.context.groomContext(
+        request.projectRoot,
+        this.config.defaultAgentType,
+        prompt
+      );
       console.log('[ContextSummarizer] Received response, length:', summarizedText?.length || 0);
 
       onProgress({
@@ -147,18 +140,15 @@ export class ContextSummarizationService {
         message: 'Processing summarized output...',
       });
 
-      // Stage 4: Parse the summarized output
+      // Stage 3: Parse the summarized output
       const summarizedLogs = parseGroomedOutput(summarizedText);
       const compactedTokens = estimateTextTokenCount(summarizedText);
 
-      // Stage 5: Cleanup
       onProgress({
         stage: 'creating',
         progress: 90,
-        message: 'Cleaning up summarization session...',
+        message: 'Finalizing compacted context...',
       });
-
-      await this.cleanupSummarizationSession(summarizationSessionId);
 
       return {
         summarizedLogs,
@@ -166,15 +156,7 @@ export class ContextSummarizationService {
         compactedTokens,
       };
     } catch (error) {
-      // Ensure cleanup on error
-      if (this.activeSummarizationSessionId) {
-        try {
-          await this.cleanupSummarizationSession(this.activeSummarizationSessionId);
-        } catch {
-          // Ignore cleanup errors
-        }
-      }
-
+      // The groomContext API handles its own cleanup
       throw error;
     }
   }
@@ -271,71 +253,6 @@ Please provide a comprehensive but compacted summary of the above conversation, 
   }
 
   /**
-   * Create a temporary session for the summarization process.
-   *
-   * @param projectRoot - The project root path for the summarization session
-   * @returns Promise resolving to the temporary session ID
-   */
-  private async createSummarizationSession(projectRoot: string): Promise<string> {
-    const sessionId = `summarize-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-    this.activeSummarizationSessionId = sessionId;
-
-    try {
-      const result = await window.maestro.context.createGroomingSession(
-        projectRoot,
-        this.config.defaultAgentType
-      );
-
-      if (result) {
-        this.activeSummarizationSessionId = result;
-        return result;
-      }
-
-      return sessionId;
-    } catch {
-      // If IPC is not available, return the generated ID
-      return sessionId;
-    }
-  }
-
-  /**
-   * Send the summarization prompt to the temporary session.
-   *
-   * @param sessionId - The summarization session ID
-   * @param prompt - The complete summarization prompt
-   * @returns Promise resolving to the summarized output text
-   */
-  private async sendSummarizationPrompt(sessionId: string, prompt: string): Promise<string> {
-    try {
-      console.log('[ContextSummarizer] Calling IPC sendGroomingPrompt for session:', sessionId);
-      const response = await window.maestro.context.sendGroomingPrompt(sessionId, prompt);
-      console.log('[ContextSummarizer] IPC returned, response length:', response?.length || 0);
-      return response || '';
-    } catch (error) {
-      console.error('[ContextSummarizer] IPC error:', error);
-      throw new Error(`Context summarization failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  /**
-   * Clean up the temporary summarization session.
-   *
-   * @param sessionId - The summarization session ID to clean up
-   */
-  private async cleanupSummarizationSession(sessionId: string): Promise<void> {
-    try {
-      await window.maestro.context.cleanupGroomingSession(sessionId);
-    } catch {
-      // Ignore cleanup errors
-    } finally {
-      if (this.activeSummarizationSessionId === sessionId) {
-        this.activeSummarizationSessionId = null;
-      }
-    }
-  }
-
-  /**
    * Format a compacted tab name from the original name.
    *
    * @param originalName - The original tab name
@@ -367,18 +284,22 @@ Please provide a comprehensive but compacted summary of the above conversation, 
 
   /**
    * Cancel any active summarization operation.
+   * Note: With the groomContext API, cancellation is handled by the caller.
+   * This method is kept for API compatibility but is a no-op.
    */
   async cancelSummarization(): Promise<void> {
-    if (this.activeSummarizationSessionId) {
-      await this.cleanupSummarizationSession(this.activeSummarizationSessionId);
-    }
+    // groomContext handles its own lifecycle - cancellation happens via the caller's
+    // cancel token or by not awaiting the promise
   }
 
   /**
    * Check if a summarization operation is currently in progress.
+   * Note: With the groomContext API, the caller tracks active state.
+   * This method is kept for API compatibility but always returns false.
    */
   isSummarizationActive(): boolean {
-    return this.activeSummarizationSessionId !== null;
+    // State tracking is now done by the caller (useSummarizeAndContinue hook)
+    return false;
   }
 }
 

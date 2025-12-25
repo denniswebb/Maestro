@@ -2,9 +2,11 @@ import React, { useEffect, useMemo } from 'react';
 import { Terminal, Cpu, Keyboard, ImageIcon, X, ArrowUp, Eye, History, File, Folder, GitBranch, Tag, PenLine, Brain } from 'lucide-react';
 import type { Session, Theme, BatchRunState } from '../types';
 import type { TabCompletionSuggestion, TabCompletionFilter } from '../hooks/useTabCompletion';
+import type { SummarizeProgress, SummarizeResult } from '../types/contextMerge';
 import { ThinkingStatusPill } from './ThinkingStatusPill';
 import { ExecutionQueueIndicator } from './ExecutionQueueIndicator';
 import { ContextWarningSash } from './ContextWarningSash';
+import { SummarizeProgressOverlay } from './SummarizeProgressOverlay';
 import { useAgentCapabilities } from '../hooks/useAgentCapabilities';
 import { useScrollIntoView } from '../hooks/useScrollIntoView';
 import { getProviderDisplayName } from '../utils/sessionValidation';
@@ -94,6 +96,12 @@ interface InputAreaProps {
   contextWarningYellowThreshold?: number;
   contextWarningRedThreshold?: number;
   onSummarizeAndContinue?: () => void;
+  // Summarization progress props (non-blocking, per-tab)
+  summarizeProgress?: SummarizeProgress | null;
+  summarizeResult?: SummarizeResult | null;
+  summarizeStartTime?: number;
+  isSummarizing?: boolean;
+  onCancelSummarize?: () => void;
 }
 
 export const InputArea = React.memo(function InputArea(props: InputAreaProps) {
@@ -128,7 +136,13 @@ export const InputArea = React.memo(function InputArea(props: InputAreaProps) {
     contextWarningsEnabled = false,
     contextWarningYellowThreshold = 60,
     contextWarningRedThreshold = 80,
-    onSummarizeAndContinue
+    onSummarizeAndContinue,
+    // Summarization progress props
+    summarizeProgress,
+    summarizeResult,
+    summarizeStartTime = 0,
+    isSummarizing = false,
+    onCancelSummarize
   } = props;
 
   // Get agent capabilities for conditional feature rendering
@@ -235,6 +249,19 @@ export const InputArea = React.memo(function InputArea(props: InputAreaProps) {
       inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 112)}px`;
     }
   }, [inputValue, inputRef]);
+
+  // Show summarization progress overlay when active for this tab
+  if (isSummarizing && session.inputMode === 'ai' && onCancelSummarize) {
+    return (
+      <SummarizeProgressOverlay
+        theme={theme}
+        progress={summarizeProgress || null}
+        result={summarizeResult || null}
+        onCancel={onCancelSummarize}
+        startTime={summarizeStartTime}
+      />
+    );
+  }
 
   return (
     <div className="relative p-4 border-t" style={{ borderColor: theme.colors.border, backgroundColor: theme.colors.bgSidebar }}>

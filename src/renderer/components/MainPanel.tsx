@@ -200,6 +200,13 @@ interface MainPanelProps {
   contextWarningYellowThreshold?: number;
   contextWarningRedThreshold?: number;
 
+  // Summarization progress props (non-blocking, per-tab)
+  summarizeProgress?: import('../types/contextMerge').SummarizeProgress | null;
+  summarizeResult?: import('../types/contextMerge').SummarizeResult | null;
+  summarizeStartTime?: number;
+  isSummarizing?: boolean;
+  onCancelSummarize?: () => void;
+
   // Keyboard mastery tracking
   onShortcutUsed?: (shortcutId: string) => void;
 }
@@ -235,6 +242,12 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
     contextWarningsEnabled = false,
     contextWarningYellowThreshold = 60,
     contextWarningRedThreshold = 80,
+    // Summarization progress props
+    summarizeProgress,
+    summarizeResult,
+    summarizeStartTime = 0,
+    isSummarizing = false,
+    onCancelSummarize,
   } = props;
 
   // isCurrentSessionAutoMode: THIS session has active batch run (for all UI indicators)
@@ -1067,6 +1080,12 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
                 contextWarningYellowThreshold={contextWarningYellowThreshold}
                 contextWarningRedThreshold={contextWarningRedThreshold}
                 onSummarizeAndContinue={onSummarizeAndContinue ? () => onSummarizeAndContinue(activeSession.activeTabId) : undefined}
+                // Summarization progress props
+                summarizeProgress={summarizeProgress}
+                summarizeResult={summarizeResult}
+                summarizeStartTime={summarizeStartTime}
+                isSummarizing={isSummarizing}
+                onCancelSummarize={onCancelSummarize}
               />
               </div>
               )}
