@@ -171,7 +171,7 @@ function SessionContextMenu({
         style={{ color: theme.colors.textMain }}
       >
         <Copy className="w-3.5 h-3.5" />
-        Duplicate
+        Duplicate...
       </button>
 
       {/* Toggle Bookmark - only for non-worktree sessions */}
