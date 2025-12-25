@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, memo } from 'react';
+import { useState, useMemo, useCallback, memo, useEffect, useRef } from 'react';
 import { Check } from 'lucide-react';
 import type { Theme } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
@@ -53,6 +53,7 @@ export const AskUserQuestionCard = memo(function AskUserQuestionCard({
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
 
   const activeQuestion = questions[activeQuestionIndex];
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Check if a question has been answered
   const isQuestionAnswered = useCallback((question: Question): boolean => {
@@ -123,6 +124,43 @@ export const AskUserQuestionCard = memo(function AskUserQuestionCard({
     }
   }, [activeQuestionIndex]);
 
+  // Keyboard shortcut handler
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle if the question card is focused or contains the active element
+      if (!containerRef.current?.contains(document.activeElement)) {
+        return;
+      }
+
+      // Enter key: submit if all questions answered (and not in text input)
+      if (e.key === 'Enter' && allQuestionsAnswered) {
+        const target = e.target as HTMLElement;
+        // Don't submit if user is typing in the "Other" text input
+        if (target.tagName !== 'INPUT' || target.getAttribute('type') !== 'text') {
+          e.preventDefault();
+          handleSubmit();
+        }
+      }
+
+      // Tab key: navigate to next question (Shift+Tab for previous)
+      if (e.key === 'Tab' && questions.length > 1) {
+        const target = e.target as HTMLElement;
+        // Only intercept Tab if not in a text input (let normal tab behavior work there)
+        if (target.tagName !== 'INPUT' || target.getAttribute('type') !== 'text') {
+          e.preventDefault();
+          if (e.shiftKey) {
+            handlePrevious();
+          } else {
+            handleNext();
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [allQuestionsAnswered, handleSubmit, handleNext, handlePrevious, questions.length]);
+
   // Check if "Other" is selected for this question
   const isOtherSelected = useMemo(() => {
     const answer = answers[activeQuestion.header];
@@ -134,7 +172,9 @@ export const AskUserQuestionCard = memo(function AskUserQuestionCard({
 
   return (
     <div
-      className="rounded-lg p-4 mb-3"
+      ref={containerRef}
+      tabIndex={-1}
+      className="rounded-lg p-4 mb-3 outline-none"
       style={{
         backgroundColor: theme.colors.bgActivity,
         border: `1px solid ${theme.colors.border}`,
@@ -263,6 +303,29 @@ export const AskUserQuestionCard = memo(function AskUserQuestionCard({
             </div>
           );
         })}
+      </div>
+
+      {/* Keyboard shortcuts hint */}
+      <div className="mt-3 pt-3 text-xs" style={{
+        color: theme.colors.textDim,
+        borderTop: `1px solid ${theme.colors.border}`
+      }}>
+        💡 <span className="font-medium">Keyboard shortcuts:</span>{' '}
+        {questions.length > 1 && (
+          <>
+            <kbd className="px-1.5 py-0.5 rounded" style={{
+              backgroundColor: theme.colors.bgSidebar,
+              border: `1px solid ${theme.colors.border}`
+            }}>Tab</kbd> / <kbd className="px-1.5 py-0.5 rounded" style={{
+              backgroundColor: theme.colors.bgSidebar,
+              border: `1px solid ${theme.colors.border}`
+            }}>Shift+Tab</kbd> to navigate questions,{' '}
+          </>
+        )}
+        <kbd className="px-1.5 py-0.5 rounded" style={{
+          backgroundColor: theme.colors.bgSidebar,
+          border: `1px solid ${theme.colors.border}`
+        }}>Enter</kbd> to submit
       </div>
 
       {/* Navigation and Actions */}
