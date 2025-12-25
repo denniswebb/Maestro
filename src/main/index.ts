@@ -117,6 +117,9 @@ interface MaestroSettings {
   // Web interface custom port
   webInterfaceUseCustomPort: boolean;
   webInterfaceCustomPort: number;
+  // Web interface auto-start
+  webInterfaceAutoStart: boolean;
+  webInterfacePersistentToken: string | null;
 }
 
 const store = new Store<MaestroSettings>({
@@ -137,6 +140,8 @@ const store = new Store<MaestroSettings>({
     webAuthToken: null,
     webInterfaceUseCustomPort: false,
     webInterfaceCustomPort: 8080,
+    webInterfaceAutoStart: false,
+    webInterfacePersistentToken: null,
   },
 });
 
