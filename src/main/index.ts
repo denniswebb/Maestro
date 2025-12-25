@@ -3,6 +3,7 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs/promises';
 import fsSync from 'fs';
+import { randomUUID } from 'crypto';
 import * as Sentry from '@sentry/electron/main';
 import { ProcessManager } from './process-manager';
 import { WebServer } from './web-server';
@@ -1250,6 +1251,85 @@ function setupIpcHandlers() {
 
   ipcMain.handle('webserver:getConnectedClients', async () => {
     return webServer?.getWebClientCount() || 0;
+  });
+
+  // Get current security token (from running server or persistent token from settings)
+  ipcMain.handle('webserver:getToken', async (): Promise<string | null> => {
+    // If server is running, return its current token
+    if (webServer) {
+      return webServer.getSecurityToken();
+    }
+
+    // If auto-start is enabled, return the persistent token from settings
+    const autoStartEnabled = store.get('webInterfaceAutoStart', false);
+    if (autoStartEnabled) {
+      return store.get('webInterfacePersistentToken', null);
+    }
+
+    // No server running and auto-start disabled
+    return null;
+  });
+
+  // Rotate security token (generates new token, persists if auto-start enabled, restarts server if running)
+  ipcMain.handle('webserver:rotateToken', async (): Promise<{
+    success: boolean;
+    token?: string;
+    url?: string;
+    restarted?: boolean;
+    error?: string;
+  }> => {
+    try {
+      // Generate new UUID token
+      const newToken = randomUUID();
+      logger.info('Rotating web server security token', 'WebServer');
+
+      const autoStartEnabled = store.get('webInterfaceAutoStart', false);
+
+      // If auto-start enabled, persist the new token
+      if (autoStartEnabled) {
+        store.set('webInterfacePersistentToken', newToken);
+        logger.debug('New persistent token saved to settings', 'WebServer');
+      }
+
+      // If server is running, restart it with the new token
+      if (webServer) {
+        logger.info('Web server is running, restarting with new token', 'WebServer');
+
+        // Stop the current server
+        await webServer.stop();
+        webServer = null;
+
+        // Create server with new token
+        webServer = createWebServer();
+
+        // Start the server
+        await webServer.start();
+        const url = webServer.getSecureUrl();
+
+        logger.info('Web server restarted with new token', 'WebServer', { url });
+
+        return {
+          success: true,
+          token: newToken,
+          url,
+          restarted: true,
+        };
+      }
+
+      // Server not running, just return the new token
+      logger.debug('Web server not running, token updated in settings only', 'WebServer');
+      return {
+        success: true,
+        token: newToken,
+        restarted: false,
+      };
+    } catch (error: any) {
+      logger.error(`Failed to rotate web server token: ${error.message}`, 'WebServer');
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
   });
 
   // System operations (dialog, fonts, shells, tunnel, devtools, updates, logger)
