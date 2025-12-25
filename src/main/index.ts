@@ -760,28 +760,78 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', async () => {
+// Track if quit has been confirmed by user (or no busy agents)
+let quitConfirmed = false;
+
+// Handle quit confirmation from renderer
+ipcMain.on('app:quitConfirmed', () => {
+  logger.info('Quit confirmed by renderer', 'Window');
+  quitConfirmed = true;
+  app.quit();
+});
+
+// Handle quit cancellation (user declined)
+ipcMain.on('app:quitCancelled', () => {
+  logger.info('Quit cancelled by renderer', 'Window');
+  // Nothing to do - app stays running
+});
+
+// IMPORTANT: This handler must be synchronous for event.preventDefault() to work!
+// Async handlers return a Promise immediately, which breaks preventDefault in Electron.
+app.on('before-quit', (event) => {
+  // If quit not yet confirmed, intercept and ask renderer
+  if (!quitConfirmed) {
+    event.preventDefault();
+
+    // Ask renderer to check for busy agents
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      logger.info('Requesting quit confirmation from renderer', 'Window');
+      mainWindow.webContents.send('app:requestQuitConfirmation');
+    } else {
+      // No window, just quit
+      quitConfirmed = true;
+      app.quit();
+    }
+    return;
+  }
+
+  // Quit confirmed - proceed with cleanup (async operations are fire-and-forget)
   logger.info('Application shutting down', 'Shutdown');
+
   // Stop history manager watcher
   getHistoryManager().stopWatching();
+
   // Stop CLI activity watcher
   if (cliActivityWatcher) {
     cliActivityWatcher.close();
     cliActivityWatcher = null;
   }
+
   // Clean up active grooming sessions (context merge/transfer operations)
   const groomingSessionCount = getActiveGroomingSessionCount();
   if (groomingSessionCount > 0 && processManager) {
     logger.info(`Cleaning up ${groomingSessionCount} active grooming session(s)`, 'Shutdown');
-    await cleanupAllGroomingSessions(processManager);
+    // Fire and forget - don't await
+    cleanupAllGroomingSessions(processManager).catch(err => {
+      logger.error(`Error cleaning up grooming sessions: ${err}`, 'Shutdown');
+    });
   }
+
   // Clean up all running processes
   logger.info('Killing all running processes', 'Shutdown');
   processManager?.killAll();
+
+  // Stop tunnel and web server (fire and forget)
   logger.info('Stopping tunnel', 'Shutdown');
-  await tunnelManager.stop();
+  tunnelManager.stop().catch(err => {
+    logger.error(`Error stopping tunnel: ${err}`, 'Shutdown');
+  });
+
   logger.info('Stopping web server', 'Shutdown');
-  await webServer?.stop();
+  webServer?.stop().catch(err => {
+    logger.error(`Error stopping web server: ${err}`, 'Shutdown');
+  });
+
   logger.info('Shutdown complete', 'Shutdown');
 });
 

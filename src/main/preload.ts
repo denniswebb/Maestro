@@ -1237,6 +1237,24 @@ contextBridge.exposeInMainWorld('maestro', {
     },
   },
 
+  // App lifecycle API (quit confirmation)
+  app: {
+    // Listen for quit confirmation request from main process
+    onQuitConfirmationRequest: (callback: () => void) => {
+      const handler = () => callback();
+      ipcRenderer.on('app:requestQuitConfirmation', handler);
+      return () => ipcRenderer.removeListener('app:requestQuitConfirmation', handler);
+    },
+    // Confirm quit (user approved or no busy agents)
+    confirmQuit: () => {
+      ipcRenderer.send('app:quitConfirmed');
+    },
+    // Cancel quit (user declined)
+    cancelQuit: () => {
+      ipcRenderer.send('app:quitCancelled');
+    },
+  },
+
   // Leaderboard API (runmaestro.ai integration)
   leaderboard: {
     submit: (data: {
@@ -1518,6 +1536,11 @@ export interface MaestroAPI {
     open: () => Promise<void>;
     close: () => Promise<void>;
     toggle: () => Promise<void>;
+  };
+  app: {
+    onQuitConfirmationRequest: (callback: () => void) => () => void;
+    confirmQuit: () => void;
+    cancelQuit: () => void;
   };
   updates: {
     check: () => Promise<{

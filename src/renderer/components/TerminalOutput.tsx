@@ -405,24 +405,21 @@ const LogItemComponent = memo(({
             className="px-4 py-2 text-sm font-mono border-l-2"
             style={{
               color: theme.colors.textDim,
-              borderColor: `${theme.colors.border}80`,
-              backgroundColor: `${theme.colors.bgActivity}30`,
-              opacity: 0.5,
+              borderColor: theme.colors.accent,
             }}
           >
             <div className="flex items-center gap-2 mb-1">
               <span
                 className="text-[10px] px-1.5 py-0.5 rounded"
                 style={{
-                  backgroundColor: `${theme.colors.border}40`,
-                  color: theme.colors.textDim,
-                  opacity: 0.7,
+                  backgroundColor: `${theme.colors.accent}30`,
+                  color: theme.colors.accent,
                 }}
               >
                 thinking
               </span>
             </div>
-            <div className="whitespace-pre-wrap">{log.text}</div>
+            <div className="whitespace-pre-wrap" style={{ opacity: 0.7 }}>{log.text}</div>
           </div>
         )}
         {/* Special rendering for tool execution events (shown alongside thinking) */}

@@ -23,6 +23,9 @@ export const MODAL_PRIORITIES = {
   /** Onboarding tour overlay - above wizard, guides new users */
   TOUR: 1050,
 
+  /** Quit confirmation modal - highest priority, blocks app quit */
+  QUIT_CONFIRM: 1020,
+
   /** Agent error modal - critical, shows recovery options */
   AGENT_ERROR: 1010,
 

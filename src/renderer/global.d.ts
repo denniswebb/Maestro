@@ -553,6 +553,11 @@ interface MaestroAPI {
     close: () => Promise<void>;
     toggle: () => Promise<void>;
   };
+  app: {
+    onQuitConfirmationRequest: (callback: () => void) => () => void;
+    confirmQuit: () => void;
+    cancelQuit: () => void;
+  };
   logger: {
     log: (level: 'debug' | 'info' | 'warn' | 'error' | 'toast' | 'autorun', message: string, context?: string, data?: unknown) => Promise<void>;
     getLogs: (filter?: { level?: string; context?: string; limit?: number }) => Promise<Array<{

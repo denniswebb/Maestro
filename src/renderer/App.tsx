@@ -14,6 +14,7 @@ import { RenameSessionModal } from './components/RenameSessionModal';
 import { RenameTabModal } from './components/RenameTabModal';
 import { RenameGroupModal } from './components/RenameGroupModal';
 import { ConfirmModal } from './components/ConfirmModal';
+import { QuitConfirmModal } from './components/QuitConfirmModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { MainPanel, type MainPanelHandle } from './components/MainPanel';
 import { ProcessMonitor } from './components/ProcessMonitor';
@@ -446,6 +447,9 @@ export default function MaestroConsole() {
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [confirmModalMessage, setConfirmModalMessage] = useState('');
   const [confirmModalOnConfirm, setConfirmModalOnConfirm] = useState<(() => void) | null>(null);
+
+  // Quit Confirmation Modal State
+  const [quitConfirmModalOpen, setQuitConfirmModalOpen] = useState(false);
 
   // Rename Instance Modal State
   const [renameInstanceModalOpen, setRenameInstanceModalOpen] = useState(false);
@@ -2629,6 +2633,26 @@ export default function MaestroConsole() {
   useCliActivityMonitoring({
     setSessions,
   });
+
+  // Quit confirmation handler - shows modal when trying to quit with busy agents
+  useEffect(() => {
+    const unsubscribe = window.maestro.app.onQuitConfirmationRequest(() => {
+      // Get all busy AI sessions (agents that are actively thinking)
+      const busyAgents = sessions.filter(
+        s => s.state === 'busy' && s.busySource === 'ai' && s.toolType !== 'terminal'
+      );
+
+      if (busyAgents.length === 0) {
+        // No busy agents, confirm quit immediately
+        window.maestro.app.confirmQuit();
+      } else {
+        // Show quit confirmation modal
+        setQuitConfirmModalOpen(true);
+      }
+    });
+
+    return unsubscribe;
+  }, [sessions]);
 
   // Theme styles hook - manages CSS variables and scrollbar fade animations
   useThemeStyles({
@@ -8033,6 +8057,29 @@ export default function MaestroConsole() {
           onClose={() => setConfirmModalOpen(false)}
         />
       )}
+
+      {/* --- QUIT CONFIRMATION MODAL --- */}
+      {quitConfirmModalOpen && (() => {
+        // Get busy agent info for display
+        const busyAgents = sessions.filter(
+          s => s.state === 'busy' && s.busySource === 'ai' && s.toolType !== 'terminal'
+        );
+        return (
+          <QuitConfirmModal
+            theme={theme}
+            busyAgentCount={busyAgents.length}
+            busyAgentNames={busyAgents.map(s => s.name)}
+            onConfirmQuit={() => {
+              setQuitConfirmModalOpen(false);
+              window.maestro.app.confirmQuit();
+            }}
+            onCancel={() => {
+              setQuitConfirmModalOpen(false);
+              window.maestro.app.cancelQuit();
+            }}
+          />
+        );
+      })()}
 
       {/* --- RENAME INSTANCE MODAL --- */}
       {renameInstanceModalOpen && (
