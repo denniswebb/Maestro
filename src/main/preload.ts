@@ -456,6 +456,14 @@ contextBridge.exposeInMainWorld('maestro', {
   webserver: {
     getUrl: () => ipcRenderer.invoke('webserver:getUrl'),
     getConnectedClients: () => ipcRenderer.invoke('webserver:getConnectedClients'),
+    getToken: () => ipcRenderer.invoke('webserver:getToken') as Promise<string | null>,
+    rotateToken: () => ipcRenderer.invoke('webserver:rotateToken') as Promise<{
+      success: boolean;
+      token?: string;
+      url?: string;
+      restarted?: boolean;
+      error?: string;
+    }>,
   },
 
   // Live Session API - toggle sessions as live/offline in web interface
@@ -1468,6 +1476,14 @@ export interface MaestroAPI {
   webserver: {
     getUrl: () => Promise<string>;
     getConnectedClients: () => Promise<number>;
+    getToken: () => Promise<string | null>;
+    rotateToken: () => Promise<{
+      success: boolean;
+      token?: string;
+      url?: string;
+      restarted?: boolean;
+      error?: string;
+    }>;
   };
   live: {
     toggle: (sessionId: string, agentSessionId?: string) => Promise<{ live: boolean; url: string | null }>;
