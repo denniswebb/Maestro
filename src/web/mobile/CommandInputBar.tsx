@@ -464,6 +464,8 @@ export function CommandInputBar({
   return (
     <div
       ref={containerRef}
+      role="form"
+      aria-label="Command input area"
       {...swipeUpHandlers}
       style={{
         position: 'fixed',

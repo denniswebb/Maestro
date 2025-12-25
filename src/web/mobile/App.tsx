@@ -135,15 +135,16 @@ function MobileHeader({ activeSession }: MobileHeaderProps) {
           <path d="M21 16h-4"/>
           <path d="M11 3H9"/>
         </svg>
-        <span
+        <h1
           style={{
             fontSize: '16px',
             fontWeight: 600,
             color: colors.textMain,
+            margin: 0,
           }}
         >
           Maestro
-        </span>
+        </h1>
       </div>
 
       {/* Center: Session info (name + Claude session ID + status + usage) */}
@@ -1087,34 +1088,34 @@ export default function MobileApp() {
             </p>
           )}
         </div>
-      </main>
 
-      {/* Sticky bottom command input bar */}
-      <CommandInputBar
-        isOffline={isOffline}
-        isConnected={connectionState === 'connected' || connectionState === 'authenticated'}
-        value={commandInput}
-        onChange={handleCommandChange}
-        onSubmit={handleCommandSubmit}
-        placeholder={
-          !activeSessionId
-            ? 'Select a session first...'
-            : activeSession?.inputMode === 'ai'
-              ? (isSmallScreen
-                  ? 'Query AI...'
-                  : `Ask ${activeSession?.toolType === 'claude-code' ? 'Claude' : activeSession?.toolType || 'AI'} about ${activeSession?.name || 'this session'}...`)
-              : 'Run shell command...'
-        }
-        disabled={!activeSessionId}
-        inputMode={(activeSession?.inputMode as InputMode) || 'ai'}
-        onModeToggle={handleModeToggle}
-        isSessionBusy={activeSession?.state === 'busy'}
-        onInterrupt={handleInterrupt}
-        hasActiveSession={!!activeSessionId}
-        cwd={activeSession?.cwd}
-        slashCommands={allSlashCommands}
-        showRecentCommands={false}
-      />
+        {/* Sticky bottom command input bar */}
+        <CommandInputBar
+          isOffline={isOffline}
+          isConnected={connectionState === 'connected' || connectionState === 'authenticated'}
+          value={commandInput}
+          onChange={handleCommandChange}
+          onSubmit={handleCommandSubmit}
+          placeholder={
+            !activeSessionId
+              ? 'Select a session first...'
+              : activeSession?.inputMode === 'ai'
+                ? (isSmallScreen
+                    ? 'Query AI...'
+                    : `Ask ${activeSession?.toolType === 'claude-code' ? 'Claude' : activeSession?.toolType || 'AI'} about ${activeSession?.name || 'this session'}...`)
+                : 'Run shell command...'
+          }
+          disabled={!activeSessionId}
+          inputMode={(activeSession?.inputMode as InputMode) || 'ai'}
+          onModeToggle={handleModeToggle}
+          isSessionBusy={activeSession?.state === 'busy'}
+          onInterrupt={handleInterrupt}
+          hasActiveSession={!!activeSessionId}
+          cwd={activeSession?.cwd}
+          slashCommands={allSlashCommands}
+          showRecentCommands={false}
+        />
+      </main>
 
       {/* Full-screen response viewer modal */}
       <ResponseViewer
