@@ -639,7 +639,27 @@ export function TabBar({
     };
   }, [tabs.length, displayedTabs.length]);
 
-  // Build context menu items for the selected tab
+  /**
+   * Build context menu items for the selected tab.
+   *
+   * Menu structure:
+   * - Close (disabled if only one tab)
+   * - [divider]
+   * - Close Others (disabled if only one tab)
+   * - [divider]
+   * - Close Tabs to the Left (disabled if first tab)
+   * - Close Tabs to the Right (disabled if last tab)
+   *
+   * Disable logic:
+   * - "Close" is disabled when only one tab exists (can't close the last tab)
+   * - "Close Others" is disabled when only one tab exists (no other tabs to close)
+   * - "Close Tabs to the Left" is disabled when clicking the first tab (index 0)
+   * - "Close Tabs to the Right" is disabled when clicking the last tab
+   *
+   * Active tab selection rules:
+   * - After closing tabs, if the active tab was closed, the clicked tab becomes active
+   * - This ensures the user always has a visible active tab after the operation
+   */
   const contextMenuItems: ContextMenuItem[] = contextMenuTab ? (() => {
     const clickedTabIndex = tabs.findIndex(t => t.id === contextMenuTab.id);
     const isFirstTab = clickedTabIndex === 0;
@@ -653,7 +673,8 @@ export function TabBar({
         onClick: () => {
           onTabClose(contextMenuTab.id);
         },
-        disabled: hasOnlyOneTab // Can't close the last tab
+        disabled: hasOnlyOneTab, // Can't close the last tab
+        dividerAfter: true // Separator after "Close" action
       },
       {
         label: 'Close Others',
@@ -670,7 +691,8 @@ export function TabBar({
             onTabSelect(contextMenuTab.id);
           }
         },
-        disabled: hasOnlyOneTab // Only enable when there are other tabs to close
+        disabled: hasOnlyOneTab, // Only enable when there are other tabs to close
+        dividerAfter: true // Separator after "Close Others" action
       },
       {
         label: 'Close Tabs to the Left',
