@@ -183,6 +183,8 @@ interface MainPanelProps {
   showFlashNotification?: (message: string) => void;
   // Fuzzy file search callback (for FilePreview in preview mode)
   onOpenFuzzySearch?: () => void;
+  // AskUserQuestion response callback
+  onQuestionResponse?: (sessionId: string, toolUseId: string, answers: Record<string, string | string[]>) => void;
 
   // Worktree configuration
   onOpenWorktreeConfig?: () => void;
@@ -969,6 +971,7 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
                 projectRoot={activeSession.fullPath}
                 onFileClick={props.onFileClick}
                 onShowErrorDetails={props.onShowAgentErrorModal}
+                onQuestionResponse={props.onQuestionResponse}
               />
               </div>
 

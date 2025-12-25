@@ -18,6 +18,7 @@ import {
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { QueuedItemsList } from './QueuedItemsList';
 import { LogFilterControls } from './LogFilterControls';
+import { AskUserQuestionCard } from './AskUserQuestionCard';
 import { generateTerminalProseStyles } from '../utils/markdownConfig';
 
 // ============================================================================
@@ -71,6 +72,9 @@ interface LogItemProps {
   onFileClick?: (path: string) => void;
   // Error details callback
   onShowErrorDetails?: () => void;
+  // AskUserQuestion response callback
+  sessionId: string;
+  onQuestionResponse?: (sessionId: string, toolUseId: string, answers: Record<string, string | string[]>) => void;
 }
 
 const LogItemComponent = memo(({
@@ -111,6 +115,8 @@ const LogItemComponent = memo(({
   projectRoot,
   onFileClick,
   onShowErrorDetails,
+  sessionId,
+  onQuestionResponse,
 }: LogItemProps) => {
   // Ref for the log item container - used for scroll-into-view on expand
   const logItemRef = useRef<HTMLDivElement>(null);
@@ -425,7 +431,17 @@ const LogItemComponent = memo(({
           </div>
         )}
         {/* Special rendering for tool execution events (shown alongside thinking) */}
-        {log.source === 'tool' && (
+        {log.source === 'tool' && log.pendingQuestion && onQuestionResponse ? (
+          // Render AskUserQuestionCard for AskUserQuestion tool
+          <AskUserQuestionCard
+            theme={theme}
+            toolUseId={log.pendingQuestion.toolUseId}
+            sessionId={sessionId}
+            questions={log.pendingQuestion.questions}
+            onSubmit={(toolUseId, answers) => onQuestionResponse(sessionId, toolUseId, answers)}
+            onCopy={copyToClipboard}
+          />
+        ) : log.source === 'tool' ? (
           <div
             className="px-4 py-1.5 text-xs font-mono flex items-center gap-2"
             style={{
@@ -450,7 +466,7 @@ const LogItemComponent = memo(({
               <span style={{ color: theme.colors.success }}>✓</span>
             )}
           </div>
-        )}
+        ) : null}
         {log.source !== 'error' && log.source !== 'thinking' && log.source !== 'tool' && (hasNoMatches ? (
           <div className="flex items-center justify-center py-8 text-sm" style={{ color: theme.colors.textDim }}>
             <span>No matches found for filter</span>
@@ -839,6 +855,7 @@ interface TerminalOutputProps {
   projectRoot?: string; // Project root absolute path for converting absolute paths to relative
   onFileClick?: (path: string) => void; // Callback when a file link is clicked
   onShowErrorDetails?: () => void; // Callback to show the error modal (for error log entries)
+  onQuestionResponse?: (sessionId: string, toolUseId: string, answers: Record<string, string | string[]>) => void; // Callback for AskUserQuestion responses
 }
 
 export const TerminalOutput = forwardRef<HTMLDivElement, TerminalOutputProps>((props, ref) => {
@@ -848,7 +865,7 @@ export const TerminalOutput = forwardRef<HTMLDivElement, TerminalOutputProps>((p
     inputRef, logsEndRef, maxOutputLines, onDeleteLog, onRemoveQueuedItem, onInterrupt,
     audioFeedbackCommand, onScrollPositionChange, onAtBottomChange, initialScrollTop,
     markdownEditMode, setMarkdownEditMode, onReplayMessage,
-    fileTree, cwd, projectRoot, onFileClick, onShowErrorDetails
+    fileTree, cwd, projectRoot, onFileClick, onShowErrorDetails, onQuestionResponse
   } = props;
 
   // Use the forwarded ref if provided, otherwise create a local one
@@ -1484,6 +1501,8 @@ export const TerminalOutput = forwardRef<HTMLDivElement, TerminalOutputProps>((p
             projectRoot={projectRoot}
             onFileClick={onFileClick}
             onShowErrorDetails={onShowErrorDetails}
+            sessionId={session.id}
+            onQuestionResponse={onQuestionResponse}
           />
         ))}
 

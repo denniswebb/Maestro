@@ -2562,6 +2562,74 @@ export default function MaestroConsole() {
     onClearError: handleClearGroupChatError,
   });
 
+  // Handler for AskUserQuestion responses
+  // Formats answers as tool_result and sends to Claude Code stdin
+  const handleQuestionResponse = useCallback(async (sessionId: string, toolUseId: string, answers: Record<string, string | string[]>) => {
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) return;
+
+    const activeTab = getActiveTab(session);
+    if (!activeTab) return;
+
+    try {
+      // Send tool result to Claude Code via IPC
+      await window.maestro.process.writeToolResult(sessionId, toolUseId, answers);
+
+      // Update session state:
+      // 1. Append user's answers as LogEntry with source: 'user'
+      // 2. Clear pendingQuestion from the original tool log
+      setSessions(prev => prev.map(s => {
+        if (s.id !== sessionId) return s;
+
+        return {
+          ...s,
+          aiTabs: s.aiTabs.map(tab => {
+            if (tab.id !== activeTab.id) return tab;
+
+            // Create user response log entry
+            const answerText = Object.entries(answers)
+              .map(([question, answer]) => {
+                if (Array.isArray(answer)) {
+                  return `**${question}**: ${answer.join(', ')}`;
+                }
+                return `**${question}**: ${answer}`;
+              })
+              .join('\n\n');
+
+            const userLog: LogEntry = {
+              id: `user-response-${Date.now()}`,
+              timestamp: Date.now(),
+              source: 'user',
+              text: answerText,
+            };
+
+            // Clear pendingQuestion from the tool log
+            const updatedLogs = tab.logs.map(log => {
+              if (log.pendingQuestion?.toolUseId === toolUseId) {
+                const { pendingQuestion, ...rest } = log;
+                return rest;
+              }
+              return log;
+            });
+
+            return {
+              ...tab,
+              logs: [...updatedLogs, userLog],
+            };
+          }),
+        };
+      }));
+    } catch (error) {
+      console.error('Failed to send question response:', error);
+      addToast({
+        id: `question-response-error-${Date.now()}`,
+        message: 'Failed to send response to Claude Code',
+        type: 'error',
+        duration: 5000,
+      });
+    }
+  }, [sessions, addToast]);
+
   // Tab completion hook for terminal mode
   const { getSuggestions: getTabCompletionSuggestions } = useTabCompletion(activeSession);
 
@@ -8340,6 +8408,7 @@ export default function MaestroConsole() {
         onOpenWorktreeConfig={() => setWorktreeConfigModalOpen(true)}
         onOpenCreatePR={() => setCreatePRModalOpen(true)}
         isWorktreeChild={!!activeSession?.parentSessionId}
+        onQuestionResponse={handleQuestionResponse}
       />
       )}
 
