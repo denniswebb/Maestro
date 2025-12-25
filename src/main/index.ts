@@ -3,6 +3,7 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs/promises';
 import fsSync from 'fs';
+import { randomUUID } from 'crypto';
 import * as Sentry from '@sentry/electron/main';
 import { ProcessManager } from './process-manager';
 import { WebServer } from './web-server';
@@ -117,6 +118,9 @@ interface MaestroSettings {
   // Web interface custom port
   webInterfaceUseCustomPort: boolean;
   webInterfaceCustomPort: number;
+  // Web interface auto-start and persistent token
+  webInterfaceAutoStart: boolean;
+  webInterfacePersistentToken: string | null;
 }
 
 const store = new Store<MaestroSettings>({
@@ -137,6 +141,8 @@ const store = new Store<MaestroSettings>({
     webAuthToken: null,
     webInterfaceUseCustomPort: false,
     webInterfaceCustomPort: 8080,
+    webInterfaceAutoStart: false,
+    webInterfacePersistentToken: null,
   },
 });
 
@@ -253,7 +259,27 @@ function createWebServer(): WebServer {
   const useCustomPort = store.get('webInterfaceUseCustomPort', false);
   const customPort = store.get('webInterfaceCustomPort', 8080);
   const port = useCustomPort ? customPort : 0;
-  const server = new WebServer(port); // Custom or random port with auto-generated security token
+
+  // Handle persistent token if auto-start is enabled
+  const autoStartEnabled = store.get('webInterfaceAutoStart', false);
+  let token: string | undefined = undefined;
+
+  if (autoStartEnabled) {
+    // Check for existing persistent token
+    const persistentToken = store.get('webInterfacePersistentToken', null);
+    if (persistentToken) {
+      token = persistentToken;
+      logger.debug('Using persistent security token');
+    } else {
+      // Generate new token and persist it
+      token = randomUUID();
+      store.set('webInterfacePersistentToken', token);
+      logger.debug('Generated and stored new persistent token');
+    }
+  }
+  // If auto-start disabled, don't pass token (WebServer will generate ephemeral token)
+
+  const server = new WebServer(port, token);
 
   // Set up callback for web server to fetch sessions list
   server.setGetSessionsCallback(() => {
