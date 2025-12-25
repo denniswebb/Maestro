@@ -770,8 +770,26 @@ app.whenReady().then(async () => {
   // Start CLI activity watcher (polls every 2 seconds for CLI playbook runs)
   startCliActivityWatcher();
 
-  // Note: Web server is not auto-started - it starts when user enables web interface
-  // via live:startServer IPC call from the renderer
+  // Auto-start web interface if enabled
+  const webInterfaceAutoStart = store.get('webInterfaceAutoStart', false);
+  if (webInterfaceAutoStart) {
+    try {
+      logger.info('Auto-starting web interface (webInterfaceAutoStart enabled)', 'Startup');
+      webServer = createWebServer();
+      await webServer.start();
+      const port = webServer.getPort();
+      const url = webServer.getUrl();
+      logger.info(`Web interface auto-started successfully on port ${port}`, 'Startup');
+      logger.debug(`Web interface URL: ${url}`, 'Startup');
+    } catch (error) {
+      logger.error(`Failed to auto-start web interface: ${error}`, 'Startup');
+      logger.warn('Continuing without web interface - can be started manually later', 'Startup');
+    }
+  } else {
+    logger.debug('Web interface auto-start disabled', 'Startup');
+    // Note: Web server starts on-demand when user enables web interface
+    // via live:startServer IPC call from the renderer
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
