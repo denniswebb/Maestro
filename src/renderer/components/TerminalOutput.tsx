@@ -423,32 +423,50 @@ const LogItemComponent = memo(({
           </div>
         )}
         {/* Special rendering for tool execution events (shown alongside thinking) */}
-        {log.source === 'tool' && (
-          <div
-            className="px-4 py-1.5 text-xs font-mono flex items-center gap-2 border-l-2"
-            style={{
-              color: theme.colors.textDim,
-              borderColor: theme.colors.accent,
-            }}
-          >
-            <span
-              className="px-1.5 py-0.5 rounded"
+        {log.source === 'tool' && (() => {
+          // Extract tool input details for display
+          const toolInput = log.metadata?.toolState?.input as Record<string, unknown> | undefined;
+          const toolDetail = toolInput
+            ? (toolInput.command as string) || (toolInput.pattern as string) || (toolInput.file_path as string) || (toolInput.query as string) || null
+            : null;
+
+          return (
+            <div
+              className="px-4 py-1.5 text-xs font-mono border-l-2"
               style={{
-                backgroundColor: `${theme.colors.accent}30`,
-                color: theme.colors.accent,
+                color: theme.colors.textDim,
+                borderColor: theme.colors.accent,
               }}
             >
-              tool
-            </span>
-            <span style={{ color: theme.colors.textMain }}>{log.text}</span>
-            {log.metadata?.toolState?.status === 'running' && (
-              <span className="animate-pulse" style={{ color: theme.colors.warning }}>●</span>
-            )}
-            {log.metadata?.toolState?.status === 'completed' && (
-              <span style={{ color: theme.colors.success }}>✓</span>
-            )}
-          </div>
-        )}
+              <div className="flex items-center gap-2">
+                <span
+                  className="px-1.5 py-0.5 rounded shrink-0"
+                  style={{
+                    backgroundColor: `${theme.colors.accent}30`,
+                    color: theme.colors.accent,
+                  }}
+                >
+                  {log.text}
+                </span>
+                {log.metadata?.toolState?.status === 'running' && (
+                  <span className="animate-pulse shrink-0" style={{ color: theme.colors.warning }}>●</span>
+                )}
+                {log.metadata?.toolState?.status === 'completed' && (
+                  <span className="shrink-0" style={{ color: theme.colors.success }}>✓</span>
+                )}
+                {toolDetail && (
+                  <span
+                    className="truncate opacity-70"
+                    style={{ color: theme.colors.textMain }}
+                    title={toolDetail}
+                  >
+                    {toolDetail}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })()}
         {log.source !== 'error' && log.source !== 'thinking' && log.source !== 'tool' && (hasNoMatches ? (
           <div className="flex items-center justify-center py-8 text-sm" style={{ color: theme.colors.textDim }}>
             <span>No matches found for filter</span>
