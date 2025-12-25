@@ -113,7 +113,8 @@ export function NewInstanceModal({ isOpen, onClose, onCreate, theme, existingSes
   }, [workingDir]);
 
   // Define handlers first before they're used in effects
-  const loadAgents = async () => {
+  // Takes optional source session to pre-fill after loading (avoids race condition)
+  const loadAgents = async (source?: Session) => {
     setLoading(true);
     try {
       const detectedAgents = await window.maestro.agents.detect();
@@ -121,9 +122,12 @@ export function NewInstanceModal({ isOpen, onClose, onCreate, theme, existingSes
 
       // Per-agent config (path, args, env vars) starts empty - each agent gets its own config
       // No provider-level loading - config is set per-agent during creation
-      setCustomAgentPaths({});
-      setCustomAgentArgs({});
-      setCustomAgentEnvVars({});
+      // Only reset if NOT duplicating (source session will provide values)
+      if (!source) {
+        setCustomAgentPaths({});
+        setCustomAgentArgs({});
+        setCustomAgentEnvVars({});
+      }
 
       // Load configurations for all agents (model, contextWindow - these are provider-level)
       const configs: Record<string, Record<string, any>> = {};
@@ -131,13 +135,54 @@ export function NewInstanceModal({ isOpen, onClose, onCreate, theme, existingSes
         const config = await window.maestro.agents.getConfig(agent.id);
         configs[agent.id] = config;
       }
+
+      // If duplicating, merge source session config values into loaded configs
+      if (source) {
+        const sourceConfig: Record<string, any> = { ...configs[source.toolType] };
+        if (source.customModel) {
+          sourceConfig.model = source.customModel;
+        }
+        if (source.customContextWindow) {
+          sourceConfig.contextWindow = source.customContextWindow;
+        }
+        if (source.customProviderPath) {
+          sourceConfig.providerPath = source.customProviderPath;
+        }
+        configs[source.toolType] = sourceConfig;
+      }
       setAgentConfigs(configs);
 
-      // Select first available non-hidden agent
+      // Select first available non-hidden agent (or source agent if duplicating)
       // (hidden agents like 'terminal' should never be auto-selected)
-      const firstAvailable = detectedAgents.find((a: AgentConfig) => a.available && !a.hidden);
-      if (firstAvailable) {
-        setSelectedAgent(firstAvailable.id);
+      if (source) {
+        setSelectedAgent(source.toolType);
+      } else {
+        const firstAvailable = detectedAgents.find((a: AgentConfig) => a.available && !a.hidden);
+        if (firstAvailable) {
+          setSelectedAgent(firstAvailable.id);
+        }
+      }
+
+      // Pre-fill form fields AFTER agents are loaded (ensures no race condition)
+      if (source) {
+        setWorkingDir(source.cwd);
+        setInstanceName(`${source.name} (Copy)`);
+        setNudgeMessage(source.nudgeMessage || '');
+        setExpandedAgent(source.toolType);
+
+        // Pre-fill custom agent configuration
+        setCustomAgentPaths(prev => ({
+          ...prev,
+          [source.toolType]: source.customPath || ''
+        }));
+        setCustomAgentArgs(prev => ({
+          ...prev,
+          [source.toolType]: source.customArgs || ''
+        }));
+        setCustomAgentEnvVars(prev => ({
+          ...prev,
+          [source.toolType]: source.customEnvVars || {}
+        }));
       }
     } catch (error) {
       console.error('Failed to load agents:', error);
@@ -275,68 +320,18 @@ export function NewInstanceModal({ isOpen, onClose, onCreate, theme, existingSes
     return [...supported, ...comingSoon];
   }, [agents]);
 
-  // Effects
+  // Effects - load agents and optionally pre-fill from source session
   useEffect(() => {
     if (isOpen) {
-      loadAgents();
-      // Keep all agents collapsed by default (unless duplicating)
+      // Pass sourceSession to loadAgents to handle pre-fill AFTER agents are loaded
+      // This prevents the race condition where loadAgents would overwrite pre-filled values
+      loadAgents(sourceSession);
+      // Keep all agents collapsed by default (unless duplicating - handled in loadAgents)
       if (!sourceSession) {
         setExpandedAgent(null);
       }
       // Reset warning acknowledgment when modal opens
       setDirectoryWarningAcknowledged(false);
-    }
-  }, [isOpen, sourceSession]);
-
-  // Pre-fill form when duplicating from a source session
-  useEffect(() => {
-    if (isOpen && sourceSession) {
-      // Pre-fill basic fields
-      setSelectedAgent(sourceSession.toolType);
-      setWorkingDir(sourceSession.cwd);
-      setInstanceName(`${sourceSession.name} (Copy)`);
-      setNudgeMessage(sourceSession.nudgeMessage || '');
-
-      // Expand the agent to show custom configuration fields
-      setExpandedAgent(sourceSession.toolType);
-
-      // Pre-fill custom agent configuration (always set, even if empty)
-      setCustomAgentPaths(prev => ({
-        ...prev,
-        [sourceSession.toolType]: sourceSession.customPath || ''
-      }));
-
-      setCustomAgentArgs(prev => ({
-        ...prev,
-        [sourceSession.toolType]: sourceSession.customArgs || ''
-      }));
-
-      setCustomAgentEnvVars(prev => ({
-        ...prev,
-        [sourceSession.toolType]: sourceSession.customEnvVars || {}
-      }));
-
-      // Pre-fill agent config (model, context window, etc.)
-      const configUpdates: Record<string, any> = {};
-      if (sourceSession.customModel) {
-        configUpdates.model = sourceSession.customModel;
-      }
-      if (sourceSession.customContextWindow) {
-        configUpdates.contextWindow = sourceSession.customContextWindow;
-      }
-      if (sourceSession.customProviderPath) {
-        configUpdates.providerPath = sourceSession.customProviderPath;
-      }
-
-      if (Object.keys(configUpdates).length > 0) {
-        setAgentConfigs(prev => ({
-          ...prev,
-          [sourceSession.toolType]: {
-            ...(prev[sourceSession.toolType] || {}),
-            ...configUpdates
-          }
-        }));
-      }
     }
   }, [isOpen, sourceSession]);
 
