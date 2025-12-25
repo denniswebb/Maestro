@@ -610,8 +610,8 @@ export interface UseMergeSessionWithSessionsDeps {
   activeTabId?: string;
   /** Callback after merge creates a new session. Receives session ID and name for notification purposes. */
   onSessionCreated?: (sessionId: string, sessionName: string) => void;
-  /** Callback after merge completes successfully (for any merge type). Receives source tab ID for state cleanup. */
-  onMergeComplete?: (sourceTabId: string) => void;
+  /** Callback after merge completes successfully (for any merge type). Receives source tab ID and target info for state cleanup and toast display. */
+  onMergeComplete?: (sourceTabId: string, targetInfo?: { sessionId: string; sessionName: string; tabId: string }) => void;
 }
 
 /**

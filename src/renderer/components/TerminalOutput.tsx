@@ -405,17 +405,18 @@ const LogItemComponent = memo(({
             className="px-4 py-2 text-sm font-mono border-l-2"
             style={{
               color: theme.colors.textDim,
-              borderColor: theme.colors.accentText,
-              backgroundColor: `${theme.colors.accentText}05`,
-              opacity: 0.85,
+              borderColor: `${theme.colors.border}80`,
+              backgroundColor: `${theme.colors.bgActivity}30`,
+              opacity: 0.5,
             }}
           >
             <div className="flex items-center gap-2 mb-1">
               <span
                 className="text-[10px] px-1.5 py-0.5 rounded"
                 style={{
-                  backgroundColor: `${theme.colors.accentText}20`,
-                  color: theme.colors.accentText
+                  backgroundColor: `${theme.colors.border}40`,
+                  color: theme.colors.textDim,
+                  opacity: 0.7,
                 }}
               >
                 thinking
