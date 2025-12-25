@@ -2028,7 +2028,7 @@ export default function MaestroConsole() {
 
     // Handle tool execution events from AI agents
     // Only appends to logs if the tab has showThinking enabled (tools shown alongside thinking)
-    const unsubscribeToolExecution = window.maestro.process.onToolExecution?.((sessionId: string, toolEvent: { toolName: string; state?: unknown; timestamp: number }) => {
+    const unsubscribeToolExecution = window.maestro.process.onToolExecution?.((sessionId: string, toolEvent: { toolName: string; state?: unknown; timestamp: number; toolUseId?: string }) => {
       // Parse sessionId to get actual session ID and tab ID (format: {id}-ai-{tabId})
       const aiTabMatch = sessionId.match(/^(.+)-ai-(.+)$/);
       if (!aiTabMatch) return; // Only handle AI tab messages
@@ -2040,8 +2040,12 @@ export default function MaestroConsole() {
         if (s.id !== actualSessionId) return s;
 
         const targetTab = s.aiTabs.find(t => t.id === tabId);
-        if (!targetTab?.showThinking) return s; // Only show if thinking enabled
 
+        // Detect AskUserQuestion tool - always show, even if showThinking is disabled
+        const isAskUserQuestion = toolEvent.toolName === 'AskUserQuestion';
+        if (!isAskUserQuestion && !targetTab?.showThinking) return s; // Only show non-question tools if thinking enabled
+
+        // Build base log entry
         const toolLog: LogEntry = {
           id: `tool-${Date.now()}-${toolEvent.toolName}`,
           timestamp: toolEvent.timestamp,
@@ -2052,8 +2056,21 @@ export default function MaestroConsole() {
           }
         };
 
+        // For AskUserQuestion, add pendingQuestion metadata and set session to idle (stop spinner)
+        if (isAskUserQuestion && toolEvent.state) {
+          const state = toolEvent.state as any;
+          if (state.input?.questions && Array.isArray(state.input.questions)) {
+            toolLog.pendingQuestion = {
+              toolUseId: toolEvent.toolUseId || `toolu_${Date.now()}`,
+              questions: state.input.questions,
+            };
+          }
+        }
+
         return {
           ...s,
+          // If AskUserQuestion, set state to idle to stop spinner while waiting for response
+          state: isAskUserQuestion ? 'idle' : s.state,
           aiTabs: s.aiTabs.map(tab =>
             tab.id === tabId
               ? { ...tab, logs: [...tab.logs, toolLog] }

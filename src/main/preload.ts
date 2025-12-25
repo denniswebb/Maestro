@@ -102,6 +102,10 @@ contextBridge.exposeInMainWorld('maestro', {
     resize: (sessionId: string, cols: number, rows: number) =>
       ipcRenderer.invoke('process:resize', sessionId, cols, rows),
 
+    // Write tool_result to Claude Code (for AskUserQuestion responses)
+    writeToolResult: (sessionId: string, toolUseId: string, answers: Record<string, string | string[]>) =>
+      ipcRenderer.invoke('process:writeToolResult', sessionId, toolUseId, answers),
+
     // Run a single command and capture only stdout/stderr (no PTY echo/prompts)
     runCommand: (config: { sessionId: string; command: string; cwd: string; shell?: string }) =>
       ipcRenderer.invoke('process:runCommand', config),
@@ -1278,6 +1282,7 @@ export interface MaestroAPI {
     interrupt: (sessionId: string) => Promise<boolean>;
     kill: (sessionId: string) => Promise<boolean>;
     resize: (sessionId: string, cols: number, rows: number) => Promise<boolean>;
+    writeToolResult: (sessionId: string, toolUseId: string, answers: Record<string, string | string[]>) => Promise<boolean>;
     runCommand: (config: { sessionId: string; command: string; cwd: string; shell?: string }) => Promise<{ exitCode: number }>;
     getActiveProcesses: () => Promise<Array<{
       sessionId: string;

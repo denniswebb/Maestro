@@ -86,6 +86,16 @@ export interface LogEntry {
       output?: unknown;
     };
   };
+  // For AskUserQuestion tool - stores pending questions awaiting user response
+  pendingQuestion?: {
+    toolUseId: string;
+    questions: Array<{
+      question: string;
+      header: string;
+      options: Array<{ label: string; description: string }>;
+      multiSelect: boolean;
+    }>;
+  };
 }
 
 // Queued item for the session-level execution queue
