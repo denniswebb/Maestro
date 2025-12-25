@@ -279,12 +279,14 @@ export function NewInstanceModal({ isOpen, onClose, onCreate, theme, existingSes
   useEffect(() => {
     if (isOpen) {
       loadAgents();
-      // Keep all agents collapsed by default
-      setExpandedAgent(null);
+      // Keep all agents collapsed by default (unless duplicating)
+      if (!sourceSession) {
+        setExpandedAgent(null);
+      }
       // Reset warning acknowledgment when modal opens
       setDirectoryWarningAcknowledged(false);
     }
-  }, [isOpen]);
+  }, [isOpen, sourceSession]);
 
   // Pre-fill form when duplicating from a source session
   useEffect(() => {
@@ -298,27 +300,21 @@ export function NewInstanceModal({ isOpen, onClose, onCreate, theme, existingSes
       // Expand the agent to show custom configuration fields
       setExpandedAgent(sourceSession.toolType);
 
-      // Pre-fill custom agent configuration
-      if (sourceSession.customPath) {
-        setCustomAgentPaths(prev => ({
-          ...prev,
-          [sourceSession.toolType]: sourceSession.customPath || ''
-        }));
-      }
+      // Pre-fill custom agent configuration (always set, even if empty)
+      setCustomAgentPaths(prev => ({
+        ...prev,
+        [sourceSession.toolType]: sourceSession.customPath || ''
+      }));
 
-      if (sourceSession.customArgs) {
-        setCustomAgentArgs(prev => ({
-          ...prev,
-          [sourceSession.toolType]: sourceSession.customArgs || ''
-        }));
-      }
+      setCustomAgentArgs(prev => ({
+        ...prev,
+        [sourceSession.toolType]: sourceSession.customArgs || ''
+      }));
 
-      if (sourceSession.customEnvVars && Object.keys(sourceSession.customEnvVars).length > 0) {
-        setCustomAgentEnvVars(prev => ({
-          ...prev,
-          [sourceSession.toolType]: sourceSession.customEnvVars || {}
-        }));
-      }
+      setCustomAgentEnvVars(prev => ({
+        ...prev,
+        [sourceSession.toolType]: sourceSession.customEnvVars || {}
+      }));
 
       // Pre-fill agent config (model, context window, etc.)
       const configUpdates: Record<string, any> = {};
