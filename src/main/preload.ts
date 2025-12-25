@@ -1282,7 +1282,7 @@ export interface MaestroAPI {
     interrupt: (sessionId: string) => Promise<boolean>;
     kill: (sessionId: string) => Promise<boolean>;
     resize: (sessionId: string, cols: number, rows: number) => Promise<boolean>;
-    writeToolResult: (sessionId: string, toolUseId: string, answers: Record<string, string | string[]>) => Promise<boolean>;
+    writeToolResult: (sessionId: string, toolUseId: string, answers: Record<string, string | string[]>) => Promise<{ success: boolean }>;
     runCommand: (config: { sessionId: string; command: string; cwd: string; shell?: string }) => Promise<{ exitCode: number }>;
     getActiveProcesses: () => Promise<Array<{
       sessionId: string;
