@@ -1,5 +1,10 @@
 // Auto Run Agent Duplication Service
 // Handles automatic duplication of sessions during Auto Run batch processing
+//
+// LIFECYCLE MANAGEMENT:
+// - Call resetDuplicationEligibility(sessionId) after batch completion or loop iteration
+// - This allows sessions to trigger duplication again in subsequent runs
+// - Without resetting, sessions can only duplicate once per app lifetime
 
 import type { Session, Group, BatchRunState, UsageStats } from '../types';
 import type {
@@ -74,15 +79,6 @@ export class AutoRunDuplicationService {
       };
     }
 
-    // Check if we've hit the max duplicate limit
-    if (this.config.maxDuplicates && this.duplicationInstances.size >= this.config.maxDuplicates) {
-      return {
-        shouldDuplicate: false,
-        triggeredBy: null,
-        reason: `Maximum duplicates limit reached (${this.config.maxDuplicates})`
-      };
-    }
-
     // Gather current metrics
     const metrics = {
       taskCount: batchState.completedTasksAcrossAllDocs,
@@ -93,7 +89,26 @@ export class AutoRunDuplicationService {
       loopIteration: batchState.loopIteration
     };
 
-    return evaluateDuplicationTriggers(this.config, metrics);
+    // Evaluate triggers to get the matched trigger (if any)
+    const evaluation = evaluateDuplicationTriggers(this.config, metrics);
+
+    // If a trigger matched, check if spawning would exceed max duplicates limit
+    if (evaluation.shouldDuplicate && evaluation.triggeredBy && this.config.maxDuplicates) {
+      const totalDuplicates = Array.from(this.duplicationInstances.values())
+        .reduce((sum, instance) => sum + instance.duplicatedSessionIds.length, 0);
+
+      const wouldSpawn = evaluation.triggeredBy.duplicateCount;
+      if (totalDuplicates + wouldSpawn > this.config.maxDuplicates) {
+        return {
+          shouldDuplicate: false,
+          triggeredBy: null,
+          reason: `Maximum duplicates limit reached (${totalDuplicates}/${this.config.maxDuplicates})`,
+          metrics: evaluation.metrics
+        };
+      }
+    }
+
+    return evaluation;
   }
 
   /**
@@ -247,6 +262,27 @@ export class AutoRunDuplicationService {
    */
   public hasDuplicated(sessionId: string): boolean {
     return this.duplicationInstances.has(sessionId);
+  }
+
+  /**
+   * Reset duplication eligibility for a session
+   * Should be called when:
+   * - Batch run completes
+   * - Loop iteration finishes
+   * - User manually resets Auto Run
+   *
+   * This allows sessions to trigger duplication again on subsequent runs
+   */
+  public resetDuplicationEligibility(sessionId: string): void {
+    this.duplicationInstances.delete(sessionId);
+  }
+
+  /**
+   * Reset duplication eligibility for multiple sessions
+   * Useful for bulk operations or app-wide resets
+   */
+  public resetDuplicationEligibilityBulk(sessionIds: string[]): void {
+    sessionIds.forEach(id => this.duplicationInstances.delete(id));
   }
 
   /**

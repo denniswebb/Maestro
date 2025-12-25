@@ -72,12 +72,12 @@ export interface DuplicationTriggerEvaluation {
   triggeredBy: DuplicationTrigger | null;
   reason: string;
   metrics?: {
-    currentTaskCount?: number;
+    taskCount?: number;
     elapsedTimeMs?: number;
     contextPercentage?: number;
     currentCost?: number;
     documentCount?: number;
-    currentLoop?: number;
+    loopIteration?: number;
   };
 }
 

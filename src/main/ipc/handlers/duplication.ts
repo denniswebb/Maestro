@@ -31,7 +31,7 @@ export function registerDuplicationHandlers(): void {
     async (_event, sessionId: string): Promise<{ success: boolean; config?: AutoRunDuplicationConfig; error?: string }> => {
       try {
         const configs = store.get('configs', {});
-        const config = configs[sessionId] || DEFAULT_DUPLICATION_CONFIG;
+        const config = configs[sessionId] || structuredClone(DEFAULT_DUPLICATION_CONFIG);
 
         return { success: true, config };
       } catch (error) {
@@ -72,7 +72,7 @@ export function registerDuplicationHandlers(): void {
     async (_event, sessionId: string, trigger: DuplicationTrigger): Promise<{ success: boolean; error?: string }> => {
       try {
         const configs = store.get('configs', {});
-        const config = configs[sessionId] || { ...DEFAULT_DUPLICATION_CONFIG };
+        const config = configs[sessionId] || structuredClone(DEFAULT_DUPLICATION_CONFIG);
 
         config.triggers.push(trigger);
         configs[sessionId] = config;
