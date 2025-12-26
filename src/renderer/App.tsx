@@ -423,6 +423,10 @@ export default function MaestroConsole() {
   }
   const autoRenameCacheRef = useRef<Map<string, AutoRenameCacheEntry>>(new Map());
   const AUTO_RENAME_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+  // Track tabs that have been auto-renamed on first response to avoid duplicate triggers
+  const firstResponseAutoRenamedRef = useRef<Set<string>>(new Set());
+
   const lightboxAllowDeleteRef = useRef<boolean>(false); // Track if delete should be allowed (set synchronously before state updates)
   const [aboutModalOpen, setAboutModalOpen] = useState(false);
   const [updateCheckModalOpen, setUpdateCheckModalOpen] = useState(false);
@@ -3246,6 +3250,76 @@ export default function MaestroConsole() {
   });
 
   // Note: spawnBackgroundSynopsisRef and spawnAgentWithPromptRef are now updated in useAgentExecution hook
+
+  // Auto-rename tabs on first AI response (when enabled)
+  // Monitors hasReceivedFirstResponse flag and triggers auto-rename with debouncing
+  // Stores tab IDs that need auto-rename and processes them asynchronously
+  const pendingFirstResponseRenames = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!autoRenameEnabled || !autoRenameOnFirstResponse || !activeSession) return;
+
+    // Check active session's tabs for first response triggers
+    activeSession.aiTabs?.forEach(tab => {
+      // Skip if:
+      // - Tab hasn't received first response yet
+      // - Tab was already processed
+      // - Tab was manually renamed (respect user's choice)
+      // - Tab is currently being renamed (avoid duplicate operations)
+      if (!tab.hasReceivedFirstResponse ||
+          firstResponseAutoRenamedRef.current.has(tab.id) ||
+          pendingFirstResponseRenames.current.has(tab.id) ||
+          tab.manuallyRenamed ||
+          tab.isRenaming) {
+        return;
+      }
+
+      // Mark as pending to avoid duplicate triggers
+      pendingFirstResponseRenames.current.add(tab.id);
+
+      // Debounce: wait 1.5 seconds after first response before renaming
+      // This gives the user time to see the full response and prevents renaming mid-stream
+      setTimeout(async () => {
+        // Double-check conditions haven't changed during debounce
+        const currentSession = sessions.find(s => s.id === activeSession.id);
+        const currentTab = currentSession?.aiTabs?.find(t => t.id === tab.id);
+
+        if (!currentTab || currentTab.manuallyRenamed || currentTab.isRenaming) {
+          pendingFirstResponseRenames.current.delete(tab.id);
+          return;
+        }
+
+        // Mark as processed
+        firstResponseAutoRenamedRef.current.add(tab.id);
+        pendingFirstResponseRenames.current.delete(tab.id);
+
+        // Trigger auto-rename using a simplified approach
+        // We'll dispatch a custom event that the onAutoRename handler can process
+        // But for now, we'll directly invoke the rename logic inline
+
+        // Rate limiting check
+        const lastCallTime = autoRenameInProgressRef.current.get(tab.id) || 0;
+        const now = Date.now();
+        if (now - lastCallTime < AUTO_RENAME_DEBOUNCE_MS) {
+          return;
+        }
+
+        // Check if this is the active tab in the active session
+        // If not, skip auto-rename (only works for visible tabs currently)
+        if (activeSession.activeTabId !== tab.id) {
+          console.log(`[Auto-rename first response] Skipping background tab ${tab.id}`);
+          return;
+        }
+
+        // Simulate a click on the auto-rename button for this tab
+        // This will trigger the existing onAutoRename handler which has all the logic
+        const autoRenameEvent = new CustomEvent('maestro:auto-rename-tab', {
+          detail: { sessionId: activeSession.id, tabId: tab.id }
+        });
+        window.dispatchEvent(autoRenameEvent);
+      }, 1500); // 1.5 second debounce
+    });
+  }, [sessions, activeSession, autoRenameEnabled, autoRenameOnFirstResponse]);
 
   // Initialize batch processor (supports parallel batches per session)
   const {
