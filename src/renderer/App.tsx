@@ -9071,6 +9071,10 @@ export default function MaestroConsole() {
           }));
 
           try {
+            // START PERFORMANCE TIMING
+            const perfStartTime = performance.now();
+            const perfTimings: { [key: string]: number } = {};
+
             // Gather last 10 messages (up to 20 log entries for user+ai pairs)
             // Truncate each message to 200 characters to stay within token limits
             const conversationLogs = tab.logs
@@ -9101,10 +9105,14 @@ export default function MaestroConsole() {
               return `${role}: ${text}`;
             }).join('\n');
 
+            perfTimings.contextPrep = performance.now() - perfStartTime;
+
             // Create prompt with conversation history and dynamic suggestion count
             const prompt = tabNameSuggestionsPrompt
               .replace(/\{\{count\}\}/g, autoRenameCount.toString())
               .replace('{{conversation_history}}', conversationText);
+
+            perfTimings.promptBuild = performance.now() - perfStartTime;
 
             // Temporarily override session model to use Claude Haiku for fast, cheap naming
             // Store original model and restore after operation
@@ -9114,6 +9122,8 @@ export default function MaestroConsole() {
             ));
 
             try {
+              const apiCallStart = performance.now();
+
               // Spawn agent in batch mode to get AI-generated name
               const result = await spawnAgentForSession(
                 activeSession.id,
@@ -9121,6 +9131,9 @@ export default function MaestroConsole() {
                 undefined, // cwd override
                 undefined  // tab name
               );
+
+              perfTimings.apiCall = performance.now() - apiCallStart;
+              perfTimings.firstResponse = perfTimings.apiCall; // In batch mode, same as total API call
 
               if (!result || !result.success || !result.response) {
                 throw new Error('Failed to spawn agent for tab renaming');
@@ -9142,6 +9155,8 @@ export default function MaestroConsole() {
                 .filter(suggestion => suggestion.length > 0)
                 .slice(0, autoRenameCount);
 
+              perfTimings.parsing = performance.now() - perfStartTime;
+
               if (parsedSuggestions.length === 0) {
                 throw new Error('AI generated invalid tab name suggestions');
               }
@@ -9157,6 +9172,28 @@ export default function MaestroConsole() {
                   customModel: originalModel
                 };
               }));
+
+              // PERFORMANCE LOGGING
+              const totalTime = performance.now() - perfStartTime;
+              perfTimings.total = totalTime;
+
+              // Calculate prompt token estimate (rough approximation: 1 token ≈ 4 characters)
+              const promptTokens = Math.ceil(prompt.length / 4);
+              const responseTokens = Math.ceil(responseText.length / 4);
+
+              console.log('🚀 Tab Rename Performance Metrics:');
+              console.log(`  Total Time: ${totalTime.toFixed(0)}ms`);
+              console.log(`  Context Prep: ${perfTimings.contextPrep.toFixed(0)}ms`);
+              console.log(`  Prompt Build: ${(perfTimings.promptBuild - perfTimings.contextPrep).toFixed(0)}ms`);
+              console.log(`  API Call: ${perfTimings.apiCall.toFixed(0)}ms`);
+              console.log(`  First Response: ${perfTimings.firstResponse.toFixed(0)}ms`);
+              console.log(`  Parsing: ${(perfTimings.parsing - perfTimings.promptBuild).toFixed(0)}ms`);
+              console.log(`  Model: claude-3-5-haiku-20241022`);
+              console.log(`  Prompt Tokens (est): ${promptTokens}`);
+              console.log(`  Response Tokens (est): ${responseTokens}`);
+              console.log(`  Message Count: ${conversationLogs.length}`);
+              console.log(`  Suggestions Requested: ${autoRenameCount}`);
+              console.log(`  Suggestions Generated: ${parsedSuggestions.length}`);
 
               // Auto-apply if count is 1, otherwise show modal for user to pick
               if (autoRenameCount === 1) {
