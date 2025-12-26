@@ -6,6 +6,7 @@ import { autorunSynopsisPrompt } from '../../prompts';
 import { parseSynopsis } from '../../shared/synopsis';
 import { formatElapsedTime } from '../../shared/formatters';
 import { gitService } from '../services/git';
+import { extractFirstUncheckedTask, generateAutoRunTabName } from '../utils/tabNaming';
 
 // Debounce delay for batch state updates (Quick Win 1)
 const BATCH_STATE_DEBOUNCE_MS = 200;
@@ -78,7 +79,7 @@ interface UseBatchProcessorProps {
   sessions: Session[];
   groups: Group[];
   onUpdateSession: (sessionId: string, updates: Partial<Session>) => void;
-  onSpawnAgent: (sessionId: string, prompt: string, cwdOverride?: string) => Promise<{ success: boolean; response?: string; agentSessionId?: string; usageStats?: UsageStats }>;
+  onSpawnAgent: (sessionId: string, prompt: string, cwdOverride?: string, tabName?: string) => Promise<{ success: boolean; response?: string; agentSessionId?: string; usageStats?: UsageStats }>;
   onSpawnSynopsis: (sessionId: string, cwd: string, agentSessionId: string, prompt: string, toolType?: ToolType) => Promise<{ success: boolean; response?: string }>;
   onAddHistoryEntry: (entry: Omit<HistoryEntry, 'id'>) => void | Promise<void>;
   onComplete?: (info: BatchCompleteInfo) => void;
@@ -962,8 +963,12 @@ ${docList}
             // Capture start time for elapsed time tracking
             const taskStartTime = Date.now();
 
+            // Extract first unchecked task for Auto Run tab naming (Phase 3)
+            const firstTask = extractFirstUncheckedTask(contentBeforeTask);
+            const tabName = firstTask ? generateAutoRunTabName(firstTask) : undefined;
+
             // Spawn agent with the prompt, using worktree path if active
-            const result = await onSpawnAgent(sessionId, finalPrompt, worktreeActive ? effectiveCwd : undefined);
+            const result = await onSpawnAgent(sessionId, finalPrompt, worktreeActive ? effectiveCwd : undefined, tabName);
 
             // Capture elapsed time
             const elapsedTimeMs = Date.now() - taskStartTime;

@@ -36,7 +36,7 @@ export interface UseAgentExecutionDeps {
  */
 export interface UseAgentExecutionReturn {
   /** Spawn an agent for a specific session and wait for completion */
-  spawnAgentForSession: (sessionId: string, prompt: string, cwdOverride?: string) => Promise<AgentSpawnResult>;
+  spawnAgentForSession: (sessionId: string, prompt: string, cwdOverride?: string, tabName?: string) => Promise<AgentSpawnResult>;
   /** Spawn an agent with a prompt for the active session */
   spawnAgentWithPrompt: (prompt: string) => Promise<AgentSpawnResult>;
   /** Spawn a background synopsis agent (resumes an old agent session) */
@@ -106,11 +106,13 @@ export function useAgentExecution(
    * @param sessionId - The session ID to spawn the agent for
    * @param prompt - The prompt to send to the agent
    * @param cwdOverride - Optional override for working directory (e.g., for worktree mode)
+   * @param tabName - Optional tab name for Auto Run (Phase 3 - auto-naming)
    */
   const spawnAgentForSession = useCallback(async (
     sessionId: string,
     prompt: string,
-    cwdOverride?: string
+    cwdOverride?: string,
+    tabName?: string
   ): Promise<AgentSpawnResult> => {
     // Use sessionsRef to get latest sessions (fixes stale closure when called right after session creation)
     const session = sessionsRef.current.find(s => s.id === sessionId);
