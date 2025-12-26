@@ -2,9 +2,72 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect } from 'vitest';
-import { generateAutoRunTabName, truncateTabName } from '../../../renderer/utils/tabNaming';
+import { extractFirstUncheckedTask, generateAutoRunTabName, truncateTabName } from '../../../renderer/utils/tabNaming';
 
 describe('tabNaming', () => {
+  describe('extractFirstUncheckedTask', () => {
+    it('extracts first unchecked task from markdown content', () => {
+      const markdown = `
+# Tasks
+
+- [ ] First unchecked task
+- [ ] Second unchecked task
+- [x] Completed task
+`;
+      expect(extractFirstUncheckedTask(markdown)).toBe('First unchecked task');
+    });
+
+    it('handles different checkbox formats', () => {
+      expect(extractFirstUncheckedTask('- [ ] Task with dash')).toBe('Task with dash');
+      expect(extractFirstUncheckedTask('* [ ] Task with asterisk')).toBe('Task with asterisk');
+      expect(extractFirstUncheckedTask('  - [ ]  Task with spaces')).toBe('Task with spaces');
+    });
+
+    it('skips completed tasks', () => {
+      const markdown = `
+- [x] Completed task
+- [ ] Unchecked task
+`;
+      expect(extractFirstUncheckedTask(markdown)).toBe('Unchecked task');
+    });
+
+    it('returns empty string when no unchecked tasks found', () => {
+      expect(extractFirstUncheckedTask('- [x] All tasks complete')).toBe('');
+      expect(extractFirstUncheckedTask('No tasks here')).toBe('');
+      expect(extractFirstUncheckedTask('')).toBe('');
+    });
+
+    it('handles tasks with complex descriptions', () => {
+      const markdown = '- [ ] Implement user authentication and authorization system with JWT tokens';
+      expect(extractFirstUncheckedTask(markdown)).toBe('Implement user authentication and authorization system with JWT tokens');
+    });
+
+    it('handles multiline markdown with text before tasks', () => {
+      const markdown = `
+# Project Tasks
+
+This is some descriptive text about the tasks below.
+
+## Phase 1
+
+- [ ] First task to extract
+- [ ] Second task
+`;
+      expect(extractFirstUncheckedTask(markdown)).toBe('First task to extract');
+    });
+
+    it('ignores checked tasks with different formats', () => {
+      const markdown = `
+- [x] Done with lowercase x
+- [X] Done with uppercase X
+- [✓] Done with checkmark
+- [ ] First unchecked
+`;
+      expect(extractFirstUncheckedTask(markdown)).toBe('First unchecked');
+    });
+  });
+
+
   describe('generateAutoRunTabName', () => {
     it('removes checkbox prefix from task description', () => {
       expect(generateAutoRunTabName('- [ ] Fix authentication bug')).toBe('Authentication Bug');

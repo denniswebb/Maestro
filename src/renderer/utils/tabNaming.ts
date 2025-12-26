@@ -3,6 +3,19 @@
  */
 
 /**
+ * Extract the first unchecked task from markdown content.
+ * Searches for the pattern: - [ ] task description
+ *
+ * @param markdownContent - The markdown document content
+ * @returns The task description (without checkbox prefix) or empty string if none found
+ */
+export function extractFirstUncheckedTask(markdownContent: string): string {
+  // Match first unchecked task: - [ ] or * [ ] at start of line
+  const match = markdownContent.match(/^[\s]*[-*]\s*\[\s*\]\s*(.+)$/m);
+  return match ? match[1].trim() : '';
+}
+
+/**
  * Generate a tab name from an Auto Run task description.
  * Applies rule-based naming strategy:
  * - Removes markdown checkbox prefix

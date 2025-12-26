@@ -36,7 +36,7 @@ export interface UseAgentExecutionDeps {
  */
 export interface UseAgentExecutionReturn {
   /** Spawn an agent for a specific session and wait for completion */
-  spawnAgentForSession: (sessionId: string, prompt: string, cwdOverride?: string) => Promise<AgentSpawnResult>;
+  spawnAgentForSession: (sessionId: string, prompt: string, cwdOverride?: string, tabName?: string) => Promise<AgentSpawnResult>;
   /** Spawn an agent with a prompt for the active session */
   spawnAgentWithPrompt: (prompt: string) => Promise<AgentSpawnResult>;
   /** Spawn a background synopsis agent (resumes an old agent session) */
@@ -106,11 +106,13 @@ export function useAgentExecution(
    * @param sessionId - The session ID to spawn the agent for
    * @param prompt - The prompt to send to the agent
    * @param cwdOverride - Optional override for working directory (e.g., for worktree mode)
+   * @param tabName - Optional tab name for Auto Run sessions (for Phase 2 auto-open tabs feature)
    */
   const spawnAgentForSession = useCallback(async (
     sessionId: string,
     prompt: string,
-    cwdOverride?: string
+    cwdOverride?: string,
+    tabName?: string
   ): Promise<AgentSpawnResult> => {
     // Use sessionsRef to get latest sessions (fixes stale closure when called right after session creation)
     const session = sessionsRef.current.find(s => s.id === sessionId);
@@ -118,6 +120,11 @@ export function useAgentExecution(
 
     // Use override cwd if provided (worktree mode), otherwise use session's cwd
     const effectiveCwd = cwdOverride || session.cwd;
+
+    // Note: tabName parameter is reserved for Phase 2 (Auto-Open Tabs) feature
+    // When Phase 2 is implemented, this tabName will be used to name auto-created tabs
+    // for Auto Run sessions, using the rule-based naming from generateAutoRunTabName()
+    // For now, the parameter is accepted but not actively used since Phase 2 isn't implemented yet
 
     // This spawns a new agent session and waits for completion
     // Use session's toolType for multi-provider support
