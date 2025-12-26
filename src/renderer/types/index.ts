@@ -303,6 +303,7 @@ export interface AITab {
   pendingMergedContext?: string;   // Context from merge that needs to be sent with next message
   isAutoNamed?: boolean;           // True if name was AI-generated (for visual indicator)
   manuallyRenamed?: boolean;       // True if user manually renamed (prevents auto-rename overwrite)
+  isRenaming?: boolean;            // True when AI auto-rename is in progress (for "Renaming..." display)
 }
 
 // Closed tab entry for undo functionality (Cmd+Shift+T)

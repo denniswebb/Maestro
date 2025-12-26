@@ -267,6 +267,10 @@ export interface UseSettingsReturn {
   setAutoRenameEnabled: (value: boolean) => void;
   autoRenameCount: number;
   setAutoRenameCount: (value: number) => void;
+  autoRenameOnFirstResponse: boolean;
+  setAutoRenameOnFirstResponse: (value: boolean) => void;
+  autoRenameAutoRunTabs: boolean;
+  setAutoRenameAutoRunTabs: (value: boolean) => void;
 }
 
 export function useSettings(): UseSettingsReturn {
@@ -374,6 +378,8 @@ export function useSettings(): UseSettingsReturn {
   // Auto-Rename Configuration (persistent)
   const [autoRenameEnabled, setAutoRenameEnabledState] = useState(false); // Default: off (opt-in)
   const [autoRenameCount, setAutoRenameCountState] = useState(1); // Default: 1 suggestion (auto-apply)
+  const [autoRenameOnFirstResponse, setAutoRenameOnFirstResponseState] = useState(false); // Default: off (opt-in)
+  const [autoRenameAutoRunTabs, setAutoRenameAutoRunTabsState] = useState(false); // Default: off (opt-in)
 
   // Wrapper functions that persist to electron-store
   // PERF: All wrapped in useCallback to prevent re-renders
@@ -1029,6 +1035,16 @@ export function useSettings(): UseSettingsReturn {
     window.maestro.settings.set('autoRenameCount', clampedValue);
   }, []);
 
+  const setAutoRenameOnFirstResponse = useCallback((value: boolean) => {
+    setAutoRenameOnFirstResponseState(value);
+    window.maestro.settings.set('autoRenameOnFirstResponse', value);
+  }, []);
+
+  const setAutoRenameAutoRunTabs = useCallback((value: boolean) => {
+    setAutoRenameAutoRunTabsState(value);
+    window.maestro.settings.set('autoRenameAutoRunTabs', value);
+  }, []);
+
   // Load settings from electron-store on mount
   useEffect(() => {
     const loadSettings = async () => {
@@ -1082,6 +1098,8 @@ export function useSettings(): UseSettingsReturn {
       const savedKeyboardMasteryStats = await window.maestro.settings.get('keyboardMasteryStats');
       const savedAutoRenameEnabled = await window.maestro.settings.get('autoRenameEnabled');
       const savedAutoRenameCount = await window.maestro.settings.get('autoRenameCount');
+      const savedAutoRenameOnFirstResponse = await window.maestro.settings.get('autoRenameOnFirstResponse');
+      const savedAutoRenameAutoRunTabs = await window.maestro.settings.get('autoRenameAutoRunTabs');
 
       if (savedEnterToSendAI !== undefined) setEnterToSendAIState(savedEnterToSendAI as boolean);
       if (savedEnterToSendTerminal !== undefined) setEnterToSendTerminalState(savedEnterToSendTerminal as boolean);
@@ -1302,6 +1320,8 @@ export function useSettings(): UseSettingsReturn {
         const count = savedAutoRenameCount as number;
         setAutoRenameCountState(Math.max(1, Math.min(5, count)));
       }
+      if (savedAutoRenameOnFirstResponse !== undefined) setAutoRenameOnFirstResponseState(savedAutoRenameOnFirstResponse as boolean);
+      if (savedAutoRenameAutoRunTabs !== undefined) setAutoRenameAutoRunTabsState(savedAutoRenameAutoRunTabs as boolean);
 
       // Mark settings as loaded
       setSettingsLoaded(true);
@@ -1434,6 +1454,10 @@ export function useSettings(): UseSettingsReturn {
     setAutoRenameEnabled,
     autoRenameCount,
     setAutoRenameCount,
+    autoRenameOnFirstResponse,
+    setAutoRenameOnFirstResponse,
+    autoRenameAutoRunTabs,
+    setAutoRenameAutoRunTabs,
   }), [
     // State values
     settingsLoaded,
@@ -1552,5 +1576,9 @@ export function useSettings(): UseSettingsReturn {
     setAutoRenameEnabled,
     autoRenameCount,
     setAutoRenameCount,
+    autoRenameOnFirstResponse,
+    setAutoRenameOnFirstResponse,
+    autoRenameAutoRunTabs,
+    setAutoRenameAutoRunTabs,
   ]);
 }

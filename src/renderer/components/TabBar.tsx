@@ -346,10 +346,10 @@ function Tab({
           className={`text-xs font-medium ${isActive ? 'whitespace-nowrap' : 'truncate max-w-[120px]'}`}
           style={{
             color: isActive ? theme.colors.textMain : theme.colors.textDim,
-            fontStyle: tab.state === 'busy' ? 'italic' : 'normal'
+            fontStyle: tab.isRenaming ? 'italic' : 'normal'
           }}
         >
-          {tab.state === 'busy' ? 'Renaming...' : displayName}
+          {tab.isRenaming ? 'Renaming...' : displayName}
         </span>
       </div>
 

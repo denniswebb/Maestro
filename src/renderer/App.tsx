@@ -289,6 +289,8 @@ export default function MaestroConsole() {
 
     autoRenameEnabled, setAutoRenameEnabled,
     autoRenameCount, setAutoRenameCount,
+    autoRenameOnFirstResponse, setAutoRenameOnFirstResponse,
+    autoRenameAutoRunTabs, setAutoRenameAutoRunTabs,
 
   } = settings;
 
@@ -1781,12 +1783,12 @@ export default function MaestroConsole() {
           }
 
           // Update the target tab's agentSessionId and clear awaitingSessionId flag
-          // Keep name as null for auto-generated display (derived from agentSessionId)
+          // Preserve the tab's name as-is to avoid overwriting auto-rename or manual names
           const updatedAiTabs = s.aiTabs.map(tab => {
             if (tab.id !== targetTab.id) return tab;
-            // Only preserve existing custom name, don't auto-set to UUID
-            const newName = (tab.name && tab.name !== 'New Session') ? tab.name : null;
-            return { ...tab, agentSessionId, awaitingSessionId: false, name: newName };
+            // Don't touch the name field - preserve whatever is currently set
+            // (could be null for UUID display, or a custom/auto-renamed name)
+            return { ...tab, agentSessionId, awaitingSessionId: false };
           });
 
           return { ...s, aiTabs: updatedAiTabs, agentSessionId }; // Also keep session-level for backwards compatibility
@@ -8290,7 +8292,7 @@ export default function MaestroConsole() {
                 ...s,
                 aiTabs: s.aiTabs.map(t =>
                   t.id === tabNameSuggestionsTabId
-                    ? { ...t, name: selectedName, isAutoNamed: true, manuallyRenamed: false }
+                    ? { ...t, name: selectedName, isAutoNamed: true, manuallyRenamed: false, state: 'idle' as const, isRenaming: false }
                     : t
                 )
               };
@@ -8512,20 +8514,20 @@ export default function MaestroConsole() {
                       return {
                         ...s,
                         aiTabs: s.aiTabs.map(t =>
-                          t.id === tab.id ? { ...t, name: cacheEntry.name, isAutoNamed: true, manuallyRenamed: false } : t
+                          t.id === tab.id ? { ...t, name: cacheEntry.name, isAutoNamed: true, manuallyRenamed: false, state: 'idle' as const, isRenaming: false } : t
                         )
                       };
                     }));
                     continue;
                   }
 
-                  // Set tab to busy state
+                  // Set tab to busy state with renaming flag
                   setSessions(prev => prev.map(s => {
                     if (s.id !== activeSession.id) return s;
                     return {
                       ...s,
                       aiTabs: s.aiTabs.map(t =>
-                        t.id === tab.id ? { ...t, state: 'busy' as const } : t
+                        t.id === tab.id ? { ...t, state: 'busy' as const, isRenaming: true } : t
                       )
                     };
                   }));
@@ -8601,7 +8603,8 @@ export default function MaestroConsole() {
                           name: finalName,
                           state: 'idle' as const,
                           isAutoNamed: true,
-                          manuallyRenamed: false
+                          manuallyRenamed: false,
+                          isRenaming: false
                         };
                       });
 
@@ -9056,7 +9059,7 @@ export default function MaestroConsole() {
               return {
                 ...s,
                 aiTabs: s.aiTabs.map(t =>
-                  t.id === tabId ? { ...t, name: cacheEntry.name, isAutoNamed: true, manuallyRenamed: false } : t
+                  t.id === tabId ? { ...t, name: cacheEntry.name, isAutoNamed: true, manuallyRenamed: false, state: 'idle' as const, isRenaming: false } : t
                 )
               };
             }));
@@ -9070,13 +9073,13 @@ export default function MaestroConsole() {
           // NOTE: In future, could skip tabs with `manuallyRenamed: true` for batch operations
           // but allow explicit "Auto Rename" clicks to override this flag
 
-          // Set tab to busy state during AI generation
+          // Set tab to busy state during AI generation with renaming flag
           setSessions(prev => prev.map(s => {
             if (s.id !== activeSession.id) return s;
             return {
               ...s,
               aiTabs: s.aiTabs.map(t =>
-                t.id === tabId ? { ...t, state: 'busy' as const } : t
+                t.id === tabId ? { ...t, state: 'busy' as const, isRenaming: true } : t
               )
             };
           }));
@@ -9100,7 +9103,7 @@ export default function MaestroConsole() {
                 return {
                   ...s,
                   aiTabs: s.aiTabs.map(t =>
-                    t.id === tabId ? { ...t, name: fallbackName, state: 'idle' as const, isAutoNamed: true } : t
+                    t.id === tabId ? { ...t, name: fallbackName, state: 'idle' as const, isAutoNamed: true, isRenaming: false } : t
                   )
                 };
               }));
@@ -9228,7 +9231,7 @@ export default function MaestroConsole() {
                     ...s,
                     aiTabs: s.aiTabs.map(t =>
                       t.id === tabId
-                        ? { ...t, name: selectedName, isAutoNamed: true, manuallyRenamed: false }
+                        ? { ...t, name: selectedName, isAutoNamed: true, manuallyRenamed: false, state: 'idle' as const, isRenaming: false }
                         : t
                     )
                   };
@@ -9278,7 +9281,7 @@ export default function MaestroConsole() {
                 return {
                   ...s,
                   aiTabs: s.aiTabs.map(t =>
-                    t.id === tabId ? { ...t, state: 'idle' as const } : t
+                    t.id === tabId ? { ...t, state: 'idle' as const, isRenaming: false } : t
                   ),
                   customModel: originalModel,
                   customEnvVars: originalEnvVars
@@ -9297,7 +9300,7 @@ export default function MaestroConsole() {
               return {
                 ...s,
                 aiTabs: s.aiTabs.map(t =>
-                  t.id === tabId ? { ...t, state: 'idle' as const } : t
+                  t.id === tabId ? { ...t, state: 'idle' as const, isRenaming: false } : t
                 )
               };
             }));
@@ -10049,6 +10052,10 @@ export default function MaestroConsole() {
         setAutoRenameEnabled={setAutoRenameEnabled}
         autoRenameCount={autoRenameCount}
         setAutoRenameCount={setAutoRenameCount}
+        autoRenameOnFirstResponse={autoRenameOnFirstResponse}
+        setAutoRenameOnFirstResponse={setAutoRenameOnFirstResponse}
+        autoRenameAutoRunTabs={autoRenameAutoRunTabs}
+        setAutoRenameAutoRunTabs={setAutoRenameAutoRunTabs}
         initialTab={settingsTab}
         hasNoAgents={hasNoAgents}
         onThemeImportError={(msg) => setFlashNotification(msg)}

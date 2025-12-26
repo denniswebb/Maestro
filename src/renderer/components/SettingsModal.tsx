@@ -220,6 +220,10 @@ interface SettingsModalProps {
   setAutoRenameEnabled: (value: boolean) => void;
   autoRenameCount: number;
   setAutoRenameCount: (value: number) => void;
+  autoRenameOnFirstResponse: boolean;
+  setAutoRenameOnFirstResponse: (value: boolean) => void;
+  autoRenameAutoRunTabs: boolean;
+  setAutoRenameAutoRunTabs: (value: boolean) => void;
   initialTab?: 'general' | 'llm' | 'shortcuts' | 'theme' | 'notifications' | 'aicommands';
   hasNoAgents?: boolean;
   onThemeImportError?: (message: string) => void;
@@ -1144,29 +1148,86 @@ export const SettingsModal = memo(function SettingsModal(props: SettingsModalPro
 
               {/* Auto-Rename Count Configuration (conditional) */}
               {props.autoRenameEnabled && (
-                <div
-                  className="mt-3 p-3 rounded border space-y-2"
-                  style={{
-                    borderColor: theme.colors.border,
-                    backgroundColor: theme.colors.bgMain,
-                  }}
-                >
-                  <label className="block text-xs font-bold opacity-70 uppercase mb-2">
-                    Suggestion Count
-                  </label>
-                  <ToggleButtonGroup
-                    options={[
-                      { value: 1, label: 'Auto-apply' },
-                      { value: 3, label: '3 suggestions' },
-                      { value: 5, label: '5 suggestions' },
-                    ]}
-                    value={props.autoRenameCount}
-                    onChange={props.setAutoRenameCount}
-                    theme={theme}
-                  />
-                  <p className="text-xs opacity-50 mt-2">
-                    Choose how many AI-generated name suggestions to show. &quot;Auto-apply&quot; will automatically rename the tab with the best suggestion.
-                  </p>
+                <div className="space-y-3 mt-3">
+                  <div
+                    className="p-3 rounded border space-y-2"
+                    style={{
+                      borderColor: theme.colors.border,
+                      backgroundColor: theme.colors.bgMain,
+                    }}
+                  >
+                    <label className="block text-xs font-bold opacity-70 uppercase mb-2">
+                      Suggestion Count
+                    </label>
+                    <ToggleButtonGroup
+                      options={[
+                        { value: 1, label: 'Auto-apply' },
+                        { value: 3, label: '3 suggestions' },
+                        { value: 5, label: '5 suggestions' },
+                      ]}
+                      value={props.autoRenameCount}
+                      onChange={props.setAutoRenameCount}
+                      theme={theme}
+                    />
+                    <p className="text-xs opacity-50 mt-2">
+                      Choose how many AI-generated name suggestions to show. &quot;Auto-apply&quot; will automatically rename the tab with the best suggestion.
+                    </p>
+                  </div>
+
+                  {/* Automatic Triggers Section */}
+                  <div
+                    className="p-3 rounded border space-y-3"
+                    style={{
+                      borderColor: theme.colors.border,
+                      backgroundColor: theme.colors.bgMain,
+                    }}
+                  >
+                    <label className="block text-xs font-bold opacity-70 uppercase">
+                      Automatic Triggers
+                    </label>
+
+                    <label
+                      className="flex items-center gap-3 p-3 rounded border cursor-pointer hover:bg-opacity-10"
+                      style={{ borderColor: theme.colors.border, backgroundColor: theme.colors.bgMain }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={props.autoRenameOnFirstResponse}
+                        onChange={(e) => props.setAutoRenameOnFirstResponse(e.target.checked)}
+                        className="w-4 h-4"
+                        style={{ accentColor: theme.colors.accent }}
+                      />
+                      <div className="flex-1">
+                        <div className="font-medium" style={{ color: theme.colors.textMain }}>
+                          Auto-rename on first AI response
+                        </div>
+                        <div className="text-xs opacity-50 mt-0.5" style={{ color: theme.colors.textDim }}>
+                          Automatically rename tabs when they receive their first AI message
+                        </div>
+                      </div>
+                    </label>
+
+                    <label
+                      className="flex items-center gap-3 p-3 rounded border cursor-pointer hover:bg-opacity-10"
+                      style={{ borderColor: theme.colors.border, backgroundColor: theme.colors.bgMain }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={props.autoRenameAutoRunTabs}
+                        onChange={(e) => props.setAutoRenameAutoRunTabs(e.target.checked)}
+                        className="w-4 h-4"
+                        style={{ accentColor: theme.colors.accent }}
+                      />
+                      <div className="flex-1">
+                        <div className="font-medium" style={{ color: theme.colors.textMain }}>
+                          Auto-rename Auto-Run tabs on completion
+                        </div>
+                        <div className="text-xs opacity-50 mt-0.5" style={{ color: theme.colors.textDim }}>
+                          Automatically rename Auto-Run document tabs when tasks complete
+                        </div>
+                      </div>
+                    </label>
+                  </div>
                 </div>
               )}
 
