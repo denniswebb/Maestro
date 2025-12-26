@@ -427,6 +427,9 @@ export default function MaestroConsole() {
   // Track tabs that have been auto-renamed on first response to avoid duplicate triggers
   const firstResponseAutoRenamedRef = useRef<Set<string>>(new Set());
 
+  // Track sessions that have been auto-renamed on Auto Run completion to avoid duplicate triggers
+  const autoRunCompletionRenamedRef = useRef<Set<string>>(new Set());
+
   const lightboxAllowDeleteRef = useRef<boolean>(false); // Track if delete should be allowed (set synchronously before state updates)
   const [aboutModalOpen, setAboutModalOpen] = useState(false);
   const [updateCheckModalOpen, setUpdateCheckModalOpen] = useState(false);
@@ -3782,6 +3785,29 @@ export default function MaestroConsole() {
             }).catch(() => {
               // Silent failure - leaderboard submission is not critical
             });
+          }
+        }
+      }
+
+      // Auto-rename Auto Run tab on completion (if enabled)
+      if (autoRenameEnabled && autoRenameAutoRunTabs) {
+        const session = sessions.find(s => s.id === info.sessionId);
+        if (session?.autoRunFolderPath) {
+          const activeTab = session.aiTabs?.find(t => t.id === session.activeTabId);
+
+          // Only rename if tab exists, hasn't been manually renamed, and hasn't already been auto-renamed on completion
+          if (activeTab &&
+              !activeTab.manuallyRenamed &&
+              !activeTab.isRenaming &&
+              !autoRunCompletionRenamedRef.current.has(activeTab.id)) {
+
+            // Track this tab to prevent duplicate renames
+            autoRunCompletionRenamedRef.current.add(activeTab.id);
+
+            // Trigger auto-rename with 500ms delay (shorter than first-response to feel immediate)
+            setTimeout(() => {
+              handleAutoRename(info.sessionId, activeTab.id);
+            }, 500);
           }
         }
       }
