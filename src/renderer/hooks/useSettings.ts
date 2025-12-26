@@ -261,6 +261,12 @@ export interface UseSettingsReturn {
   recordShortcutUsage: (shortcutId: string) => { newLevel: number | null };
   acknowledgeKeyboardMasteryLevel: (level: number) => void;
   getUnacknowledgedKeyboardMasteryLevel: () => number | null;
+
+  // Auto-Rename Configuration (AI-powered tab naming)
+  autoRenameEnabled: boolean;
+  setAutoRenameEnabled: (value: boolean) => void;
+  autoRenameCount: number;
+  setAutoRenameCount: (value: number) => void;
 }
 
 export function useSettings(): UseSettingsReturn {
@@ -364,6 +370,10 @@ export function useSettings(): UseSettingsReturn {
   useEffect(() => {
     keyboardMasteryStatsRef.current = keyboardMasteryStats;
   }, [keyboardMasteryStats]);
+
+  // Auto-Rename Configuration (persistent)
+  const [autoRenameEnabled, setAutoRenameEnabledState] = useState(false); // Default: off (opt-in)
+  const [autoRenameCount, setAutoRenameCountState] = useState(1); // Default: 1 suggestion (auto-apply)
 
   // Wrapper functions that persist to electron-store
   // PERF: All wrapped in useCallback to prevent re-renders
@@ -1006,6 +1016,19 @@ export function useSettings(): UseSettingsReturn {
     return null;
   }, [keyboardMasteryStats.lastAcknowledgedLevel, keyboardMasteryStats.currentLevel]);
 
+  // Auto-Rename Configuration setters
+  const setAutoRenameEnabled = useCallback((value: boolean) => {
+    setAutoRenameEnabledState(value);
+    window.maestro.settings.set('autoRenameEnabled', value);
+  }, []);
+
+  const setAutoRenameCount = useCallback((value: number) => {
+    // Clamp to valid range (1-5)
+    const clampedValue = Math.max(1, Math.min(5, value));
+    setAutoRenameCountState(clampedValue);
+    window.maestro.settings.set('autoRenameCount', clampedValue);
+  }, []);
+
   // Load settings from electron-store on mount
   useEffect(() => {
     const loadSettings = async () => {
@@ -1057,6 +1080,8 @@ export function useSettings(): UseSettingsReturn {
       const savedWebInterfaceCustomPort = await window.maestro.settings.get('webInterfaceCustomPort');
       const savedContextManagementSettings = await window.maestro.settings.get('contextManagementSettings');
       const savedKeyboardMasteryStats = await window.maestro.settings.get('keyboardMasteryStats');
+      const savedAutoRenameEnabled = await window.maestro.settings.get('autoRenameEnabled');
+      const savedAutoRenameCount = await window.maestro.settings.get('autoRenameCount');
 
       if (savedEnterToSendAI !== undefined) setEnterToSendAIState(savedEnterToSendAI as boolean);
       if (savedEnterToSendTerminal !== undefined) setEnterToSendTerminalState(savedEnterToSendTerminal as boolean);
@@ -1270,6 +1295,14 @@ export function useSettings(): UseSettingsReturn {
         setKeyboardMasteryStatsState({ ...DEFAULT_KEYBOARD_MASTERY_STATS, ...(savedKeyboardMasteryStats as Partial<KeyboardMasteryStats>) });
       }
 
+      // Load auto-rename configuration
+      if (savedAutoRenameEnabled !== undefined) setAutoRenameEnabledState(savedAutoRenameEnabled as boolean);
+      if (savedAutoRenameCount !== undefined) {
+        // Validate range on load
+        const count = savedAutoRenameCount as number;
+        setAutoRenameCountState(Math.max(1, Math.min(5, count)));
+      }
+
       // Mark settings as loaded
       setSettingsLoaded(true);
     };
@@ -1397,6 +1430,10 @@ export function useSettings(): UseSettingsReturn {
     recordShortcutUsage,
     acknowledgeKeyboardMasteryLevel,
     getUnacknowledgedKeyboardMasteryLevel,
+    autoRenameEnabled,
+    setAutoRenameEnabled,
+    autoRenameCount,
+    setAutoRenameCount,
   }), [
     // State values
     settingsLoaded,
@@ -1511,5 +1548,9 @@ export function useSettings(): UseSettingsReturn {
     recordShortcutUsage,
     acknowledgeKeyboardMasteryLevel,
     getUnacknowledgedKeyboardMasteryLevel,
+    autoRenameEnabled,
+    setAutoRenameEnabled,
+    autoRenameCount,
+    setAutoRenameCount,
   ]);
 }
