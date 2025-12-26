@@ -99,7 +99,7 @@ src/
 | Add keyboard shortcut | `src/renderer/constants/shortcuts.ts`, `App.tsx` |
 | Add theme | `src/renderer/constants/themes.ts` |
 | Add modal | Component + `src/renderer/constants/modalPriorities.ts` |
-| Add context menu | Use `ContextMenu` component from `src/renderer/components/ContextMenu.tsx` |
+| Add tab overlay menu | See Tab Hover Overlay Menu pattern in `src/renderer/components/TabBar.tsx` |
 | Add setting | `src/renderer/hooks/useSettings.ts`, `src/main/index.ts` |
 | Add template variable | `src/shared/templateVariables.ts`, `src/renderer/utils/templateVariables.ts` |
 | Modify system prompts | `src/prompts/*.md` (wizard, Auto Run, etc.) |
@@ -242,59 +242,65 @@ window.maestro.autorun.saveDocument(folderPath, filename, content);
 
 **Worktree Support:** Auto Run can operate in a git worktree, allowing users to continue interactive editing in the main repo while Auto Run processes tasks in the background. When `batchRunState.worktreeActive` is true, read-only mode is disabled and a git branch icon appears in the UI. See `useBatchProcessor.ts` for worktree setup logic.
 
-### 9. Context Menus
+### 9. Tab Hover Overlay Menu
 
-Reusable context menu component with accessibility and keyboard navigation:
+AI conversation tabs display a hover overlay menu after a 400ms delay when hovering over tabs with an established session. The overlay includes tab management and context operations:
+
+**Menu Structure:**
 ```typescript
-// ContextMenu component props
-interface ContextMenuItem {
-  label: string;
-  icon?: React.ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-  danger?: boolean;        // Use error color for destructive actions
-  dividerAfter?: boolean;  // Add divider after this item
-}
+// Tab operations (always shown)
+- Copy Session ID (if session exists)
+- Star/Unstar Session (if session exists)
+- Rename Tab
+- Mark as Unread
 
-// Usage pattern
-const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
+// Context management (shown when applicable)
+- Context: Compact (if tab has 5+ messages)
+- Context: Merge Into (if session exists)
+- Context: Send to Agent (if session exists)
 
-const handleContextMenu = (e: React.MouseEvent, tabId: string) => {
-  e.preventDefault();
-  setContextMenu({ x: e.clientX, y: e.clientY, tabId });
+// Tab close actions (always shown)
+- Close (disabled if only one tab)
+- Close Others (disabled if only one tab)
+- Close Tabs to the Left (disabled if first tab)
+- Close Tabs to the Right (disabled if last tab)
+```
+
+**Implementation Pattern:**
+```typescript
+const [overlayOpen, setOverlayOpen] = useState(false);
+const [overlayPosition, setOverlayPosition] = useState<{ top: number; left: number } | null>(null);
+
+const handleMouseEnter = () => {
+  if (!tab.agentSessionId) return; // Only for established sessions
+
+  hoverTimeoutRef.current = setTimeout(() => {
+    if (tabRef.current) {
+      const rect = tabRef.current.getBoundingClientRect();
+      setOverlayPosition({ top: rect.bottom + 4, left: rect.left });
+    }
+    setOverlayOpen(true);
+  }, 400);
 };
 
-// Render with Portal
-{contextMenu && createPortal(
-  <ContextMenu
-    x={contextMenu.x}
-    y={contextMenu.y}
-    theme={theme}
-    items={[
-      { label: 'Close', icon: <X />, onClick: () => handleClose(), disabled: hasOnlyOneTab },
-      { label: 'Close Others', icon: <X />, onClick: () => handleCloseOthers(), dividerAfter: true }
-    ]}
-    onClose={() => setContextMenu(null)}
-  />,
+// Render overlay via portal to escape stacking context
+{overlayOpen && overlayPosition && createPortal(
+  <div style={{ top: overlayPosition.top, left: overlayPosition.left }}>
+    {/* Overlay menu items */}
+  </div>,
   document.body
 )}
 ```
 
 **Key Features:**
-- Viewport-aware positioning (adjusts if near edge)
-- Keyboard navigation (Arrow keys, Enter/Space, Escape, Tab)
-- ARIA attributes (role="menu", aria-disabled)
+- Appears after 400ms hover delay (only for tabs with `agentSessionId`)
+- Fixed positioning at tab bottom
+- Mouse can move from tab to overlay without closing
+- Disabled states with visual feedback (opacity-40, cursor-default)
 - Theme-aware styling
-- Disabled item visual feedback (opacity-40, cursor-default)
-- Hybrid mouse+keyboard support
+- Dividers separate action groups
 
-**Example: Tab Context Menu**
-- Close (disabled if only one tab)
-- Close Others (disabled if only one tab)
-- Close Tabs to the Left (disabled if first tab)
-- Close Tabs to the Right (disabled if last tab)
-
-See `src/renderer/components/ContextMenu.tsx` and `src/renderer/components/TabBar.tsx` for implementation details.
+See `src/renderer/components/TabBar.tsx` (Tab component) for implementation details.
 
 ## Code Conventions
 
