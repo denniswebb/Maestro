@@ -12,6 +12,7 @@ import { UpdateCheckModal } from './components/UpdateCheckModal';
 import { CreateGroupModal } from './components/CreateGroupModal';
 import { RenameSessionModal } from './components/RenameSessionModal';
 import { RenameTabModal } from './components/RenameTabModal';
+import { TabNameSuggestionsModal } from './components/TabNameSuggestionsModal';
 import { RenameGroupModal } from './components/RenameGroupModal';
 import { ConfirmModal } from './components/ConfirmModal';
 import { QuitConfirmModal } from './components/QuitConfirmModal';
@@ -94,7 +95,7 @@ import { gitService } from './services/git';
 import { getSpeckitCommands } from './services/speckit';
 
 // Import prompts and synopsis parsing
-import { autorunSynopsisPrompt, maestroSystemPrompt, tabAutoRenamePrompt } from '../prompts';
+import { autorunSynopsisPrompt, maestroSystemPrompt, tabAutoRenamePrompt, tabNameSuggestionsPrompt } from '../prompts';
 import { parseSynopsis } from '../shared/synopsis';
 
 // Import types and constants
@@ -475,6 +476,13 @@ export default function MaestroConsole() {
   const [renameTabModalOpen, setRenameTabModalOpen] = useState(false);
   const [renameTabId, setRenameTabId] = useState<string | null>(null);
   const [renameTabInitialName, setRenameTabInitialName] = useState('');
+
+  // Tab Name Suggestions Modal State
+  const [tabNameSuggestionsOpen, setTabNameSuggestionsOpen] = useState(false);
+  const [tabNameSuggestions, setTabNameSuggestions] = useState<string[]>([]);
+  const [tabNameSuggestionsTabId, setTabNameSuggestionsTabId] = useState<string | null>(null);
+  const [tabNameSuggestionsCurrentName, setTabNameSuggestionsCurrentName] = useState('');
+  const [tabNameSuggestionsLoading, setTabNameSuggestionsLoading] = useState(false);
 
   // Rename Group Modal State
   const [renameGroupModalOpen, setRenameGroupModalOpen] = useState(false);
@@ -8233,6 +8241,83 @@ export default function MaestroConsole() {
         />
       )}
 
+      {/* --- TAB NAME SUGGESTIONS MODAL --- */}
+      {tabNameSuggestionsOpen && tabNameSuggestionsTabId && (
+        <TabNameSuggestionsModal
+          theme={theme}
+          suggestions={tabNameSuggestions}
+          currentName={tabNameSuggestionsCurrentName}
+          isLoading={tabNameSuggestionsLoading}
+          onClose={() => {
+            setTabNameSuggestionsOpen(false);
+            setTabNameSuggestionsTabId(null);
+            setTabNameSuggestions([]);
+            setTabNameSuggestionsCurrentName('');
+            setTabNameSuggestionsLoading(false);
+          }}
+          onSelect={(selectedName: string) => {
+            if (!activeSession || !tabNameSuggestionsTabId) return;
+
+            // Update tab with selected name
+            setSessions(prev => prev.map(s => {
+              if (s.id !== activeSession.id) return s;
+
+              // Find the tab to get its agentSessionId for persistence
+              const tab = s.aiTabs.find(t => t.id === tabNameSuggestionsTabId);
+              if (tab?.agentSessionId) {
+                // Persist name to agent session metadata (async, fire and forget)
+                const agentId = s.toolType || 'claude-code';
+                if (agentId === 'claude-code') {
+                  window.maestro.claude.updateSessionName(
+                    s.projectRoot,
+                    tab.agentSessionId,
+                    selectedName
+                  ).catch(err => console.error('Failed to persist tab name:', err));
+                } else {
+                  window.maestro.agentSessions.setSessionName(
+                    agentId,
+                    s.projectRoot,
+                    tab.agentSessionId,
+                    selectedName
+                  ).catch(err => console.error('Failed to persist tab name:', err));
+                }
+              }
+
+              return {
+                ...s,
+                aiTabs: s.aiTabs.map(t =>
+                  t.id === tabNameSuggestionsTabId
+                    ? { ...t, name: selectedName, isAutoNamed: true, manuallyRenamed: false }
+                    : t
+                )
+              };
+            }));
+
+            // Cache the selected name
+            const tab = activeSession.aiTabs?.find(t => t.id === tabNameSuggestionsTabId);
+            if (tab) {
+              const messageCount = tab.logs.filter(log => log.source === 'user' || log.source === 'ai').length;
+              autoRenameCacheRef.current.set(tabNameSuggestionsTabId, {
+                name: selectedName,
+                timestamp: Date.now(),
+                messageCount
+              });
+            }
+
+            // Show success notification
+            setFlashNotification(`Tab renamed to: ${selectedName}`);
+            setTimeout(() => setFlashNotification(null), 2000);
+
+            // Close modal
+            setTabNameSuggestionsOpen(false);
+            setTabNameSuggestionsTabId(null);
+            setTabNameSuggestions([]);
+            setTabNameSuggestionsCurrentName('');
+            setTabNameSuggestionsLoading(false);
+          }}
+        />
+      )}
+
       {/* --- RENAME GROUP MODAL --- */}
       {renameGroupModalOpen && renameGroupId && (
         <RenameGroupModal
@@ -9013,8 +9098,8 @@ export default function MaestroConsole() {
               return `${role}: ${text}`;
             }).join('\n');
 
-            // Create prompt with conversation history
-            const prompt = tabAutoRenamePrompt.replace('{{conversation_history}}', conversationText);
+            // Create prompt with conversation history (use suggestions prompt for 3 options)
+            const prompt = tabNameSuggestionsPrompt.replace('{{conversation_history}}', conversationText);
 
             // Temporarily override session model to use Claude Haiku for fast, cheap naming
             // Store original model and restore after operation
@@ -9036,68 +9121,44 @@ export default function MaestroConsole() {
                 throw new Error('Failed to spawn agent for tab renaming');
               }
 
-              // Extract the generated name from the response
-              const generatedName = result.response.trim();
+              // Extract and parse the 3 suggestions from the response (one per line)
+              const responseText = result.response.trim();
 
-              if (!generatedName) {
-                throw new Error('AI did not generate a tab name');
+              if (!responseText) {
+                throw new Error('AI did not generate tab name suggestions');
               }
 
-              // Validate and truncate generated name
-              const finalName = truncateTabName(generatedName, 40);
+              // Parse suggestions: split by newlines, filter empty, truncate to 40 chars, take first 3
+              const parsedSuggestions = responseText
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 0)
+                .map(suggestion => truncateTabName(suggestion, 40))
+                .filter(suggestion => suggestion.length > 0)
+                .slice(0, 3);
 
-              if (!finalName || finalName.length === 0) {
-                throw new Error('AI generated invalid tab name');
+              if (parsedSuggestions.length === 0) {
+                throw new Error('AI generated invalid tab name suggestions');
               }
 
-              // Cache the generated name for future use
-              const currentMessageCount = tab.logs.filter(log => log.source === 'user' || log.source === 'ai').length;
-              autoRenameCacheRef.current.set(tabId, {
-                name: finalName,
-                timestamp: Date.now(),
-                messageCount: currentMessageCount
-              });
-
-              // Update tab with AI-generated name and restore original model
+              // Restore original model and tab to idle state
               setSessions(prev => prev.map(s => {
                 if (s.id !== activeSession.id) return s;
-                const updatedTabs = s.aiTabs.map(t => {
-                  if (t.id !== tabId) return t;
-                  return {
-                    ...t,
-                    name: finalName,
-                    state: 'idle' as const,
-                    isAutoNamed: true,
-                    manuallyRenamed: false
-                  };
-                });
-
-                // Persist name to agent session metadata if available
-                const updatedTab = updatedTabs.find(t => t.id === tabId);
-                if (updatedTab?.agentSessionId) {
-                  const agentId = s.toolType || 'claude-code';
-                  if (agentId === 'claude-code') {
-                    window.maestro.claude.updateSessionName(
-                      s.projectRoot,
-                      updatedTab.agentSessionId,
-                      finalName
-                    ).catch(err => console.error('Failed to persist tab name:', err));
-                  } else {
-                    window.maestro.agentSessions.setSessionName(
-                      agentId,
-                      s.projectRoot,
-                      updatedTab.agentSessionId,
-                      finalName
-                    ).catch(err => console.error('Failed to persist tab name:', err));
-                  }
-                }
-
-                return { ...s, aiTabs: updatedTabs, customModel: originalModel };
+                return {
+                  ...s,
+                  aiTabs: s.aiTabs.map(t =>
+                    t.id === tabId ? { ...t, state: 'idle' as const } : t
+                  ),
+                  customModel: originalModel
+                };
               }));
 
-              // Show success notification
-              setFlashNotification(`Tab renamed to: ${finalName}`);
-              setTimeout(() => setFlashNotification(null), 2000);
+              // Show suggestions modal for user to pick
+              setTabNameSuggestionsTabId(tabId);
+              setTabNameSuggestionsCurrentName(tab.name || 'Untitled');
+              setTabNameSuggestions(parsedSuggestions);
+              setTabNameSuggestionsLoading(false);
+              setTabNameSuggestionsOpen(true);
 
             } catch (error) {
               console.error('Auto-rename failed:', error);

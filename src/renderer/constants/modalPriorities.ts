@@ -44,6 +44,9 @@ export const MODAL_PRIORITIES = {
   /** Rename tab modal */
   RENAME_TAB: 875,
 
+  /** Tab name suggestions modal - AI-powered name selection */
+  TAB_NAME_SUGGESTIONS: 870,
+
   /** Rename group modal */
   RENAME_GROUP: 850,
 

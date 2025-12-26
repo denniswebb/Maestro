@@ -39,4 +39,5 @@ export {
 
   // Tab management
   tabAutoRenamePrompt,
+  tabNameSuggestionsPrompt,
 } from '../generated/prompts';
