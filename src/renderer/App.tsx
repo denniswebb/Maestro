@@ -8782,7 +8782,9 @@ export default function MaestroConsole() {
             }).join('\n');
 
             // Create prompt with conversation history
-            const prompt = tabAutoRenamePrompt.replace('{{conversation_history}}', conversationText);
+            // Use custom prompt if available, otherwise use default
+            const promptTemplate = settings.customTabAutoRenamePrompt || tabAutoRenamePrompt;
+            const prompt = promptTemplate.replace('{{conversation_history}}', conversationText);
 
             // Spawn agent in batch mode to get AI-generated name
             const result = await spawnAgentForSession(

@@ -263,6 +263,10 @@ export interface UseSettingsReturn {
   recordShortcutUsage: (shortcutId: string) => { newLevel: number | null };
   acknowledgeKeyboardMasteryLevel: (level: number) => void;
   getUnacknowledgedKeyboardMasteryLevel: () => number | null;
+
+  // Tab Auto-Rename settings
+  customTabAutoRenamePrompt: string | null;
+  setCustomTabAutoRenamePrompt: (value: string | null) => void;
 }
 
 export function useSettings(): UseSettingsReturn {
@@ -367,6 +371,9 @@ export function useSettings(): UseSettingsReturn {
   useEffect(() => {
     keyboardMasteryStatsRef.current = keyboardMasteryStats;
   }, [keyboardMasteryStats]);
+
+  // Tab Auto-Rename prompt (persistent, nullable - null means use default)
+  const [customTabAutoRenamePrompt, setCustomTabAutoRenamePromptState] = useState<string | null>(null);
 
   // Wrapper functions that persist to electron-store
   // PERF: All wrapped in useCallback to prevent re-renders
@@ -956,6 +963,12 @@ export function useSettings(): UseSettingsReturn {
     window.maestro.settings.set('keyboardMasteryStats', value);
   }, []);
 
+  // Set custom tab auto-rename prompt (null = use default)
+  const setCustomTabAutoRenamePrompt = useCallback((value: string | null) => {
+    setCustomTabAutoRenamePromptState(value);
+    window.maestro.settings.set('customTabAutoRenamePrompt', value);
+  }, []);
+
   // Record usage of a shortcut - returns newLevel if user leveled up
   // Note: We read current state synchronously to return the correct level-up info
   const recordShortcutUsage = useCallback((shortcutId: string): { newLevel: number | null } => {
@@ -1066,6 +1079,7 @@ export function useSettings(): UseSettingsReturn {
       const savedWebInterfaceAutoStart = await window.maestro.settings.get('webInterfaceAutoStart');
       const savedContextManagementSettings = await window.maestro.settings.get('contextManagementSettings');
       const savedKeyboardMasteryStats = await window.maestro.settings.get('keyboardMasteryStats');
+      const savedCustomTabAutoRenamePrompt = await window.maestro.settings.get('customTabAutoRenamePrompt');
 
       if (savedEnterToSendAI !== undefined) setEnterToSendAIState(savedEnterToSendAI as boolean);
       if (savedEnterToSendTerminal !== undefined) setEnterToSendTerminalState(savedEnterToSendTerminal as boolean);
@@ -1280,6 +1294,11 @@ export function useSettings(): UseSettingsReturn {
         setKeyboardMasteryStatsState({ ...DEFAULT_KEYBOARD_MASTERY_STATS, ...(savedKeyboardMasteryStats as Partial<KeyboardMasteryStats>) });
       }
 
+      // Load custom tab auto-rename prompt
+      if (savedCustomTabAutoRenamePrompt !== undefined) {
+        setCustomTabAutoRenamePromptState(savedCustomTabAutoRenamePrompt as string | null);
+      }
+
       // Mark settings as loaded
       setSettingsLoaded(true);
     };
@@ -1409,6 +1428,8 @@ export function useSettings(): UseSettingsReturn {
     recordShortcutUsage,
     acknowledgeKeyboardMasteryLevel,
     getUnacknowledgedKeyboardMasteryLevel,
+    customTabAutoRenamePrompt,
+    setCustomTabAutoRenamePrompt,
   }), [
     // State values
     settingsLoaded,
@@ -1525,5 +1546,6 @@ export function useSettings(): UseSettingsReturn {
     recordShortcutUsage,
     acknowledgeKeyboardMasteryLevel,
     getUnacknowledgedKeyboardMasteryLevel,
+    setCustomTabAutoRenamePrompt,
   ]);
 }
