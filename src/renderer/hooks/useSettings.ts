@@ -265,6 +265,10 @@ export interface UseSettingsReturn {
   getUnacknowledgedKeyboardMasteryLevel: () => number | null;
 
   // Tab Auto-Rename settings
+  autoRenameEnabled: boolean;
+  setAutoRenameEnabled: (value: boolean) => void;
+  autoRenameCount: number;
+  setAutoRenameCount: (value: number) => void;
   customTabAutoRenamePrompt: string | null;
   setCustomTabAutoRenamePrompt: (value: string | null) => void;
   tabRenameExamples: TabRenameExample[];
@@ -374,6 +378,10 @@ export function useSettings(): UseSettingsReturn {
   useEffect(() => {
     keyboardMasteryStatsRef.current = keyboardMasteryStats;
   }, [keyboardMasteryStats]);
+
+  // Tab Auto-Rename settings (persistent)
+  const [autoRenameEnabled, setAutoRenameEnabledState] = useState(false); // Default: opt-in (false)
+  const [autoRenameCount, setAutoRenameCountState] = useState(1); // Default: 1 (auto-apply), range: 1-5
 
   // Tab Auto-Rename prompt (persistent, nullable - null means use default)
   const [customTabAutoRenamePrompt, setCustomTabAutoRenamePromptState] = useState<string | null>(null);
@@ -970,6 +978,20 @@ export function useSettings(): UseSettingsReturn {
     window.maestro.settings.set('keyboardMasteryStats', value);
   }, []);
 
+  // Set auto-rename enabled (opt-in toggle)
+  const setAutoRenameEnabled = useCallback((value: boolean) => {
+    setAutoRenameEnabledState(value);
+    window.maestro.settings.set('autoRenameEnabled', value);
+  }, []);
+
+  // Set auto-rename count (1-5, with validation)
+  const setAutoRenameCount = useCallback((value: number) => {
+    // Clamp value between 1 and 5
+    const clampedValue = Math.max(1, Math.min(5, value));
+    setAutoRenameCountState(clampedValue);
+    window.maestro.settings.set('autoRenameCount', clampedValue);
+  }, []);
+
   // Set custom tab auto-rename prompt (null = use default)
   const setCustomTabAutoRenamePrompt = useCallback((value: string | null) => {
     setCustomTabAutoRenamePromptState(value);
@@ -1102,6 +1124,8 @@ export function useSettings(): UseSettingsReturn {
       const savedWebInterfaceAutoStart = await window.maestro.settings.get('webInterfaceAutoStart');
       const savedContextManagementSettings = await window.maestro.settings.get('contextManagementSettings');
       const savedKeyboardMasteryStats = await window.maestro.settings.get('keyboardMasteryStats');
+      const savedAutoRenameEnabled = await window.maestro.settings.get('autoRenameEnabled');
+      const savedAutoRenameCount = await window.maestro.settings.get('autoRenameCount');
       const savedCustomTabAutoRenamePrompt = await window.maestro.settings.get('customTabAutoRenamePrompt');
 
       if (savedEnterToSendAI !== undefined) setEnterToSendAIState(savedEnterToSendAI as boolean);
@@ -1317,6 +1341,16 @@ export function useSettings(): UseSettingsReturn {
         setKeyboardMasteryStatsState({ ...DEFAULT_KEYBOARD_MASTERY_STATS, ...(savedKeyboardMasteryStats as Partial<KeyboardMasteryStats>) });
       }
 
+      // Load auto-rename settings with validation
+      if (savedAutoRenameEnabled !== undefined) {
+        setAutoRenameEnabledState(savedAutoRenameEnabled as boolean);
+      }
+      if (savedAutoRenameCount !== undefined) {
+        const count = savedAutoRenameCount as number;
+        // Validate range 1-5
+        setAutoRenameCountState(Math.max(1, Math.min(5, count)));
+      }
+
       // Load custom tab auto-rename prompt
       if (savedCustomTabAutoRenamePrompt !== undefined) {
         setCustomTabAutoRenamePromptState(savedCustomTabAutoRenamePrompt as string | null);
@@ -1457,6 +1491,10 @@ export function useSettings(): UseSettingsReturn {
     recordShortcutUsage,
     acknowledgeKeyboardMasteryLevel,
     getUnacknowledgedKeyboardMasteryLevel,
+    autoRenameEnabled,
+    setAutoRenameEnabled,
+    autoRenameCount,
+    setAutoRenameCount,
     customTabAutoRenamePrompt,
     setCustomTabAutoRenamePrompt,
     tabRenameExamples,
@@ -1578,6 +1616,10 @@ export function useSettings(): UseSettingsReturn {
     recordShortcutUsage,
     acknowledgeKeyboardMasteryLevel,
     getUnacknowledgedKeyboardMasteryLevel,
+    autoRenameEnabled,
+    autoRenameCount,
+    setAutoRenameEnabled,
+    setAutoRenameCount,
     setCustomTabAutoRenamePrompt,
     tabRenameExamples,
     addTabRenameExample,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, memo } from 'react';
-import { X, Key, Moon, Sun, Keyboard, Check, Terminal, Bell, Cpu, Settings, Palette, Sparkles, History, Download, Bug, Cloud, FolderSync, RotateCcw, Folder, ChevronDown, Plus, Trash2, Brain, AlertTriangle } from 'lucide-react';
+import { X, Key, Moon, Sun, Keyboard, Check, Terminal, Bell, Cpu, Settings, Palette, Sparkles, History, Download, Bug, Cloud, FolderSync, RotateCcw, Folder, ChevronDown, Plus, Trash2, Brain, AlertTriangle, Wand2 } from 'lucide-react';
 import { useSettings } from '../hooks/useSettings';
 import type { Theme, ThemeColors, ThemeId, Shortcut, ShellInfo, CustomAICommand, LLMProvider } from '../types';
 import { CustomThemeBuilder } from './CustomThemeBuilder';
@@ -202,6 +202,10 @@ interface SettingsModalProps {
   setDefaultSaveToHistory: (value: boolean) => void;
   defaultShowThinking: boolean;
   setDefaultShowThinking: (value: boolean) => void;
+  autoRenameEnabled: boolean;
+  setAutoRenameEnabled: (value: boolean) => void;
+  autoRenameCount: number;
+  setAutoRenameCount: (value: number) => void;
   osNotificationsEnabled: boolean;
   setOsNotificationsEnabled: (value: boolean) => void;
   audioFeedbackEnabled: boolean;
@@ -1126,6 +1130,75 @@ export const SettingsModal = memo(function SettingsModal(props: SettingsModalPro
                 onChange={props.setDefaultShowThinking}
                 theme={theme}
               />
+
+              {/* Auto-Rename Tabs */}
+              <div>
+                <label className="block text-xs font-bold opacity-70 uppercase mb-2 flex items-center gap-2">
+                  <Wand2 className="w-3 h-3" />
+                  Auto-Rename Tabs
+                </label>
+                <div className="space-y-3">
+                  {/* Enable Toggle */}
+                  <label
+                    className="flex items-center gap-3 p-3 rounded border cursor-pointer hover:bg-opacity-10"
+                    style={{ borderColor: theme.colors.border, backgroundColor: theme.colors.bgMain }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={props.autoRenameEnabled}
+                      onChange={(e) => props.setAutoRenameEnabled(e.target.checked)}
+                      className="w-4 h-4"
+                      style={{ accentColor: theme.colors.accent }}
+                    />
+                    <div className="flex-1">
+                      <div className="font-medium" style={{ color: theme.colors.textMain }}>
+                        Enable automatic tab renaming
+                      </div>
+                      <div className="text-xs opacity-50 mt-0.5" style={{ color: theme.colors.textDim }}>
+                        Automatically suggest names for AI tabs based on conversation content
+                      </div>
+                    </div>
+                  </label>
+
+                  {/* Number of Suggestions Selector (ghosted when disabled) */}
+                  <div
+                    className="p-3 rounded border space-y-2"
+                    style={{
+                      borderColor: theme.colors.border,
+                      backgroundColor: theme.colors.bgMain,
+                      opacity: props.autoRenameEnabled ? 1 : 0.4,
+                      pointerEvents: props.autoRenameEnabled ? 'auto' : 'none',
+                    }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium" style={{ color: theme.colors.textMain }}>
+                        Number of name suggestions
+                      </label>
+                      <div className="flex gap-1">
+                        {[1, 2, 3, 4, 5].map((num) => (
+                          <button
+                            key={num}
+                            onClick={() => props.setAutoRenameCount(num)}
+                            className={`w-8 h-8 rounded text-xs font-bold transition-all ${
+                              props.autoRenameCount === num ? 'ring-2' : ''
+                            }`}
+                            style={{
+                              backgroundColor: props.autoRenameCount === num ? theme.colors.accentDim : theme.colors.bgActivity,
+                              color: props.autoRenameCount === num ? theme.colors.accent : theme.colors.textDim,
+                              '--tw-ring-color': theme.colors.accent,
+                            } as React.CSSProperties}
+                          >
+                            {num}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="text-xs opacity-50" style={{ color: theme.colors.textDim }}>
+                      When set to 1, names are applied automatically without confirmation
+                    </p>
+                  </div>
+                </div>
+              </div>
 
               {/* Check for Updates on Startup */}
               <SettingCheckbox

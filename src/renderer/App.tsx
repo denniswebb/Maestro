@@ -285,6 +285,9 @@ export default function MaestroConsole() {
 
     keyboardMasteryStats, recordShortcutUsage, acknowledgeKeyboardMasteryLevel, getUnacknowledgedKeyboardMasteryLevel,
 
+    autoRenameEnabled, setAutoRenameEnabled,
+    autoRenameCount, setAutoRenameCount,
+
   } = settings;
 
   // --- KEYBOARD SHORTCUT HELPERS ---
@@ -9619,6 +9622,10 @@ export default function MaestroConsole() {
         setDefaultSaveToHistory={setDefaultSaveToHistory}
         defaultShowThinking={defaultShowThinking}
         setDefaultShowThinking={setDefaultShowThinking}
+        autoRenameEnabled={autoRenameEnabled}
+        setAutoRenameEnabled={setAutoRenameEnabled}
+        autoRenameCount={autoRenameCount}
+        setAutoRenameCount={setAutoRenameCount}
         fontFamily={fontFamily}
         setFontFamily={setFontFamily}
         fontSize={fontSize}
