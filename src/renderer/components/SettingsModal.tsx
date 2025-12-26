@@ -216,6 +216,10 @@ interface SettingsModalProps {
   setCrashReportingEnabled: (value: boolean) => void;
   customAICommands: CustomAICommand[];
   setCustomAICommands: (commands: CustomAICommand[]) => void;
+  autoRenameEnabled: boolean;
+  setAutoRenameEnabled: (value: boolean) => void;
+  autoRenameCount: number;
+  setAutoRenameCount: (value: number) => void;
   initialTab?: 'general' | 'llm' | 'shortcuts' | 'theme' | 'notifications' | 'aicommands';
   hasNoAgents?: boolean;
   onThemeImportError?: (message: string) => void;
@@ -1126,6 +1130,45 @@ export const SettingsModal = memo(function SettingsModal(props: SettingsModalPro
                 onChange={props.setDefaultShowThinking}
                 theme={theme}
               />
+
+              {/* Auto-Rename Tabs */}
+              <SettingCheckbox
+                icon={Sparkles}
+                sectionLabel="Auto-Rename Tabs"
+                title="Enable AI-powered tab renaming"
+                description="When enabled, AI will automatically suggest descriptive names for tabs based on conversation content"
+                checked={props.autoRenameEnabled}
+                onChange={props.setAutoRenameEnabled}
+                theme={theme}
+              />
+
+              {/* Auto-Rename Count Configuration (conditional) */}
+              {props.autoRenameEnabled && (
+                <div
+                  className="mt-3 p-3 rounded border space-y-2"
+                  style={{
+                    borderColor: theme.colors.border,
+                    backgroundColor: theme.colors.bgMain,
+                  }}
+                >
+                  <label className="block text-xs font-bold opacity-70 uppercase mb-2">
+                    Suggestion Count
+                  </label>
+                  <ToggleButtonGroup
+                    options={[
+                      { value: 1, label: 'Auto-apply' },
+                      { value: 3, label: '3 suggestions' },
+                      { value: 5, label: '5 suggestions' },
+                    ]}
+                    value={props.autoRenameCount}
+                    onChange={props.setAutoRenameCount}
+                    theme={theme}
+                  />
+                  <p className="text-xs opacity-50 mt-2">
+                    Choose how many AI-generated name suggestions to show. &quot;Auto-apply&quot; will automatically rename the tab with the best suggestion.
+                  </p>
+                </div>
+              )}
 
               {/* Check for Updates on Startup */}
               <SettingCheckbox

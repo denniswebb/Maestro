@@ -10045,6 +10045,10 @@ export default function MaestroConsole() {
         setCrashReportingEnabled={setCrashReportingEnabled}
         customAICommands={customAICommands}
         setCustomAICommands={setCustomAICommands}
+        autoRenameEnabled={autoRenameEnabled}
+        setAutoRenameEnabled={setAutoRenameEnabled}
+        autoRenameCount={autoRenameCount}
+        setAutoRenameCount={setAutoRenameCount}
         initialTab={settingsTab}
         hasNoAgents={hasNoAgents}
         onThemeImportError={(msg) => setFlashNotification(msg)}
