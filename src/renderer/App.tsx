@@ -287,6 +287,9 @@ export default function MaestroConsole() {
 
     keyboardMasteryStats, recordShortcutUsage, acknowledgeKeyboardMasteryLevel, getUnacknowledgedKeyboardMasteryLevel,
 
+    autoRenameEnabled, setAutoRenameEnabled,
+    autoRenameCount, setAutoRenameCount,
+
   } = settings;
 
   // --- KEYBOARD SHORTCUT HELPERS ---
@@ -9012,7 +9015,7 @@ export default function MaestroConsole() {
             setRenameTabModalOpen(true);
           }
         }}
-        onAutoRename={async (tabId: string) => {
+        onAutoRename={autoRenameEnabled ? async (tabId: string) => {
           if (!activeSession) return;
           const tab = activeSession.aiTabs?.find(t => t.id === tabId);
           if (!tab) return;
@@ -9098,8 +9101,10 @@ export default function MaestroConsole() {
               return `${role}: ${text}`;
             }).join('\n');
 
-            // Create prompt with conversation history (use suggestions prompt for 3 options)
-            const prompt = tabNameSuggestionsPrompt.replace('{{conversation_history}}', conversationText);
+            // Create prompt with conversation history and dynamic suggestion count
+            const prompt = tabNameSuggestionsPrompt
+              .replace(/\{\{count\}\}/g, autoRenameCount.toString())
+              .replace('{{conversation_history}}', conversationText);
 
             // Temporarily override session model to use Claude Haiku for fast, cheap naming
             // Store original model and restore after operation
@@ -9121,21 +9126,21 @@ export default function MaestroConsole() {
                 throw new Error('Failed to spawn agent for tab renaming');
               }
 
-              // Extract and parse the 3 suggestions from the response (one per line)
+              // Extract and parse suggestions from the response (one per line)
               const responseText = result.response.trim();
 
               if (!responseText) {
                 throw new Error('AI did not generate tab name suggestions');
               }
 
-              // Parse suggestions: split by newlines, filter empty, truncate to 40 chars, take first 3
+              // Parse suggestions: split by newlines, filter empty, truncate to 40 chars, take requested count
               const parsedSuggestions = responseText
                 .split('\n')
                 .map(line => line.trim())
                 .filter(line => line.length > 0)
                 .map(suggestion => truncateTabName(suggestion, 40))
                 .filter(suggestion => suggestion.length > 0)
-                .slice(0, 3);
+                .slice(0, autoRenameCount);
 
               if (parsedSuggestions.length === 0) {
                 throw new Error('AI generated invalid tab name suggestions');
@@ -9153,12 +9158,57 @@ export default function MaestroConsole() {
                 };
               }));
 
-              // Show suggestions modal for user to pick
-              setTabNameSuggestionsTabId(tabId);
-              setTabNameSuggestionsCurrentName(tab.name || 'Untitled');
-              setTabNameSuggestions(parsedSuggestions);
-              setTabNameSuggestionsLoading(false);
-              setTabNameSuggestionsOpen(true);
+              // Auto-apply if count is 1, otherwise show modal for user to pick
+              if (autoRenameCount === 1) {
+                const selectedName = parsedSuggestions[0];
+
+                // Apply the name immediately
+                setSessions(prev => prev.map(s => {
+                  if (s.id !== activeSession.id) return s;
+                  return {
+                    ...s,
+                    aiTabs: s.aiTabs.map(t =>
+                      t.id === tabId
+                        ? { ...t, name: selectedName, isAutoNamed: true, manuallyRenamed: false }
+                        : t
+                    )
+                  };
+                }));
+
+                // Update agent session metadata if available
+                const targetTab = activeSession.aiTabs.find(t => t.id === tabId);
+                if (targetTab?.agentSessionId) {
+                  try {
+                    await window.maestro.agentSessions.setSessionName(
+                      activeSession.toolType,
+                      activeSession.projectRoot,
+                      targetTab.agentSessionId,
+                      selectedName
+                    );
+                  } catch (updateError) {
+                    console.warn('Failed to update agent session metadata:', updateError);
+                  }
+                }
+
+                // Cache the auto-generated name
+                const messageCount = tab.logs.filter(log => log.source === 'user' || log.source === 'ai').length;
+                autoRenameCacheRef.current.set(tabId, {
+                  name: selectedName,
+                  timestamp: Date.now(),
+                  messageCount
+                });
+
+                // Show toast notification
+                setFlashNotification(`Tab renamed to: ${selectedName}`);
+                setTimeout(() => setFlashNotification(null), 2000);
+              } else {
+                // Show suggestions modal for user to pick
+                setTabNameSuggestionsTabId(tabId);
+                setTabNameSuggestionsCurrentName(tab.name || 'Untitled');
+                setTabNameSuggestions(parsedSuggestions);
+                setTabNameSuggestionsLoading(false);
+                setTabNameSuggestionsOpen(true);
+              }
 
             } catch (error) {
               console.error('Auto-rename failed:', error);
@@ -9195,7 +9245,7 @@ export default function MaestroConsole() {
             setFlashNotification('Failed to generate tab name');
             setTimeout(() => setFlashNotification(null), 3000);
           }
-        }}
+        } : undefined}
         onTabReorder={(fromIndex: number, toIndex: number) => {
           if (!activeSession) return;
           // Use functional setState to compute from fresh state (avoids stale closure issues)
