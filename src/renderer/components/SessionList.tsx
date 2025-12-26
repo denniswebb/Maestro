@@ -3,7 +3,7 @@ import {
   Wand2, Plus, Settings, ChevronRight, ChevronDown, ChevronUp, X, Keyboard,
   Radio, Copy, ExternalLink, PanelLeftClose, PanelLeftOpen, Folder, Info, GitBranch, Bot, Clock,
   ScrollText, Cpu, Menu, Bookmark, Trophy, Trash2, Edit3, FolderInput, Download, Compass, Globe,
-  GitPullRequest
+  GitPullRequest, Sparkles
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { Session, Group, Theme, Shortcut, AutoRunStats, GroupChat, GroupChatState, SettingsTab, FocusArea } from '../types';
@@ -352,6 +352,7 @@ interface HamburgerMenuContentProps {
   setUpdateCheckModalOpen: (open: boolean) => void;
   setAboutModalOpen: (open: boolean) => void;
   setMenuOpen: (open: boolean) => void;
+  onBatchAutoRenameAllTabs?: () => Promise<void>;
 }
 
 function HamburgerMenuContent({
@@ -367,6 +368,7 @@ function HamburgerMenuContent({
   setUpdateCheckModalOpen,
   setAboutModalOpen,
   setMenuOpen,
+  onBatchAutoRenameAllTabs,
 }: HamburgerMenuContentProps) {
   return (
     <div className="p-1">
@@ -394,6 +396,21 @@ function HamburgerMenuContent({
           <div className="flex-1">
             <div className="text-sm font-medium" style={{ color: theme.colors.textMain }}>Introductory Tour</div>
             <div className="text-xs" style={{ color: theme.colors.textDim }}>Learn how to use Maestro</div>
+          </div>
+        </button>
+      )}
+      {onBatchAutoRenameAllTabs && (
+        <button
+          onClick={async () => {
+            setMenuOpen(false);
+            await onBatchAutoRenameAllTabs();
+          }}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md hover:bg-white/10 transition-colors text-left"
+        >
+          <Sparkles className="w-5 h-5" style={{ color: theme.colors.accent }} />
+          <div className="flex-1">
+            <div className="text-sm font-medium" style={{ color: theme.colors.textMain }}>Auto Rename All Tabs</div>
+            <div className="text-xs" style={{ color: theme.colors.textDim }}>AI names all tabs in active session</div>
           </div>
         </button>
       )}
@@ -703,6 +720,9 @@ interface SessionListProps {
   // Ref for the sidebar container (for focus management)
   sidebarContainerRef?: React.RefObject<HTMLDivElement>;
 
+  // Batch auto-rename all tabs handler
+  onBatchAutoRenameAllTabs?: () => Promise<void>;
+
   // Group Chat props
   groupChats?: GroupChat[];
   activeGroupChatId?: string | null;
@@ -756,6 +776,7 @@ export function SessionList(props: SessionListProps) {
     openWizard,
     startTour,
     sidebarContainerRef,
+    onBatchAutoRenameAllTabs,
     // Group Chat props
     groupChats = [],
     activeGroupChatId = null,
@@ -1733,6 +1754,7 @@ export function SessionList(props: SessionListProps) {
                     setUpdateCheckModalOpen={setUpdateCheckModalOpen}
                     setAboutModalOpen={setAboutModalOpen}
                     setMenuOpen={setMenuOpen}
+                    onBatchAutoRenameAllTabs={onBatchAutoRenameAllTabs}
                   />
                 </div>
               )}
@@ -1769,6 +1791,7 @@ export function SessionList(props: SessionListProps) {
                   setUpdateCheckModalOpen={setUpdateCheckModalOpen}
                   setAboutModalOpen={setAboutModalOpen}
                   setMenuOpen={setMenuOpen}
+                  onBatchAutoRenameAllTabs={onBatchAutoRenameAllTabs}
                 />
               </div>
             )}
