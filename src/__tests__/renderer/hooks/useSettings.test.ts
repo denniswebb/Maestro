@@ -1339,6 +1339,153 @@ describe('useSettings', () => {
     });
   });
 
+  describe('auto-rename settings', () => {
+    it('should have correct default values for auto-rename settings', async () => {
+      const { result } = renderHook(() => useSettings());
+      await waitForSettingsLoaded(result);
+
+      expect(result.current.autoRenameEnabled).toBe(false);
+      expect(result.current.autoRenameCount).toBe(1);
+    });
+
+    it('should load saved autoRenameEnabled setting', async () => {
+      vi.mocked(window.maestro.settings.get).mockImplementation(async (key: string) => {
+        if (key === 'autoRenameEnabled') return true;
+        return undefined;
+      });
+
+      const { result } = renderHook(() => useSettings());
+      await waitForSettingsLoaded(result);
+
+      expect(result.current.autoRenameEnabled).toBe(true);
+    });
+
+    it('should load saved autoRenameCount setting', async () => {
+      vi.mocked(window.maestro.settings.get).mockImplementation(async (key: string) => {
+        if (key === 'autoRenameCount') return 3;
+        return undefined;
+      });
+
+      const { result } = renderHook(() => useSettings());
+      await waitForSettingsLoaded(result);
+
+      expect(result.current.autoRenameCount).toBe(3);
+    });
+
+    it('should update autoRenameEnabled and persist to settings', async () => {
+      const { result } = renderHook(() => useSettings());
+      await waitForSettingsLoaded(result);
+
+      act(() => {
+        result.current.setAutoRenameEnabled(true);
+      });
+
+      expect(result.current.autoRenameEnabled).toBe(true);
+      expect(window.maestro.settings.set).toHaveBeenCalledWith('autoRenameEnabled', true);
+    });
+
+    it('should update autoRenameCount and persist to settings', async () => {
+      const { result } = renderHook(() => useSettings());
+      await waitForSettingsLoaded(result);
+
+      act(() => {
+        result.current.setAutoRenameCount(3);
+      });
+
+      expect(result.current.autoRenameCount).toBe(3);
+      expect(window.maestro.settings.set).toHaveBeenCalledWith('autoRenameCount', 3);
+    });
+
+    it('should clamp autoRenameCount to minimum of 1', async () => {
+      const { result } = renderHook(() => useSettings());
+      await waitForSettingsLoaded(result);
+
+      act(() => {
+        result.current.setAutoRenameCount(0);
+      });
+
+      expect(result.current.autoRenameCount).toBe(1);
+      expect(window.maestro.settings.set).toHaveBeenCalledWith('autoRenameCount', 1);
+
+      act(() => {
+        result.current.setAutoRenameCount(-5);
+      });
+
+      expect(result.current.autoRenameCount).toBe(1);
+      expect(window.maestro.settings.set).toHaveBeenCalledWith('autoRenameCount', 1);
+    });
+
+    it('should clamp autoRenameCount to maximum of 5', async () => {
+      const { result } = renderHook(() => useSettings());
+      await waitForSettingsLoaded(result);
+
+      act(() => {
+        result.current.setAutoRenameCount(6);
+      });
+
+      expect(result.current.autoRenameCount).toBe(5);
+      expect(window.maestro.settings.set).toHaveBeenCalledWith('autoRenameCount', 5);
+
+      act(() => {
+        result.current.setAutoRenameCount(100);
+      });
+
+      expect(result.current.autoRenameCount).toBe(5);
+      expect(window.maestro.settings.set).toHaveBeenCalledWith('autoRenameCount', 5);
+    });
+
+    it('should accept valid autoRenameCount values within range 1-5', async () => {
+      const { result } = renderHook(() => useSettings());
+      await waitForSettingsLoaded(result);
+
+      for (let i = 1; i <= 5; i++) {
+        act(() => {
+          result.current.setAutoRenameCount(i);
+        });
+
+        expect(result.current.autoRenameCount).toBe(i);
+        expect(window.maestro.settings.set).toHaveBeenCalledWith('autoRenameCount', i);
+      }
+    });
+
+    it('should clamp out-of-range autoRenameCount on load', async () => {
+      vi.mocked(window.maestro.settings.get).mockImplementation(async (key: string) => {
+        if (key === 'autoRenameCount') return 10; // Invalid value
+        return undefined;
+      });
+
+      const { result } = renderHook(() => useSettings());
+      await waitForSettingsLoaded(result);
+
+      expect(result.current.autoRenameCount).toBe(5); // Clamped to max
+    });
+
+    it('should persist both auto-rename settings across app restarts', async () => {
+      // First render - set values
+      const { result: result1 } = renderHook(() => useSettings());
+      await waitForSettingsLoaded(result1);
+
+      act(() => {
+        result1.current.setAutoRenameEnabled(true);
+        result1.current.setAutoRenameCount(3);
+      });
+
+      // Simulate app restart by mocking the saved values
+      vi.mocked(window.maestro.settings.get).mockImplementation(async (key: string) => {
+        if (key === 'autoRenameEnabled') return true;
+        if (key === 'autoRenameCount') return 3;
+        return undefined;
+      });
+
+      // Second render - should load saved values
+      const { result: result2 } = renderHook(() => useSettings());
+      await waitForSettingsLoaded(result2);
+
+      expect(result2.current.autoRenameEnabled).toBe(true);
+      expect(result2.current.autoRenameCount).toBe(3);
+    });
+  });
+
   describe('onboarding stats', () => {
     it('should have default onboarding stats (all zeros)', async () => {
       const { result } = renderHook(() => useSettings());
