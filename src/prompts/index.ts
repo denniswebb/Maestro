@@ -36,4 +36,7 @@ export {
   contextGroomingPrompt,
   contextTransferPrompt,
   contextSummarizePrompt,
+
+  // Tab naming
+  tabAutoRenamePrompt,
 } from '../generated/prompts';

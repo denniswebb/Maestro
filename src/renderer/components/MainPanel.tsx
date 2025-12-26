@@ -142,6 +142,7 @@ interface MainPanelProps {
   onTabClose?: (tabId: string) => void;
   onNewTab?: () => void;
   onRequestTabRename?: (tabId: string) => void;
+  onAutoRename?: (tabId: string) => void;
   onTabReorder?: (fromIndex: number, toIndex: number) => void;
   onTabStar?: (tabId: string, starred: boolean) => void;
   onTabMarkUnread?: (tabId: string) => void;
@@ -881,6 +882,7 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
               onTabClose={onTabClose}
               onNewTab={onNewTab}
               onRequestRename={onRequestTabRename}
+              onAutoRename={onAutoRename}
               onTabReorder={onTabReorder}
               onTabStar={onTabStar}
               onTabMarkUnread={onTabMarkUnread}

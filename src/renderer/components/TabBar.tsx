@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Star, Copy, Edit2, Mail, Pencil, Search, GitMerge, ArrowRightCircle, Minimize2 } from 'lucide-react';
+import { X, Plus, Star, Copy, Edit2, Mail, Pencil, Search, GitMerge, ArrowRightCircle, Minimize2, Sparkles } from 'lucide-react';
 import type { AITab, Theme } from '../types';
 import { hasDraft } from '../utils/tabHelpers';
 
@@ -12,6 +12,7 @@ interface TabBarProps {
   onTabClose: (tabId: string) => void;
   onNewTab: () => void;
   onRequestRename?: (tabId: string) => void;
+  onAutoRename?: (tabId: string) => void;
   onTabReorder?: (fromIndex: number, toIndex: number) => void;
   onTabStar?: (tabId: string, starred: boolean) => void;
   onTabMarkUnread?: (tabId: string) => void;
@@ -41,6 +42,7 @@ interface TabProps {
   isDragging: boolean;
   isDragOver: boolean;
   onRename: () => void;
+  onAutoRename?: () => void;
   onStar?: (starred: boolean) => void;
   onMarkUnread?: () => void;
   /** Handler to open merge session modal with this tab as source */
@@ -201,6 +203,12 @@ function Tab({
     // Call rename immediately (before closing overlay) to ensure prompt isn't blocked
     // Browsers block window.prompt() when called from setTimeout since it's not a direct user action
     onRename();
+    setOverlayOpen(false);
+  };
+
+  const handleAutoRenameClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onAutoRename?.();
     setOverlayOpen(false);
   };
 
@@ -434,6 +442,18 @@ function Tab({
               <Edit2 className="w-3.5 h-3.5" style={{ color: theme.colors.textDim }} />
               Rename Tab
             </button>
+
+            {onAutoRename && (
+              <button
+                onClick={handleAutoRenameClick}
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-white/10 transition-colors"
+                style={{ color: theme.colors.textMain }}
+                title="AI generates tab name from conversation"
+              >
+                <Sparkles className="w-3.5 h-3.5" style={{ color: theme.colors.textDim }} />
+                Auto Rename
+              </button>
+            )}
 
             <button
               onClick={handleMarkUnreadClick}
@@ -703,6 +723,7 @@ export function TabBar({
               isDragging={draggingTabId === tab.id}
               isDragOver={dragOverTabId === tab.id}
               onRename={() => handleRenameRequest(tab.id)}
+              onAutoRename={onAutoRename && tab.logs && tab.logs.length > 0 ? () => onAutoRename(tab.id) : undefined}
               onStar={onTabStar && tab.agentSessionId ? (starred) => onTabStar(tab.id, starred) : undefined}
               onMarkUnread={onTabMarkUnread ? () => onTabMarkUnread(tab.id) : undefined}
               onMergeWith={onMergeWith && tab.agentSessionId ? () => onMergeWith(tab.id) : undefined}

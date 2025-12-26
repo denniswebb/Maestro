@@ -93,7 +93,7 @@ import { gitService } from './services/git';
 import { getSpeckitCommands } from './services/speckit';
 
 // Import prompts and synopsis parsing
-import { autorunSynopsisPrompt, maestroSystemPrompt } from '../prompts';
+import { autorunSynopsisPrompt, maestroSystemPrompt, tabAutoRenamePrompt } from '../prompts';
 import { parseSynopsis } from '../shared/synopsis';
 
 // Import types and constants
@@ -113,6 +113,7 @@ import type { FileNode } from './types/fileTree';
 import { substituteTemplateVariables } from './utils/templateVariables';
 import { validateNewSession } from './utils/sessionValidation';
 import { estimateContextUsage, DEFAULT_CONTEXT_WINDOWS } from './utils/contextUsage';
+import { truncateTabName } from './utils/tabNaming';
 
 /**
  * Known Claude Code tool names - used to detect concatenated tool name patterns
@@ -8210,7 +8211,7 @@ export default function MaestroConsole() {
               return {
                 ...s,
                 aiTabs: s.aiTabs.map(tab =>
-                  tab.id === renameTabId ? { ...tab, name: newName || null } : tab
+                  tab.id === renameTabId ? { ...tab, name: newName || null, manuallyRenamed: true, isAutoNamed: false } : tab
                 )
               };
             }));
@@ -8727,6 +8728,185 @@ export default function MaestroConsole() {
             setRenameTabId(tabId);
             setRenameTabInitialName(getInitialRenameValue(tab));
             setRenameTabModalOpen(true);
+          }
+        }}
+        onAutoRename={async (tabId: string) => {
+          if (!activeSession) return;
+          const tab = activeSession.aiTabs?.find(t => t.id === tabId);
+          if (!tab) return;
+
+          // Don't auto-rename if manually renamed (unless explicit user action)
+          // NOTE: In future, could skip tabs with `manuallyRenamed: true` for batch operations
+          // but allow explicit "Auto Rename" clicks to override this flag
+
+          // Set tab to busy state during AI generation
+          setSessions(prev => prev.map(s => {
+            if (s.id !== activeSession.id) return s;
+            return {
+              ...s,
+              aiTabs: s.aiTabs.map(t =>
+                t.id === tabId ? { ...t, state: 'busy' as SessionState } : t
+              )
+            };
+          }));
+
+          try {
+            // Gather last 10 messages (up to 20 log entries for user+assistant pairs)
+            // Truncate each message to 200 characters to stay within token limits
+            const conversationLogs = tab.logs
+              .filter(log => log.source === 'user' || log.source === 'assistant')
+              .slice(-20); // Last 20 entries (up to 10 user+assistant pairs)
+
+            if (conversationLogs.length === 0) {
+              // No conversation history - use fallback name
+              const fallbackName = `Conversation ${new Date().toLocaleTimeString()}`;
+              setSessions(prev => prev.map(s => {
+                if (s.id !== activeSession.id) return s;
+                return {
+                  ...s,
+                  aiTabs: s.aiTabs.map(t =>
+                    t.id === tabId ? { ...t, name: fallbackName, state: 'idle' as SessionState, isAutoNamed: true } : t
+                  )
+                };
+              }));
+              setErrorFlashNotification('Tab has no conversation history');
+              setTimeout(() => setErrorFlashNotification(null), 3000);
+              return;
+            }
+
+            // Format conversation history for prompt (truncate each message to 200 chars)
+            const conversationText = conversationLogs.map(log => {
+              const role = log.source === 'user' ? 'User' : 'Assistant';
+              const text = log.text.substring(0, 200);
+              return `${role}: ${text}`;
+            }).join('\n');
+
+            // Create prompt with conversation history
+            const prompt = tabAutoRenamePrompt.replace('{{conversation_history}}', conversationText);
+
+            // Spawn agent in batch mode to get AI-generated name
+            const result = await spawnAgentForSession(
+              activeSession.id,
+              prompt,
+              undefined, // cwd override
+              undefined, // tab name
+              true // batch mode (read-only, single-shot)
+            );
+
+            if (!result || !result.session) {
+              throw new Error('Failed to spawn agent for tab renaming');
+            }
+
+            // Wait for agent response (poll for completion)
+            let attempts = 0;
+            const maxAttempts = 30; // 30 seconds timeout
+            let generatedName = '';
+
+            while (attempts < maxAttempts) {
+              await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+              attempts++;
+
+              // Get updated session
+              const updatedSession = await new Promise<Session | null>((resolve) => {
+                setSessions(prev => {
+                  const s = prev.find(s => s.id === result.session.id);
+                  resolve(s || null);
+                  return prev;
+                });
+              });
+
+              if (!updatedSession) break;
+
+              // Check if agent finished (state is idle and has result message)
+              if (updatedSession.state === 'idle') {
+                const activeTab = getActiveTab(updatedSession);
+                if (activeTab) {
+                  // Find the last assistant message (result)
+                  const lastAssistantLog = activeTab.logs
+                    .filter(l => l.source === 'assistant')
+                    .pop();
+
+                  if (lastAssistantLog) {
+                    generatedName = lastAssistantLog.text.trim();
+                    break;
+                  }
+                }
+              }
+            }
+
+            // Clean up the temporary agent session
+            if (result.session.id !== activeSession.id) {
+              deleteSession(result.session.id);
+            }
+
+            if (!generatedName) {
+              throw new Error('AI did not generate a tab name');
+            }
+
+            // Validate and truncate generated name
+            const finalName = truncateTabName(generatedName, 40);
+
+            if (!finalName || finalName.length === 0) {
+              throw new Error('AI generated invalid tab name');
+            }
+
+            // Update tab with AI-generated name
+            setSessions(prev => prev.map(s => {
+              if (s.id !== activeSession.id) return s;
+              const updatedTabs = s.aiTabs.map(t => {
+                if (t.id !== tabId) return t;
+                return {
+                  ...t,
+                  name: finalName,
+                  state: 'idle' as SessionState,
+                  isAutoNamed: true,
+                  manuallyRenamed: false
+                };
+              });
+
+              // Persist name to agent session metadata if available
+              const updatedTab = updatedTabs.find(t => t.id === tabId);
+              if (updatedTab?.agentSessionId) {
+                const agentId = s.toolType || 'claude-code';
+                if (agentId === 'claude-code') {
+                  window.maestro.claude.updateSessionName(
+                    s.projectRoot,
+                    updatedTab.agentSessionId,
+                    finalName
+                  ).catch(err => console.error('Failed to persist tab name:', err));
+                } else {
+                  window.maestro.agentSessions.setSessionName(
+                    agentId,
+                    s.projectRoot,
+                    updatedTab.agentSessionId,
+                    finalName
+                  ).catch(err => console.error('Failed to persist tab name:', err));
+                }
+              }
+
+              return { ...s, aiTabs: updatedTabs };
+            }));
+
+            // Show success notification
+            setSuccessFlashNotification(`Tab renamed to: ${finalName}`);
+            setTimeout(() => setSuccessFlashNotification(null), 2000);
+
+          } catch (error) {
+            console.error('Auto-rename failed:', error);
+
+            // Restore tab to idle state on error
+            setSessions(prev => prev.map(s => {
+              if (s.id !== activeSession.id) return s;
+              return {
+                ...s,
+                aiTabs: s.aiTabs.map(t =>
+                  t.id === tabId ? { ...t, state: 'idle' as SessionState } : t
+                )
+              };
+            }));
+
+            setErrorFlashNotification('Failed to generate tab name');
+            setTimeout(() => setErrorFlashNotification(null), 3000);
           }
         }}
         onTabReorder={(fromIndex: number, toIndex: number) => {
