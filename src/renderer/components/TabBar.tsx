@@ -640,6 +640,16 @@ export function TabBar({
   // Can always close tabs - closing the last one creates a fresh new tab
   const canClose = true;
 
+  // Count unread tabs for the filter toggle tooltip
+  const unreadCount = tabs.filter(t => t.hasUnread).length;
+
+  // Filter tabs based on unread filter state
+  // When filter is on, show: unread tabs + active tab + tabs with drafts
+  // The active tab disappears from the filtered list when user navigates away from it
+  const displayedTabs = showUnreadOnly
+    ? tabs.filter(t => t.hasUnread || t.id === activeTabId || hasDraft(t))
+    : tabs;
+
   const handleDragStart = useCallback((tabId: string, e: React.DragEvent) => {
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', tabId);
@@ -684,8 +694,8 @@ export function TabBar({
   }, [onRequestRename]);
 
   const handleCloseOthers = useCallback((tabId: string) => {
-    // Close all tabs except the specified one
-    tabs.forEach(tab => {
+    // Close all VISIBLE tabs except the specified one
+    displayedTabs.forEach(tab => {
       if (tab.id !== tabId) {
         onTabClose(tab.id);
       }
@@ -694,43 +704,35 @@ export function TabBar({
     if (activeTabId !== tabId) {
       onTabSelect(tabId);
     }
-  }, [tabs, activeTabId, onTabClose, onTabSelect]);
+  }, [displayedTabs, activeTabId, onTabClose, onTabSelect]);
 
   const handleCloseLeft = useCallback((tabId: string) => {
-    const clickedTabIndex = tabs.findIndex(t => t.id === tabId);
-    // Close all tabs to the left of the clicked tab
+    // Find position in VISIBLE tabs
+    const clickedTabIndex = displayedTabs.findIndex(t => t.id === tabId);
+    // Close all VISIBLE tabs to the left of the clicked tab
     for (let i = 0; i < clickedTabIndex; i++) {
-      onTabClose(tabs[i].id);
+      onTabClose(displayedTabs[i].id);
     }
     // Set the clicked tab as active if the active tab was to the left
-    const activeTabIndex = tabs.findIndex(t => t.id === activeTabId);
+    const activeTabIndex = displayedTabs.findIndex(t => t.id === activeTabId);
     if (activeTabIndex < clickedTabIndex) {
       onTabSelect(tabId);
     }
-  }, [tabs, activeTabId, onTabClose, onTabSelect]);
+  }, [displayedTabs, activeTabId, onTabClose, onTabSelect]);
 
   const handleCloseRight = useCallback((tabId: string) => {
-    const clickedTabIndex = tabs.findIndex(t => t.id === tabId);
-    // Close all tabs to the right of the clicked tab
-    for (let i = tabs.length - 1; i > clickedTabIndex; i--) {
-      onTabClose(tabs[i].id);
+    // Find position in VISIBLE tabs
+    const clickedTabIndex = displayedTabs.findIndex(t => t.id === tabId);
+    // Close all VISIBLE tabs to the right of the clicked tab
+    for (let i = displayedTabs.length - 1; i > clickedTabIndex; i--) {
+      onTabClose(displayedTabs[i].id);
     }
     // Set the clicked tab as active if the active tab was to the right
-    const activeTabIndex = tabs.findIndex(t => t.id === activeTabId);
+    const activeTabIndex = displayedTabs.findIndex(t => t.id === activeTabId);
     if (activeTabIndex > clickedTabIndex) {
       onTabSelect(tabId);
     }
-  }, [tabs, activeTabId, onTabClose, onTabSelect]);
-
-  // Count unread tabs for the filter toggle tooltip
-  const unreadCount = tabs.filter(t => t.hasUnread).length;
-
-  // Filter tabs based on unread filter state
-  // When filter is on, show: unread tabs + active tab + tabs with drafts
-  // The active tab disappears from the filtered list when user navigates away from it
-  const displayedTabs = showUnreadOnly
-    ? tabs.filter(t => t.hasUnread || t.id === activeTabId || hasDraft(t))
-    : tabs;
+  }, [displayedTabs, activeTabId, onTabClose, onTabSelect]);
 
   // Check if tabs overflow the container (need sticky + button)
   useEffect(() => {
@@ -817,11 +819,11 @@ export function TabBar({
         // Show separator between inactive tabs (not adjacent to active tab)
         const showSeparator = index > 0 && !isActive && !isPrevActive;
 
-        // Calculate position info for close actions
-        const clickedTabIndex = tabs.findIndex(t => t.id === tab.id);
-        const isFirstTab = clickedTabIndex === 0;
-        const isLastTab = clickedTabIndex === tabs.length - 1;
-        const hasOnlyOneTab = tabs.length === 1;
+        // Calculate position info for close actions (within visible tabs)
+        const displayedTabIndex = displayedTabs.findIndex(t => t.id === tab.id);
+        const isFirstTab = displayedTabIndex === 0;
+        const isLastTab = displayedTabIndex === displayedTabs.length - 1;
+        const hasOnlyOneTab = displayedTabs.length === 1;
 
         return (
           <React.Fragment key={tab.id}>
