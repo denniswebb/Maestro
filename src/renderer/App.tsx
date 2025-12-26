@@ -93,7 +93,7 @@ import { gitService } from './services/git';
 import { getSpeckitCommands } from './services/speckit';
 
 // Import prompts and synopsis parsing
-import { autorunSynopsisPrompt, maestroSystemPrompt } from '../prompts';
+import { autorunSynopsisPrompt, maestroSystemPrompt, tabAutoRenamePrompt } from '../prompts';
 import { parseSynopsis } from '../shared/synopsis';
 
 // Import types and constants
@@ -8210,7 +8210,9 @@ export default function MaestroConsole() {
               return {
                 ...s,
                 aiTabs: s.aiTabs.map(tab =>
-                  tab.id === renameTabId ? { ...tab, name: newName || null } : tab
+                  tab.id === renameTabId
+                    ? { ...tab, name: newName || null, manuallyRenamed: true, isAutoNamed: false }
+                    : tab
                 )
               };
             }));
@@ -8727,6 +8729,116 @@ export default function MaestroConsole() {
             setRenameTabId(tabId);
             setRenameTabInitialName(getInitialRenameValue(tab));
             setRenameTabModalOpen(true);
+          }
+        }}
+        onAutoRename={async (tabId: string) => {
+          if (!activeSession) return;
+          const tab = activeSession.aiTabs?.find(t => t.id === tabId);
+          if (!tab) return;
+
+          // Don't auto-rename if user has manually renamed (unless they explicitly clicked Auto Rename)
+          // This prevents overwriting user's custom names during Auto Run
+          // Note: Manual click of "Auto Rename" is fine even if manuallyRenamed is true
+
+          // Set loading state on tab
+          setSessions(prev => prev.map(s => {
+            if (s.id !== activeSession.id) return s;
+            return {
+              ...s,
+              aiTabs: s.aiTabs.map(t =>
+                t.id === tabId ? { ...t, state: 'busy' as const } : t
+              )
+            };
+          }));
+
+          try {
+            // Gather last 10 messages from tab's conversation history
+            const messagesToInclude = 10;
+            const recentLogs = tab.logs.slice(-messagesToInclude * 2); // *2 to account for user+assistant pairs
+
+            // Format conversation history (truncate each message to 200 chars)
+            const conversationHistory = recentLogs
+              .map(log => {
+                const role = log.type === 'user-message' ? 'User' : 'Assistant';
+                const content = log.text.length > 200 ? log.text.substring(0, 200) + '...' : log.text;
+                return `${role}: ${content}`;
+              })
+              .join('\n');
+
+            // Build prompt with conversation history
+            const prompt = tabAutoRenamePrompt.replace('{{conversation_history}}', conversationHistory);
+
+            // Spawn agent in batch mode to generate tab name
+            const result = await spawnAgentForSession(activeSession.id, prompt);
+
+            if (result.success && result.response) {
+              // Extract tab name from response (should be just the name, nothing else)
+              const generatedName = result.response.trim().replace(/^["']|["']$/g, ''); // Remove quotes if present
+
+              // Validate name length and content
+              let finalName = generatedName;
+              if (!finalName || finalName.length === 0) {
+                finalName = `Conversation ${new Date().toLocaleTimeString()}`;
+              } else if (finalName.length > 40) {
+                finalName = finalName.substring(0, 37) + '...';
+              }
+
+              // Update tab name and mark as auto-named
+              setSessions(prev => prev.map(s => {
+                if (s.id !== activeSession.id) return s;
+                const updatedTabs = s.aiTabs.map(t => {
+                  if (t.id !== tabId) return t;
+                  return {
+                    ...t,
+                    name: finalName,
+                    isAutoNamed: true,
+                    state: 'idle' as const
+                  };
+                });
+
+                // Persist name to agent session metadata if tab has an agent session
+                const updatedTab = updatedTabs.find(t => t.id === tabId);
+                if (updatedTab?.agentSessionId) {
+                  const agentId = s.toolType || 'claude-code';
+                  if (agentId === 'claude-code') {
+                    window.maestro.claude.updateSessionName(
+                      s.projectRoot,
+                      updatedTab.agentSessionId,
+                      finalName
+                    ).catch(err => console.error('[onAutoRename] Failed to persist name:', err));
+                  }
+                }
+
+                return { ...s, aiTabs: updatedTabs };
+              }));
+
+              showSuccessFlash(`Tab renamed to "${finalName}"`);
+            } else {
+              // Failed to generate name - restore state
+              setSessions(prev => prev.map(s => {
+                if (s.id !== activeSession.id) return s;
+                return {
+                  ...s,
+                  aiTabs: s.aiTabs.map(t =>
+                    t.id === tabId ? { ...t, state: 'idle' as const } : t
+                  )
+                };
+              }));
+              showFlashNotification('Failed to generate tab name');
+            }
+          } catch (error) {
+            console.error('[onAutoRename] Error:', error);
+            // Restore state on error
+            setSessions(prev => prev.map(s => {
+              if (s.id !== activeSession.id) return s;
+              return {
+                ...s,
+                aiTabs: s.aiTabs.map(t =>
+                  t.id === tabId ? { ...t, state: 'idle' as const } : t
+                )
+              };
+            }));
+            showFlashNotification('Failed to generate tab name');
           }
         }}
         onTabReorder={(fromIndex: number, toIndex: number) => {
