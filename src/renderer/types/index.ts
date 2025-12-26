@@ -301,6 +301,8 @@ export interface AITab {
   hasUnread?: boolean;             // True when tab has new messages user hasn't seen
   isAtBottom?: boolean;            // True when user is scrolled to bottom of output
   pendingMergedContext?: string;   // Context from merge that needs to be sent with next message
+  isAutoNamed?: boolean;           // True if name was AI-generated (for visual indicator)
+  manuallyRenamed?: boolean;       // True if user manually renamed (prevents auto-rename overwrite)
 }
 
 // Closed tab entry for undo functionality (Cmd+Shift+T)
