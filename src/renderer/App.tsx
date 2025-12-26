@@ -8832,14 +8832,46 @@ export default function MaestroConsole() {
             const prompt = promptTemplate.replace('{{conversation_history}}', conversationText);
             timings.promptBuild = performance.now() - promptStart;
 
+            // Store original model and environment variables for restoration
+            const originalModel = activeSession.customModel;
+            const originalEnvVars = activeSession.customEnvVars;
+
+            // Temporarily override model and environment variables for tab naming (Phase 4, Task 4.3)
+            // Use Haiku for speed, configure max_tokens=50 and temperature=0.3 for focused names
+            setSessions(prev => prev.map(s => {
+              if (s.id !== activeSession.id) return s;
+              return {
+                ...s,
+                customModel: 'claude-3-5-haiku-20241022',
+                customEnvVars: {
+                  ...s.customEnvVars,
+                  CLAUDE_CODE_MAX_OUTPUT_TOKENS: '50',
+                  ANTHROPIC_CLAUDE_TEMPERATURE: '0.3'
+                }
+              };
+            }));
+
             // Spawn agent in batch mode to get AI-generated name
             const apiStart = performance.now();
-            const result = await spawnAgentForSession(
-              activeSession.id,
-              prompt,
-              undefined, // cwd override
-              undefined  // tab name
-            );
+            let result: any;
+            try {
+              result = await spawnAgentForSession(
+                activeSession.id,
+                prompt,
+                undefined, // cwd override
+                undefined  // tab name
+              );
+            } finally {
+              // Restore original model and environment variables (Phase 4, Task 4.3)
+              setSessions(prev => prev.map(s => {
+                if (s.id !== activeSession.id) return s;
+                return {
+                  ...s,
+                  customModel: originalModel,
+                  customEnvVars: originalEnvVars
+                };
+              }));
+            }
             timings.apiCall = performance.now() - apiStart;
 
             if (!result || !result.success || !result.response) {
