@@ -3251,6 +3251,298 @@ export default function MaestroConsole() {
 
   // Note: spawnBackgroundSynopsisRef and spawnAgentWithPromptRef are now updated in useAgentExecution hook
 
+  // Auto-rename handler - extracted as useCallback for reuse by both:
+  // 1. First-response auto-rename trigger (useEffect below)
+  // 2. TabBar onAutoRename prop (manual button clicks)
+  const handleAutoRename = useCallback(async (sessionId: string, tabId: string) => {
+    if (!autoRenameEnabled) return;
+
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) return;
+
+    const tab = session.aiTabs?.find(t => t.id === tabId);
+    if (!tab) return;
+
+    // Rate limiting: check if auto-rename was called too recently for this tab
+    const lastCallTime = autoRenameInProgressRef.current.get(tabId) || 0;
+    const now = Date.now();
+    if (now - lastCallTime < AUTO_RENAME_DEBOUNCE_MS) {
+      setFlashNotification('Please wait before renaming again');
+      setTimeout(() => setFlashNotification(null), 2000);
+      return;
+    }
+
+    // Mark this tab as being renamed
+    autoRenameInProgressRef.current.set(tabId, now);
+
+    // Check cache: if we have a recent name for this tab with same message count, use it
+    const cacheEntry = autoRenameCacheRef.current.get(tabId);
+    const messageCount = tab.logs.filter(log => log.source === 'user' || log.source === 'ai').length;
+
+    if (cacheEntry &&
+        now - cacheEntry.timestamp < AUTO_RENAME_CACHE_TTL_MS &&
+        cacheEntry.messageCount === messageCount) {
+      // Cache hit - use cached name
+      setSessions(prev => prev.map(s => {
+        if (s.id !== sessionId) return s;
+        return {
+          ...s,
+          aiTabs: s.aiTabs.map(t =>
+            t.id === tabId ? { ...t, name: cacheEntry.name, isAutoNamed: true, manuallyRenamed: false, state: 'idle' as const, isRenaming: false } : t
+          )
+        };
+      }));
+
+      setFlashNotification(`Tab renamed to: ${cacheEntry.name} (cached)`);
+      setTimeout(() => setFlashNotification(null), 2000);
+      return;
+    }
+
+    // Set tab to busy state during AI generation with renaming flag
+    setSessions(prev => prev.map(s => {
+      if (s.id !== sessionId) return s;
+      return {
+        ...s,
+        aiTabs: s.aiTabs.map(t =>
+          t.id === tabId ? { ...t, state: 'busy' as const, isRenaming: true } : t
+        )
+      };
+    }));
+
+    try {
+      // START PERFORMANCE TIMING
+      const perfStartTime = performance.now();
+      const perfTimings: { [key: string]: number } = {};
+
+      // Gather last 10 messages (up to 20 log entries for user+ai pairs)
+      // Truncate each message to 200 characters to stay within token limits
+      const conversationLogs = tab.logs
+        .filter(log => log.source === 'user' || log.source === 'ai')
+        .slice(-20); // Last 20 entries (up to 10 user+ai pairs)
+
+      if (conversationLogs.length === 0) {
+        // No conversation history - use fallback name
+        const fallbackName = `Conversation ${new Date().toLocaleTimeString()}`;
+        setSessions(prev => prev.map(s => {
+          if (s.id !== sessionId) return s;
+          return {
+            ...s,
+            aiTabs: s.aiTabs.map(t =>
+              t.id === tabId ? { ...t, name: fallbackName, state: 'idle' as const, isAutoNamed: true, isRenaming: false } : t
+            )
+          };
+        }));
+        setFlashNotification('Tab has no conversation history');
+        setTimeout(() => setFlashNotification(null), 3000);
+        return;
+      }
+
+      // Format conversation history for prompt (truncate each message to 200 chars)
+      const conversationText = conversationLogs.map(log => {
+        const role = log.source === 'user' ? 'User' : 'Assistant';
+        const text = log.text.substring(0, 200);
+        return `${role}: ${text}`;
+      }).join('\n');
+
+      perfTimings.contextPrep = performance.now() - perfStartTime;
+
+      // Create prompt with conversation history and dynamic suggestion count
+      const prompt = tabNameSuggestionsPrompt
+        .replace(/\{\{count\}\}/g, autoRenameCount.toString())
+        .replace('{{conversation_history}}', conversationText);
+
+      perfTimings.promptBuild = performance.now() - perfStartTime;
+
+      // Temporarily override session model to use Claude Haiku for fast, cheap naming
+      // Also set max_tokens=50 and temperature=0.3 for focused, concise name generation
+      // Store originals and restore after operation
+      const originalModel = session.customModel;
+      const originalEnvVars = session.customEnvVars;
+      setSessions(prev => prev.map(s =>
+        s.id === sessionId ? {
+          ...s,
+          customModel: 'claude-3-5-haiku-20241022',
+          customEnvVars: {
+            ...(s.customEnvVars || {}),
+            CLAUDE_CODE_MAX_OUTPUT_TOKENS: '50', // Limit response to ~50 tokens (5 names × 10 tokens each)
+            ANTHROPIC_CLAUDE_TEMPERATURE: '0.3', // Lower temperature for focused, consistent names
+          }
+        } : s
+      ));
+
+      try {
+        const apiCallStart = performance.now();
+
+        // Spawn agent in batch mode to get AI-generated name
+        const result = await spawnAgentForSession(
+          sessionId,
+          prompt,
+          undefined, // cwd override
+          undefined  // tab name
+        );
+
+        perfTimings.apiCall = performance.now() - apiCallStart;
+        perfTimings.firstResponse = perfTimings.apiCall; // In batch mode, same as total API call
+
+        if (!result || !result.success || !result.response) {
+          throw new Error('Failed to spawn agent for tab renaming');
+        }
+
+        // Extract and parse suggestions from the response (one per line)
+        const responseText = result.response.trim();
+
+        if (!responseText) {
+          throw new Error('AI did not generate tab name suggestions');
+        }
+
+        // Parse suggestions: split by newlines, filter empty, truncate to 40 chars, take requested count
+        const parsedSuggestions = responseText
+          .split('\n')
+          .map(line => line.trim())
+          .filter(line => line.length > 0)
+          .map(suggestion => truncateTabName(suggestion, 40))
+          .filter(suggestion => suggestion.length > 0)
+          .slice(0, autoRenameCount);
+
+        perfTimings.parsing = performance.now() - perfStartTime;
+
+        if (parsedSuggestions.length === 0) {
+          throw new Error('AI generated invalid tab name suggestions');
+        }
+
+        // Restore original model and tab to idle state
+        setSessions(prev => prev.map(s => {
+          if (s.id !== sessionId) return s;
+          return {
+            ...s,
+            aiTabs: s.aiTabs.map(t =>
+              t.id === tabId ? { ...t, state: 'idle' as const } : t
+            ),
+            customModel: originalModel,
+            customEnvVars: originalEnvVars
+          };
+        }));
+
+        // PERFORMANCE LOGGING
+        const totalTime = performance.now() - perfStartTime;
+        perfTimings.total = totalTime;
+
+        // Calculate prompt token estimate (rough approximation: 1 token ≈ 4 characters)
+        const promptTokens = Math.ceil(prompt.length / 4);
+        const responseTokens = Math.ceil(responseText.length / 4);
+
+        console.log('🚀 Tab Rename Performance Metrics:');
+        console.log(`  Total Time: ${totalTime.toFixed(0)}ms`);
+        console.log(`  Context Prep: ${perfTimings.contextPrep.toFixed(0)}ms`);
+        console.log(`  Prompt Build: ${(perfTimings.promptBuild - perfTimings.contextPrep).toFixed(0)}ms`);
+        console.log(`  API Call: ${perfTimings.apiCall.toFixed(0)}ms`);
+        console.log(`  First Response: ${perfTimings.firstResponse.toFixed(0)}ms`);
+        console.log(`  Parsing: ${(perfTimings.parsing - perfTimings.promptBuild).toFixed(0)}ms`);
+        console.log(`  Model: claude-3-5-haiku-20241022`);
+        console.log(`  Prompt Tokens (est): ${promptTokens}`);
+        console.log(`  Response Tokens (est): ${responseTokens}`);
+        console.log(`  Message Count: ${conversationLogs.length}`);
+        console.log(`  Suggestions Requested: ${autoRenameCount}`);
+        console.log(`  Suggestions Generated: ${parsedSuggestions.length}`);
+
+        // Auto-apply if count is 1, otherwise show modal for user to pick
+        if (autoRenameCount === 1) {
+          const selectedName = parsedSuggestions[0];
+
+          // Apply the name immediately
+          setSessions(prev => prev.map(s => {
+            if (s.id !== sessionId) return s;
+            return {
+              ...s,
+              aiTabs: s.aiTabs.map(t =>
+                t.id === tabId
+                  ? { ...t, name: selectedName, isAutoNamed: true, manuallyRenamed: false, state: 'idle' as const, isRenaming: false }
+                  : t
+              )
+            };
+          }));
+
+          // Update agent session metadata if available
+          const targetTab = session.aiTabs.find(t => t.id === tabId);
+          if (targetTab?.agentSessionId) {
+            try {
+              await window.maestro.agentSessions.setSessionName(
+                session.toolType,
+                session.projectRoot,
+                targetTab.agentSessionId,
+                selectedName
+              );
+            } catch (updateError) {
+              console.warn('Failed to update agent session metadata:', updateError);
+            }
+          }
+
+          // Cache the auto-generated name
+          const messageCount = tab.logs.filter(log => log.source === 'user' || log.source === 'ai').length;
+          autoRenameCacheRef.current.set(tabId, {
+            name: selectedName,
+            timestamp: Date.now(),
+            messageCount
+          });
+
+          // Show toast notification
+          setFlashNotification(`Tab renamed to: ${selectedName}`);
+          setTimeout(() => setFlashNotification(null), 2000);
+        } else {
+          // Show suggestions modal for user to pick
+          setTabNameSuggestionsTabId(tabId);
+          setTabNameSuggestionsCurrentName(tab.name || 'Untitled');
+          setTabNameSuggestions(parsedSuggestions);
+          setTabNameSuggestionsLoading(false);
+          setTabNameSuggestionsOpen(true);
+        }
+
+      } catch (error) {
+        console.error('Auto-rename failed:', error);
+
+        // Restore original model and tab to idle state
+        setSessions(prev => prev.map(s => {
+          if (s.id !== sessionId) return s;
+          return {
+            ...s,
+            aiTabs: s.aiTabs.map(t =>
+              t.id === tabId ? { ...t, state: 'idle' as const, isRenaming: false } : t
+            ),
+            customModel: originalModel,
+            customEnvVars: originalEnvVars
+          };
+        }));
+
+        setFlashNotification('Failed to generate tab name');
+        setTimeout(() => setFlashNotification(null), 3000);
+      }
+    } catch (error) {
+      console.error('Auto-rename setup failed:', error);
+      // Reset tab state
+      setSessions(prev => prev.map(s => {
+        if (s.id !== sessionId) return s;
+        return {
+          ...s,
+          aiTabs: s.aiTabs.map(t =>
+            t.id === tabId ? { ...t, state: 'idle' as const, isRenaming: false } : t
+          )
+        };
+      }));
+    }
+  }, [
+    autoRenameEnabled,
+    autoRenameCount,
+    sessions,
+    setSessions,
+    setFlashNotification,
+    setTabNameSuggestionsTabId,
+    setTabNameSuggestionsCurrentName,
+    setTabNameSuggestions,
+    setTabNameSuggestionsLoading,
+    setTabNameSuggestionsOpen,
+    spawnAgentForSession,
+  ]);
+
   // Auto-rename tabs on first AI response (when enabled)
   // Monitors hasReceivedFirstResponse flag and triggers auto-rename with debouncing
   // Stores tab IDs that need auto-rename and processes them asynchronously
@@ -3293,17 +3585,6 @@ export default function MaestroConsole() {
         firstResponseAutoRenamedRef.current.add(tab.id);
         pendingFirstResponseRenames.current.delete(tab.id);
 
-        // Trigger auto-rename using a simplified approach
-        // We'll dispatch a custom event that the onAutoRename handler can process
-        // But for now, we'll directly invoke the rename logic inline
-
-        // Rate limiting check
-        const lastCallTime = autoRenameInProgressRef.current.get(tab.id) || 0;
-        const now = Date.now();
-        if (now - lastCallTime < AUTO_RENAME_DEBOUNCE_MS) {
-          return;
-        }
-
         // Check if this is the active tab in the active session
         // If not, skip auto-rename (only works for visible tabs currently)
         if (activeSession.activeTabId !== tab.id) {
@@ -3311,15 +3592,12 @@ export default function MaestroConsole() {
           return;
         }
 
-        // Simulate a click on the auto-rename button for this tab
-        // This will trigger the existing onAutoRename handler which has all the logic
-        const autoRenameEvent = new CustomEvent('maestro:auto-rename-tab', {
-          detail: { sessionId: activeSession.id, tabId: tab.id }
-        });
-        window.dispatchEvent(autoRenameEvent);
+        // Trigger auto-rename using the extracted handler
+        console.log(`[Auto-rename first response] Triggering auto-rename for tab ${tab.id}`);
+        await handleAutoRename(activeSession.id, tab.id);
       }, 1500); // 1.5 second debounce
     });
-  }, [sessions, activeSession, autoRenameEnabled, autoRenameOnFirstResponse]);
+  }, [sessions, activeSession, autoRenameEnabled, autoRenameOnFirstResponse, handleAutoRename]);
 
   // Initialize batch processor (supports parallel batches per session)
   const {
@@ -9113,283 +9391,7 @@ export default function MaestroConsole() {
         }}
         onAutoRename={autoRenameEnabled ? async (tabId: string) => {
           if (!activeSession) return;
-          const tab = activeSession.aiTabs?.find(t => t.id === tabId);
-          if (!tab) return;
-
-          // Rate limiting: check if auto-rename was called too recently for this tab
-          const lastCallTime = autoRenameInProgressRef.current.get(tabId) || 0;
-          const now = Date.now();
-          if (now - lastCallTime < AUTO_RENAME_DEBOUNCE_MS) {
-            setFlashNotification('Please wait before renaming again');
-            setTimeout(() => setFlashNotification(null), 2000);
-            return;
-          }
-
-          // Mark this tab as being renamed
-          autoRenameInProgressRef.current.set(tabId, now);
-
-          // Check cache: if we have a recent name for this tab with same message count, use it
-          const cacheEntry = autoRenameCacheRef.current.get(tabId);
-          const messageCount = tab.logs.filter(log => log.source === 'user' || log.source === 'ai').length;
-
-          if (cacheEntry &&
-              now - cacheEntry.timestamp < AUTO_RENAME_CACHE_TTL_MS &&
-              cacheEntry.messageCount === messageCount) {
-            // Cache hit - use cached name
-            setSessions(prev => prev.map(s => {
-              if (s.id !== activeSession.id) return s;
-              return {
-                ...s,
-                aiTabs: s.aiTabs.map(t =>
-                  t.id === tabId ? { ...t, name: cacheEntry.name, isAutoNamed: true, manuallyRenamed: false, state: 'idle' as const, isRenaming: false } : t
-                )
-              };
-            }));
-
-            setFlashNotification(`Tab renamed to: ${cacheEntry.name} (cached)`);
-            setTimeout(() => setFlashNotification(null), 2000);
-            return;
-          }
-
-          // Don't auto-rename if manually renamed (unless explicit user action)
-          // NOTE: In future, could skip tabs with `manuallyRenamed: true` for batch operations
-          // but allow explicit "Auto Rename" clicks to override this flag
-
-          // Set tab to busy state during AI generation with renaming flag
-          setSessions(prev => prev.map(s => {
-            if (s.id !== activeSession.id) return s;
-            return {
-              ...s,
-              aiTabs: s.aiTabs.map(t =>
-                t.id === tabId ? { ...t, state: 'busy' as const, isRenaming: true } : t
-              )
-            };
-          }));
-
-          try {
-            // START PERFORMANCE TIMING
-            const perfStartTime = performance.now();
-            const perfTimings: { [key: string]: number } = {};
-
-            // Gather last 10 messages (up to 20 log entries for user+ai pairs)
-            // Truncate each message to 200 characters to stay within token limits
-            const conversationLogs = tab.logs
-              .filter(log => log.source === 'user' || log.source === 'ai')
-              .slice(-20); // Last 20 entries (up to 10 user+ai pairs)
-
-            if (conversationLogs.length === 0) {
-              // No conversation history - use fallback name
-              const fallbackName = `Conversation ${new Date().toLocaleTimeString()}`;
-              setSessions(prev => prev.map(s => {
-                if (s.id !== activeSession.id) return s;
-                return {
-                  ...s,
-                  aiTabs: s.aiTabs.map(t =>
-                    t.id === tabId ? { ...t, name: fallbackName, state: 'idle' as const, isAutoNamed: true, isRenaming: false } : t
-                  )
-                };
-              }));
-              setFlashNotification('Tab has no conversation history');
-              setTimeout(() => setFlashNotification(null), 3000);
-              return;
-            }
-
-            // Format conversation history for prompt (truncate each message to 200 chars)
-            const conversationText = conversationLogs.map(log => {
-              const role = log.source === 'user' ? 'User' : 'Assistant';
-              const text = log.text.substring(0, 200);
-              return `${role}: ${text}`;
-            }).join('\n');
-
-            perfTimings.contextPrep = performance.now() - perfStartTime;
-
-            // Create prompt with conversation history and dynamic suggestion count
-            const prompt = tabNameSuggestionsPrompt
-              .replace(/\{\{count\}\}/g, autoRenameCount.toString())
-              .replace('{{conversation_history}}', conversationText);
-
-            perfTimings.promptBuild = performance.now() - perfStartTime;
-
-            // Temporarily override session model to use Claude Haiku for fast, cheap naming
-            // Also set max_tokens=50 and temperature=0.3 for focused, concise name generation
-            // Store originals and restore after operation
-            const originalModel = activeSession.customModel;
-            const originalEnvVars = activeSession.customEnvVars;
-            setSessions(prev => prev.map(s =>
-              s.id === activeSession.id ? {
-                ...s,
-                customModel: 'claude-3-5-haiku-20241022',
-                customEnvVars: {
-                  ...(s.customEnvVars || {}),
-                  CLAUDE_CODE_MAX_OUTPUT_TOKENS: '50', // Limit response to ~50 tokens (5 names × 10 tokens each)
-                  ANTHROPIC_CLAUDE_TEMPERATURE: '0.3', // Lower temperature for focused, consistent names
-                }
-              } : s
-            ));
-
-            try {
-              const apiCallStart = performance.now();
-
-              // Spawn agent in batch mode to get AI-generated name
-              const result = await spawnAgentForSession(
-                activeSession.id,
-                prompt,
-                undefined, // cwd override
-                undefined  // tab name
-              );
-
-              perfTimings.apiCall = performance.now() - apiCallStart;
-              perfTimings.firstResponse = perfTimings.apiCall; // In batch mode, same as total API call
-
-              if (!result || !result.success || !result.response) {
-                throw new Error('Failed to spawn agent for tab renaming');
-              }
-
-              // Extract and parse suggestions from the response (one per line)
-              const responseText = result.response.trim();
-
-              if (!responseText) {
-                throw new Error('AI did not generate tab name suggestions');
-              }
-
-              // Parse suggestions: split by newlines, filter empty, truncate to 40 chars, take requested count
-              const parsedSuggestions = responseText
-                .split('\n')
-                .map(line => line.trim())
-                .filter(line => line.length > 0)
-                .map(suggestion => truncateTabName(suggestion, 40))
-                .filter(suggestion => suggestion.length > 0)
-                .slice(0, autoRenameCount);
-
-              perfTimings.parsing = performance.now() - perfStartTime;
-
-              if (parsedSuggestions.length === 0) {
-                throw new Error('AI generated invalid tab name suggestions');
-              }
-
-              // Restore original model and tab to idle state
-              setSessions(prev => prev.map(s => {
-                if (s.id !== activeSession.id) return s;
-                return {
-                  ...s,
-                  aiTabs: s.aiTabs.map(t =>
-                    t.id === tabId ? { ...t, state: 'idle' as const } : t
-                  ),
-                  customModel: originalModel,
-                  customEnvVars: originalEnvVars
-                };
-              }));
-
-              // PERFORMANCE LOGGING
-              const totalTime = performance.now() - perfStartTime;
-              perfTimings.total = totalTime;
-
-              // Calculate prompt token estimate (rough approximation: 1 token ≈ 4 characters)
-              const promptTokens = Math.ceil(prompt.length / 4);
-              const responseTokens = Math.ceil(responseText.length / 4);
-
-              console.log('🚀 Tab Rename Performance Metrics:');
-              console.log(`  Total Time: ${totalTime.toFixed(0)}ms`);
-              console.log(`  Context Prep: ${perfTimings.contextPrep.toFixed(0)}ms`);
-              console.log(`  Prompt Build: ${(perfTimings.promptBuild - perfTimings.contextPrep).toFixed(0)}ms`);
-              console.log(`  API Call: ${perfTimings.apiCall.toFixed(0)}ms`);
-              console.log(`  First Response: ${perfTimings.firstResponse.toFixed(0)}ms`);
-              console.log(`  Parsing: ${(perfTimings.parsing - perfTimings.promptBuild).toFixed(0)}ms`);
-              console.log(`  Model: claude-3-5-haiku-20241022`);
-              console.log(`  Prompt Tokens (est): ${promptTokens}`);
-              console.log(`  Response Tokens (est): ${responseTokens}`);
-              console.log(`  Message Count: ${conversationLogs.length}`);
-              console.log(`  Suggestions Requested: ${autoRenameCount}`);
-              console.log(`  Suggestions Generated: ${parsedSuggestions.length}`);
-
-              // Auto-apply if count is 1, otherwise show modal for user to pick
-              if (autoRenameCount === 1) {
-                const selectedName = parsedSuggestions[0];
-
-                // Apply the name immediately
-                setSessions(prev => prev.map(s => {
-                  if (s.id !== activeSession.id) return s;
-                  return {
-                    ...s,
-                    aiTabs: s.aiTabs.map(t =>
-                      t.id === tabId
-                        ? { ...t, name: selectedName, isAutoNamed: true, manuallyRenamed: false, state: 'idle' as const, isRenaming: false }
-                        : t
-                    )
-                  };
-                }));
-
-                // Update agent session metadata if available
-                const targetTab = activeSession.aiTabs.find(t => t.id === tabId);
-                if (targetTab?.agentSessionId) {
-                  try {
-                    await window.maestro.agentSessions.setSessionName(
-                      activeSession.toolType,
-                      activeSession.projectRoot,
-                      targetTab.agentSessionId,
-                      selectedName
-                    );
-                  } catch (updateError) {
-                    console.warn('Failed to update agent session metadata:', updateError);
-                  }
-                }
-
-                // Cache the auto-generated name
-                const messageCount = tab.logs.filter(log => log.source === 'user' || log.source === 'ai').length;
-                autoRenameCacheRef.current.set(tabId, {
-                  name: selectedName,
-                  timestamp: Date.now(),
-                  messageCount
-                });
-
-                // Show toast notification
-                setFlashNotification(`Tab renamed to: ${selectedName}`);
-                setTimeout(() => setFlashNotification(null), 2000);
-              } else {
-                // Show suggestions modal for user to pick
-                setTabNameSuggestionsTabId(tabId);
-                setTabNameSuggestionsCurrentName(tab.name || 'Untitled');
-                setTabNameSuggestions(parsedSuggestions);
-                setTabNameSuggestionsLoading(false);
-                setTabNameSuggestionsOpen(true);
-              }
-
-            } catch (error) {
-              console.error('Auto-rename failed:', error);
-
-              // Restore tab to idle state and original model on error
-              setSessions(prev => prev.map(s => {
-                if (s.id !== activeSession.id) return s;
-                return {
-                  ...s,
-                  aiTabs: s.aiTabs.map(t =>
-                    t.id === tabId ? { ...t, state: 'idle' as const, isRenaming: false } : t
-                  ),
-                  customModel: originalModel,
-                  customEnvVars: originalEnvVars
-                };
-              }));
-
-              setFlashNotification('Failed to generate tab name');
-              setTimeout(() => setFlashNotification(null), 3000);
-            }
-          } catch (error) {
-            console.error('Auto-rename failed (outer):', error);
-
-            // Restore tab to idle state on error
-            setSessions(prev => prev.map(s => {
-              if (s.id !== activeSession.id) return s;
-              return {
-                ...s,
-                aiTabs: s.aiTabs.map(t =>
-                  t.id === tabId ? { ...t, state: 'idle' as const, isRenaming: false } : t
-                )
-              };
-            }));
-
-            setFlashNotification('Failed to generate tab name');
-            setTimeout(() => setFlashNotification(null), 3000);
-          }
+          await handleAutoRename(activeSession.id, tabId);
         } : undefined}
         onTabReorder={(fromIndex: number, toIndex: number) => {
           if (!activeSession) return;
