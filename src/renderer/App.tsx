@@ -8745,17 +8745,17 @@ export default function MaestroConsole() {
             return {
               ...s,
               aiTabs: s.aiTabs.map(t =>
-                t.id === tabId ? { ...t, state: 'busy' as SessionState } : t
+                t.id === tabId ? { ...t, state: 'busy' as const } : t
               )
             };
           }));
 
           try {
-            // Gather last 10 messages (up to 20 log entries for user+assistant pairs)
+            // Gather last 10 messages (up to 20 log entries for user+ai pairs)
             // Truncate each message to 200 characters to stay within token limits
             const conversationLogs = tab.logs
-              .filter(log => log.source === 'user' || log.source === 'assistant')
-              .slice(-20); // Last 20 entries (up to 10 user+assistant pairs)
+              .filter(log => log.source === 'user' || log.source === 'ai')
+              .slice(-20); // Last 20 entries (up to 10 user+ai pairs)
 
             if (conversationLogs.length === 0) {
               // No conversation history - use fallback name
@@ -8765,12 +8765,12 @@ export default function MaestroConsole() {
                 return {
                   ...s,
                   aiTabs: s.aiTabs.map(t =>
-                    t.id === tabId ? { ...t, name: fallbackName, state: 'idle' as SessionState, isAutoNamed: true } : t
+                    t.id === tabId ? { ...t, name: fallbackName, state: 'idle' as const, isAutoNamed: true } : t
                   )
                 };
               }));
-              setErrorFlashNotification('Tab has no conversation history');
-              setTimeout(() => setErrorFlashNotification(null), 3000);
+              setFlashNotification('Tab has no conversation history');
+              setTimeout(() => setFlashNotification(null), 3000);
               return;
             }
 
@@ -8789,55 +8789,15 @@ export default function MaestroConsole() {
               activeSession.id,
               prompt,
               undefined, // cwd override
-              undefined, // tab name
-              true // batch mode (read-only, single-shot)
+              undefined  // tab name
             );
 
-            if (!result || !result.session) {
+            if (!result || !result.success || !result.response) {
               throw new Error('Failed to spawn agent for tab renaming');
             }
 
-            // Wait for agent response (poll for completion)
-            let attempts = 0;
-            const maxAttempts = 30; // 30 seconds timeout
-            let generatedName = '';
-
-            while (attempts < maxAttempts) {
-              await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
-              attempts++;
-
-              // Get updated session
-              const updatedSession = await new Promise<Session | null>((resolve) => {
-                setSessions(prev => {
-                  const s = prev.find(s => s.id === result.session.id);
-                  resolve(s || null);
-                  return prev;
-                });
-              });
-
-              if (!updatedSession) break;
-
-              // Check if agent finished (state is idle and has result message)
-              if (updatedSession.state === 'idle') {
-                const activeTab = getActiveTab(updatedSession);
-                if (activeTab) {
-                  // Find the last assistant message (result)
-                  const lastAssistantLog = activeTab.logs
-                    .filter(l => l.source === 'assistant')
-                    .pop();
-
-                  if (lastAssistantLog) {
-                    generatedName = lastAssistantLog.text.trim();
-                    break;
-                  }
-                }
-              }
-            }
-
-            // Clean up the temporary agent session
-            if (result.session.id !== activeSession.id) {
-              deleteSession(result.session.id);
-            }
+            // Extract the generated name from the response
+            const generatedName = result.response.trim();
 
             if (!generatedName) {
               throw new Error('AI did not generate a tab name');
@@ -8858,7 +8818,7 @@ export default function MaestroConsole() {
                 return {
                   ...t,
                   name: finalName,
-                  state: 'idle' as SessionState,
+                  state: 'idle' as const,
                   isAutoNamed: true,
                   manuallyRenamed: false
                 };
@@ -8888,8 +8848,8 @@ export default function MaestroConsole() {
             }));
 
             // Show success notification
-            setSuccessFlashNotification(`Tab renamed to: ${finalName}`);
-            setTimeout(() => setSuccessFlashNotification(null), 2000);
+            setFlashNotification(`Tab renamed to: ${finalName}`);
+            setTimeout(() => setFlashNotification(null), 2000);
 
           } catch (error) {
             console.error('Auto-rename failed:', error);
@@ -8900,13 +8860,13 @@ export default function MaestroConsole() {
               return {
                 ...s,
                 aiTabs: s.aiTabs.map(t =>
-                  t.id === tabId ? { ...t, state: 'idle' as SessionState } : t
+                  t.id === tabId ? { ...t, state: 'idle' as const } : t
                 )
               };
             }));
 
-            setErrorFlashNotification('Failed to generate tab name');
-            setTimeout(() => setErrorFlashNotification(null), 3000);
+            setFlashNotification('Failed to generate tab name');
+            setTimeout(() => setFlashNotification(null), 3000);
           }
         }}
         onTabReorder={(fromIndex: number, toIndex: number) => {
