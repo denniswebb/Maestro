@@ -205,6 +205,11 @@ export function useBatchedSessionUpdates(
                 const existingLogs = tab.logs.filter(log => log.source !== 'thinking' && log.source !== 'tool');
                 const lastLog = existingLogs[existingLogs.length - 1];
 
+                // Detect first AI response: if there are no existing AI logs (user logs only)
+                // This is the first AI response this tab has received
+                const isFirstResponse = existingLogs.length === 0 ||
+                  existingLogs.every(log => log.source === 'user' || log.source === 'system' || log.source === 'error');
+
                 // Time-based grouping for AI output (500ms window)
                 const shouldGroup = lastLog &&
                   lastLog.source === 'stdout' &&
@@ -227,7 +232,13 @@ export function useBatchedSessionUpdates(
                   updatedLogs = [...existingLogs, newLog];
                 }
 
-                return { ...tab, logs: updatedLogs };
+                // Set hasReceivedFirstResponse flag if this is the first AI response
+                const updatedTab = { ...tab, logs: updatedLogs };
+                if (isFirstResponse && !tab.hasReceivedFirstResponse) {
+                  updatedTab.hasReceivedFirstResponse = true;
+                }
+
+                return updatedTab;
               })
             };
           }

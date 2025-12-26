@@ -304,6 +304,7 @@ export interface AITab {
   isAutoNamed?: boolean;           // True if name was AI-generated (for visual indicator)
   manuallyRenamed?: boolean;       // True if user manually renamed (prevents auto-rename overwrite)
   isRenaming?: boolean;            // True when AI auto-rename is in progress (for "Renaming..." display)
+  hasReceivedFirstResponse?: boolean; // True after the tab receives its first AI response (for auto-rename trigger)
 }
 
 // Closed tab entry for undo functionality (Cmd+Shift+T)
