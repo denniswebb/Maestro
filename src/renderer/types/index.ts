@@ -637,3 +637,11 @@ export interface ContextManagementSettings {
   contextWarningYellowThreshold: number;   // Yellow warning threshold percentage (default: 60)
   contextWarningRedThreshold: number;      // Red warning threshold percentage (default: 80)
 }
+
+// Tab rename learning - stores examples of user's naming preferences
+export interface TabRenameExample {
+  aiGeneratedName: string;    // Name that AI suggested
+  userPreferredName: string;  // Name that user changed it to
+  timestamp: number;          // When the rename occurred
+  conversationSummary?: string; // Brief summary of conversation topic (optional context)
+}

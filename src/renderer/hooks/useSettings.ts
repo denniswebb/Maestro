@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import type { LLMProvider, ThemeId, ThemeColors, Shortcut, CustomAICommand, GlobalStats, AutoRunStats, OnboardingStats, LeaderboardRegistration, ContextManagementSettings, KeyboardMasteryStats } from '../types';
+import type { LLMProvider, ThemeId, ThemeColors, Shortcut, CustomAICommand, GlobalStats, AutoRunStats, OnboardingStats, LeaderboardRegistration, ContextManagementSettings, KeyboardMasteryStats, TabRenameExample } from '../types';
 import { DEFAULT_CUSTOM_THEME_COLORS } from '../constants/themes';
 import { DEFAULT_SHORTCUTS, TAB_SHORTCUTS, FIXED_SHORTCUTS } from '../constants/shortcuts';
 import { getLevelIndex } from '../constants/keyboardMastery';
@@ -267,6 +267,9 @@ export interface UseSettingsReturn {
   // Tab Auto-Rename settings
   customTabAutoRenamePrompt: string | null;
   setCustomTabAutoRenamePrompt: (value: string | null) => void;
+  tabRenameExamples: TabRenameExample[];
+  addTabRenameExample: (example: TabRenameExample) => void;
+  clearTabRenameExamples: () => void;
 }
 
 export function useSettings(): UseSettingsReturn {
@@ -374,6 +377,10 @@ export function useSettings(): UseSettingsReturn {
 
   // Tab Auto-Rename prompt (persistent, nullable - null means use default)
   const [customTabAutoRenamePrompt, setCustomTabAutoRenamePromptState] = useState<string | null>(null);
+
+  // Tab Rename Examples for learning user preferences (persistent, max 20 examples)
+  const [tabRenameExamples, setTabRenameExamplesState] = useState<TabRenameExample[]>([]);
+  const MAX_RENAME_EXAMPLES = 20; // Keep most recent 20 examples
 
   // Wrapper functions that persist to electron-store
   // PERF: All wrapped in useCallback to prevent re-renders
@@ -969,6 +976,22 @@ export function useSettings(): UseSettingsReturn {
     window.maestro.settings.set('customTabAutoRenamePrompt', value);
   }, []);
 
+  // Add a new tab rename example (learning from user preferences)
+  const addTabRenameExample = useCallback((example: TabRenameExample) => {
+    setTabRenameExamplesState(prev => {
+      // Add new example and keep only the most recent MAX_RENAME_EXAMPLES
+      const updated = [...prev, example].slice(-MAX_RENAME_EXAMPLES);
+      window.maestro.settings.set('tabRenameExamples', updated);
+      return updated;
+    });
+  }, [MAX_RENAME_EXAMPLES]);
+
+  // Clear all tab rename examples
+  const clearTabRenameExamples = useCallback(() => {
+    setTabRenameExamplesState([]);
+    window.maestro.settings.set('tabRenameExamples', []);
+  }, []);
+
   // Record usage of a shortcut - returns newLevel if user leveled up
   // Note: We read current state synchronously to return the correct level-up info
   const recordShortcutUsage = useCallback((shortcutId: string): { newLevel: number | null } => {
@@ -1299,6 +1322,12 @@ export function useSettings(): UseSettingsReturn {
         setCustomTabAutoRenamePromptState(savedCustomTabAutoRenamePrompt as string | null);
       }
 
+      // Load tab rename examples
+      const savedTabRenameExamples = await window.maestro.settings.get('tabRenameExamples');
+      if (savedTabRenameExamples !== undefined && Array.isArray(savedTabRenameExamples)) {
+        setTabRenameExamplesState(savedTabRenameExamples as TabRenameExample[]);
+      }
+
       // Mark settings as loaded
       setSettingsLoaded(true);
     };
@@ -1430,6 +1459,9 @@ export function useSettings(): UseSettingsReturn {
     getUnacknowledgedKeyboardMasteryLevel,
     customTabAutoRenamePrompt,
     setCustomTabAutoRenamePrompt,
+    tabRenameExamples,
+    addTabRenameExample,
+    clearTabRenameExamples,
   }), [
     // State values
     settingsLoaded,
@@ -1547,5 +1579,8 @@ export function useSettings(): UseSettingsReturn {
     acknowledgeKeyboardMasteryLevel,
     getUnacknowledgedKeyboardMasteryLevel,
     setCustomTabAutoRenamePrompt,
+    tabRenameExamples,
+    addTabRenameExample,
+    clearTabRenameExamples,
   ]);
 }

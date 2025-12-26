@@ -8180,6 +8180,26 @@ export default function MaestroConsole() {
           }}
           onRename={(newName: string) => {
             if (!activeSession || !renameTabId) return;
+
+            // Track rename example for AI learning if this was an AI-named tab
+            const renamedTab = activeSession.aiTabs?.find(t => t.id === renameTabId);
+            if (renamedTab?.isAutoNamed && renamedTab.name && newName && renamedTab.name !== newName) {
+              // Extract conversation summary (first user message or first 100 chars of logs)
+              let conversationSummary: string | undefined;
+              const firstUserLog = renamedTab.logs.find(log => log.source === 'user');
+              if (firstUserLog) {
+                conversationSummary = firstUserLog.text.substring(0, 100);
+              }
+
+              // Add rename example to settings for AI learning
+              settings.addTabRenameExample({
+                aiGeneratedName: renamedTab.name,
+                userPreferredName: newName,
+                timestamp: Date.now(),
+                conversationSummary,
+              });
+            }
+
             setSessions(prev => prev.map(s => {
               if (s.id !== activeSession.id) return s;
               // Find the tab to get its agentSessionId for persistence
@@ -8783,7 +8803,22 @@ export default function MaestroConsole() {
 
             // Create prompt with conversation history
             // Use custom prompt if available, otherwise use default
-            const promptTemplate = settings.customTabAutoRenamePrompt || tabAutoRenamePrompt;
+            let promptTemplate = settings.customTabAutoRenamePrompt || tabAutoRenamePrompt;
+
+            // Augment prompt with learned rename examples if available
+            if (settings.tabRenameExamples.length > 0) {
+              const examplesText = settings.tabRenameExamples
+                .slice(-5) // Use most recent 5 examples
+                .map(ex => `- AI suggested: "${ex.aiGeneratedName}" → User preferred: "${ex.userPreferredName}"`)
+                .join('\n');
+
+              // Insert examples section before the conversation history
+              const examplesSection = `\n## Your Naming Preferences\n\nBased on your past renaming patterns, you tend to prefer:\n${examplesText}\n\nPlease apply these style preferences when generating the tab name below.\n`;
+
+              // Insert examples before {{conversation_history}} placeholder
+              promptTemplate = promptTemplate.replace('{{conversation_history}}', `${examplesSection}\n{{conversation_history}}`);
+            }
+
             const prompt = promptTemplate.replace('{{conversation_history}}', conversationText);
 
             // Spawn agent in batch mode to get AI-generated name
