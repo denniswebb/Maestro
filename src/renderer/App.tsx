@@ -999,7 +999,8 @@ export default function MaestroConsole() {
               stagedImages: [],
               createdAt: Date.now(),
               state: 'idle',
-              saveToHistory: true
+              saveToHistory: true,
+              hasReceivedFirstResponse: false
             };
 
             // Fetch git info
@@ -3719,7 +3720,8 @@ export default function MaestroConsole() {
         stagedImages: [],
         createdAt: Date.now(),
         state: 'idle',
-        saveToHistory: defaultSaveToHistory
+        saveToHistory: defaultSaveToHistory,
+              hasReceivedFirstResponse: false
       };
 
       // Fetch git info
@@ -3870,7 +3872,8 @@ export default function MaestroConsole() {
               stagedImages: [],
               createdAt: Date.now(),
               state: 'idle',
-              saveToHistory: defaultSaveToHistory
+              saveToHistory: defaultSaveToHistory,
+              hasReceivedFirstResponse: false
             };
 
             // Fetch git info
@@ -4839,7 +4842,8 @@ export default function MaestroConsole() {
         stagedImages: [],
         createdAt: Date.now(),
         state: 'idle',
-        saveToHistory: defaultSaveToHistory
+        saveToHistory: defaultSaveToHistory,
+              hasReceivedFirstResponse: false
       };
 
       const newSession: Session = {
@@ -4966,7 +4970,8 @@ export default function MaestroConsole() {
       stagedImages: [],
       createdAt: Date.now(),
       state: 'idle',
-      saveToHistory: defaultSaveToHistory
+      saveToHistory: defaultSaveToHistory,
+              hasReceivedFirstResponse: false
     };
 
     // Build Auto Run folder path
@@ -7405,7 +7410,8 @@ export default function MaestroConsole() {
                     stagedImages: [],
                     createdAt: Date.now(),
                     state: 'idle',
-                    saveToHistory: true
+                    saveToHistory: true,
+              hasReceivedFirstResponse: false
                   };
 
                   // Fetch git info for this subdirectory
@@ -7525,7 +7531,8 @@ export default function MaestroConsole() {
                 stagedImages: [],
                 createdAt: Date.now(),
                 state: 'idle',
-                saveToHistory: defaultSaveToHistory
+                saveToHistory: defaultSaveToHistory,
+              hasReceivedFirstResponse: false
               };
 
               // Fetch git info for the worktree
@@ -7657,7 +7664,8 @@ export default function MaestroConsole() {
               stagedImages: [],
               createdAt: Date.now(),
               state: 'idle',
-              saveToHistory: defaultSaveToHistory
+              saveToHistory: defaultSaveToHistory,
+              hasReceivedFirstResponse: false
             };
 
             // Fetch git info for the worktree
