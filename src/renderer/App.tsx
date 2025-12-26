@@ -8540,10 +8540,20 @@ export default function MaestroConsole() {
                   // Create prompt with conversation history
                   const prompt = tabAutoRenamePrompt.replace('{{conversation_history}}', conversationText);
 
-                  // Temporarily override session model to use Claude Haiku
+                  // Temporarily override session model to use Claude Haiku for fast, cheap naming
+                  // Also set max_tokens=50 and temperature=0.3 for focused, concise name generation
                   const originalModel = activeSession.customModel;
+                  const originalEnvVars = activeSession.customEnvVars;
                   setSessions(prev => prev.map(s =>
-                    s.id === activeSession.id ? { ...s, customModel: 'claude-3-5-haiku-20241022' } : s
+                    s.id === activeSession.id ? {
+                      ...s,
+                      customModel: 'claude-3-5-haiku-20241022',
+                      customEnvVars: {
+                        ...(s.customEnvVars || {}),
+                        CLAUDE_CODE_MAX_OUTPUT_TOKENS: '50', // Limit response to ~50 tokens for single name
+                        ANTHROPIC_CLAUDE_TEMPERATURE: '0.3', // Lower temperature for focused, consistent names
+                      }
+                    } : s
                   ));
 
                   try {
@@ -8615,7 +8625,7 @@ export default function MaestroConsole() {
                         }
                       }
 
-                      return { ...s, aiTabs: updatedTabs, customModel: originalModel };
+                      return { ...s, aiTabs: updatedTabs, customModel: originalModel, customEnvVars: originalEnvVars };
                     }));
 
                   } catch (error) {
@@ -8629,7 +8639,8 @@ export default function MaestroConsole() {
                         aiTabs: s.aiTabs.map(t =>
                           t.id === tab.id ? { ...t, state: 'idle' as const } : t
                         ),
-                        customModel: originalModel
+                        customModel: originalModel,
+                        customEnvVars: originalEnvVars
                       };
                     }));
                   }
@@ -9115,10 +9126,20 @@ export default function MaestroConsole() {
             perfTimings.promptBuild = performance.now() - perfStartTime;
 
             // Temporarily override session model to use Claude Haiku for fast, cheap naming
-            // Store original model and restore after operation
+            // Also set max_tokens=50 and temperature=0.3 for focused, concise name generation
+            // Store originals and restore after operation
             const originalModel = activeSession.customModel;
+            const originalEnvVars = activeSession.customEnvVars;
             setSessions(prev => prev.map(s =>
-              s.id === activeSession.id ? { ...s, customModel: 'claude-3-5-haiku-20241022' } : s
+              s.id === activeSession.id ? {
+                ...s,
+                customModel: 'claude-3-5-haiku-20241022',
+                customEnvVars: {
+                  ...(s.customEnvVars || {}),
+                  CLAUDE_CODE_MAX_OUTPUT_TOKENS: '50', // Limit response to ~50 tokens (5 names × 10 tokens each)
+                  ANTHROPIC_CLAUDE_TEMPERATURE: '0.3', // Lower temperature for focused, consistent names
+                }
+              } : s
             ));
 
             try {
@@ -9169,7 +9190,8 @@ export default function MaestroConsole() {
                   aiTabs: s.aiTabs.map(t =>
                     t.id === tabId ? { ...t, state: 'idle' as const } : t
                   ),
-                  customModel: originalModel
+                  customModel: originalModel,
+                  customEnvVars: originalEnvVars
                 };
               }));
 
@@ -9258,7 +9280,8 @@ export default function MaestroConsole() {
                   aiTabs: s.aiTabs.map(t =>
                     t.id === tabId ? { ...t, state: 'idle' as const } : t
                   ),
-                  customModel: originalModel
+                  customModel: originalModel,
+                  customEnvVars: originalEnvVars
                 };
               }));
 
