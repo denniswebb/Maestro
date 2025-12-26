@@ -7327,6 +7327,10 @@ export default function MaestroConsole() {
             }
             setTimeout(() => setSuccessFlashNotification(null), 4000);
           }}
+          onCloseAllTabs={handleCloseAllTabs}
+          onCloseOtherTabs={handleCloseOtherTabs}
+          onCloseTabsLeft={handleCloseTabsLeft}
+          onCloseTabsRight={handleCloseTabsRight}
         />
       )}
       {lightboxImage && (
