@@ -8762,6 +8762,10 @@ export default function MaestroConsole() {
           // NOTE: In future, could skip tabs with `manuallyRenamed: true` for batch operations
           // but allow explicit "Auto Rename" clicks to override this flag
 
+          // Performance timing instrumentation (Phase 4, Task 4.5)
+          const perfStart = performance.now();
+          const timings: Record<string, number> = {};
+
           // Set tab to busy state during AI generation
           setSessions(prev => prev.map(s => {
             if (s.id !== activeSession.id) return s;
@@ -8776,9 +8780,11 @@ export default function MaestroConsole() {
           try {
             // Gather last 10 messages (up to 20 log entries for user+ai pairs)
             // Truncate each message to 200 characters to stay within token limits
+            const contextStart = performance.now();
             const conversationLogs = tab.logs
               .filter(log => log.source === 'user' || log.source === 'ai')
               .slice(-20); // Last 20 entries (up to 10 user+ai pairs)
+            timings.contextPrep = performance.now() - contextStart;
 
             if (conversationLogs.length === 0) {
               // No conversation history - use fallback name
@@ -8798,6 +8804,7 @@ export default function MaestroConsole() {
             }
 
             // Format conversation history for prompt (truncate each message to 200 chars)
+            const promptStart = performance.now();
             const conversationText = conversationLogs.map(log => {
               const role = log.source === 'user' ? 'User' : 'Assistant';
               const text = log.text.substring(0, 200);
@@ -8823,20 +8830,24 @@ export default function MaestroConsole() {
             }
 
             const prompt = promptTemplate.replace('{{conversation_history}}', conversationText);
+            timings.promptBuild = performance.now() - promptStart;
 
             // Spawn agent in batch mode to get AI-generated name
+            const apiStart = performance.now();
             const result = await spawnAgentForSession(
               activeSession.id,
               prompt,
               undefined, // cwd override
               undefined  // tab name
             );
+            timings.apiCall = performance.now() - apiStart;
 
             if (!result || !result.success || !result.response) {
               throw new Error('Failed to spawn agent for tab renaming');
             }
 
             // Extract the generated name from the response
+            const parseStart = performance.now();
             const generatedName = result.response.trim();
 
             if (!generatedName) {
@@ -8849,6 +8860,7 @@ export default function MaestroConsole() {
             if (!finalName || finalName.length === 0) {
               throw new Error('AI generated invalid tab name');
             }
+            timings.parsing = performance.now() - parseStart;
 
             // Update tab with AI-generated name
             setSessions(prev => prev.map(s => {
@@ -8890,6 +8902,26 @@ export default function MaestroConsole() {
             // Show success notification
             setFlashNotification(`Tab renamed to: ${finalName}`);
             setTimeout(() => setFlashNotification(null), 2000);
+
+            // Performance logging (Phase 4, Task 4.5)
+            const totalTime = performance.now() - perfStart;
+            if (settings.performanceLoggingEnabled) {
+              // Estimate token counts (rough approximation: 1 token ≈ 4 characters)
+              const promptTokens = Math.ceil(prompt.length / 4);
+              const responseTokens = Math.ceil(result.response.length / 4);
+
+              console.log('🚀 Tab Rename Performance Metrics:');
+              console.log(`  Total Time: ${Math.round(totalTime)}ms`);
+              console.log(`  Context Prep: ${Math.round(timings.contextPrep)}ms`);
+              console.log(`  Prompt Build: ${Math.round(timings.promptBuild)}ms`);
+              console.log(`  API Call: ${Math.round(timings.apiCall)}ms (${Math.round((timings.apiCall / totalTime) * 100)}%)`);
+              console.log(`  Parsing: ${Math.round(timings.parsing)}ms`);
+              console.log(`  Model: ${activeSession.customModel || settings.modelSlug || 'default'}`);
+              console.log(`  Prompt Tokens (est): ${promptTokens}`);
+              console.log(`  Response Tokens (est): ${responseTokens}`);
+              console.log(`  Message Count: ${conversationLogs.length}`);
+              console.log(`  Generated Name: "${finalName}"`);
+            }
 
           } catch (error) {
             console.error('Auto-rename failed:', error);

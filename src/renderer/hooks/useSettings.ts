@@ -274,6 +274,10 @@ export interface UseSettingsReturn {
   tabRenameExamples: TabRenameExample[];
   addTabRenameExample: (example: TabRenameExample) => void;
   clearTabRenameExamples: () => void;
+
+  // Performance Debug settings
+  performanceLoggingEnabled: boolean;
+  setPerformanceLoggingEnabled: (value: boolean) => void;
 }
 
 export function useSettings(): UseSettingsReturn {
@@ -389,6 +393,9 @@ export function useSettings(): UseSettingsReturn {
   // Tab Rename Examples for learning user preferences (persistent, max 20 examples)
   const [tabRenameExamples, setTabRenameExamplesState] = useState<TabRenameExample[]>([]);
   const MAX_RENAME_EXAMPLES = 20; // Keep most recent 20 examples
+
+  // Performance Debug settings (persistent)
+  const [performanceLoggingEnabled, setPerformanceLoggingEnabledState] = useState(false); // Default: disabled (false)
 
   // Wrapper functions that persist to electron-store
   // PERF: All wrapped in useCallback to prevent re-renders
@@ -998,6 +1005,12 @@ export function useSettings(): UseSettingsReturn {
     window.maestro.settings.set('customTabAutoRenamePrompt', value);
   }, []);
 
+  // Set performance logging enabled (debug mode)
+  const setPerformanceLoggingEnabled = useCallback((value: boolean) => {
+    setPerformanceLoggingEnabledState(value);
+    window.maestro.settings.set('performanceLoggingEnabled', value);
+  }, []);
+
   // Add a new tab rename example (learning from user preferences)
   const addTabRenameExample = useCallback((example: TabRenameExample) => {
     setTabRenameExamplesState(prev => {
@@ -1127,6 +1140,7 @@ export function useSettings(): UseSettingsReturn {
       const savedAutoRenameEnabled = await window.maestro.settings.get('autoRenameEnabled');
       const savedAutoRenameCount = await window.maestro.settings.get('autoRenameCount');
       const savedCustomTabAutoRenamePrompt = await window.maestro.settings.get('customTabAutoRenamePrompt');
+      const savedPerformanceLoggingEnabled = await window.maestro.settings.get('performanceLoggingEnabled');
 
       if (savedEnterToSendAI !== undefined) setEnterToSendAIState(savedEnterToSendAI as boolean);
       if (savedEnterToSendTerminal !== undefined) setEnterToSendTerminalState(savedEnterToSendTerminal as boolean);
@@ -1362,6 +1376,11 @@ export function useSettings(): UseSettingsReturn {
         setTabRenameExamplesState(savedTabRenameExamples as TabRenameExample[]);
       }
 
+      // Load performance logging setting
+      if (savedPerformanceLoggingEnabled !== undefined) {
+        setPerformanceLoggingEnabledState(savedPerformanceLoggingEnabled as boolean);
+      }
+
       // Mark settings as loaded
       setSettingsLoaded(true);
     };
@@ -1500,6 +1519,8 @@ export function useSettings(): UseSettingsReturn {
     tabRenameExamples,
     addTabRenameExample,
     clearTabRenameExamples,
+    performanceLoggingEnabled,
+    setPerformanceLoggingEnabled,
   }), [
     // State values
     settingsLoaded,
@@ -1624,5 +1645,7 @@ export function useSettings(): UseSettingsReturn {
     tabRenameExamples,
     addTabRenameExample,
     clearTabRenameExamples,
+    performanceLoggingEnabled,
+    setPerformanceLoggingEnabled,
   ]);
 }
