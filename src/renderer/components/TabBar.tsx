@@ -332,12 +332,26 @@ function Tab({
       )}
 
       {/* Tab name - show full name for active tab, truncate inactive tabs */}
-      <span
-        className={`text-xs font-medium ${isActive ? 'whitespace-nowrap' : 'truncate max-w-[120px]'}`}
-        style={{ color: isActive ? theme.colors.textMain : theme.colors.textDim }}
-      >
-        {displayName}
-      </span>
+      <div className="flex items-center gap-1">
+        {/* AI-generated name indicator - subtle sparkle icon (only when not busy) */}
+        {tab.state !== 'busy' && tab.isAutoNamed && !tab.manuallyRenamed && (
+          <span title="AI-generated name">
+            <Sparkles
+              className="w-3 h-3 shrink-0"
+              style={{ color: theme.colors.accent, opacity: 0.6 }}
+            />
+          </span>
+        )}
+        <span
+          className={`text-xs font-medium ${isActive ? 'whitespace-nowrap' : 'truncate max-w-[120px]'}`}
+          style={{
+            color: isActive ? theme.colors.textMain : theme.colors.textDim,
+            fontStyle: tab.state === 'busy' ? 'italic' : 'normal'
+          }}
+        >
+          {tab.state === 'busy' ? 'Renaming...' : displayName}
+        </span>
+      </div>
 
       {/* Close button - visible on hover or when active, takes space of busy indicator when not busy */}
       {canClose && (isHovered || isActive) && (

@@ -8759,7 +8759,7 @@ export default function MaestroConsole() {
             // Format conversation history (truncate each message to 200 chars)
             const conversationHistory = recentLogs
               .map(log => {
-                const role = log.type === 'user-message' ? 'User' : 'Assistant';
+                const role = log.source === 'user' ? 'User' : 'Assistant';
                 const content = log.text.length > 200 ? log.text.substring(0, 200) + '...' : log.text;
                 return `${role}: ${content}`;
               })

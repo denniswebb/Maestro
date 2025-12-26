@@ -142,6 +142,7 @@ interface MainPanelProps {
   onTabClose?: (tabId: string) => void;
   onNewTab?: () => void;
   onRequestTabRename?: (tabId: string) => void;
+  onAutoRename?: (tabId: string) => void;
   onTabReorder?: (fromIndex: number, toIndex: number) => void;
   onTabStar?: (tabId: string, starred: boolean) => void;
   onTabMarkUnread?: (tabId: string) => void;
@@ -280,7 +281,7 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
   const [configuredContextWindow, setConfiguredContextWindow] = useState(0);
 
   // Extract tab handlers from props
-  const { onTabSelect, onTabClose, onNewTab, onRequestTabRename, onTabReorder, onTabStar, onTabMarkUnread, showUnreadOnly, onToggleUnreadFilter, onOpenTabSearch } = props;
+  const { onTabSelect, onTabClose, onNewTab, onRequestTabRename, onAutoRename, onTabReorder, onTabStar, onTabMarkUnread, showUnreadOnly, onToggleUnreadFilter, onOpenTabSearch } = props;
 
   // Get the active tab for header display
   // The header should show the active tab's data (UUID, name, cost, context), not session-level data
@@ -881,6 +882,7 @@ export const MainPanel = forwardRef<MainPanelHandle, MainPanelProps>(function Ma
               onTabClose={onTabClose}
               onNewTab={onNewTab}
               onRequestRename={onRequestTabRename}
+              onAutoRename={onAutoRename}
               onTabReorder={onTabReorder}
               onTabStar={onTabStar}
               onTabMarkUnread={onTabMarkUnread}
